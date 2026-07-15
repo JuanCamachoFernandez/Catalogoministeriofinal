@@ -10,7 +10,7 @@ def setup_catalog():
     admin=User(username="admin",email="admin@gmail.com",password_hash="hash",role=Role.SUPERADMIN,first_name="A",last_name="B",status=UserStatus.ACTIVE,must_change_password=False)
     owner=User(username="expositor",email="expositor@gmail.com",password_hash="hash",role=Role.EXPOSITOR,first_name="E",last_name="X",status=UserStatus.ACTIVE,must_change_password=False)
     db.session.add_all([admin,owner]);db.session.flush()
-    exhibitor=Exhibitor(user_id=owner.id,nombre_comercial="Artesanías Bolivia",tipo_documento=DocumentType.CI,numero_documento="123",nombre_responsable="E",apellido_responsable="X",telefono_whatsapp="59171234567",email_gmail="expositor@gmail.com",departamento="La Paz",municipio="La Paz",estado=UserStatus.ACTIVE)
+    exhibitor=Exhibitor(user_id=owner.id,nombre_comercial="Artesanías Bolivia",tipo_documento=DocumentType.CI,numero_documento="123",nombre_responsable="E",apellido_responsable="X",telefono_whatsapp="59171234567",correo="expositor@gmail.com",departamento="La Paz",municipio="La Paz",estado=UserStatus.ACTIVE)
     category=Category(nombre="Artesanía",slug="artesania",estado=True)
     fair=Fair(nombre="Feria Test",slug="feria-test",lugar="Plaza",departamento="La Paz",municipio="La Paz",fecha_inicio=date(2026,1,1),fecha_fin=date(2026,1,2),imagen_portada="/portada.jpg",estado=FeriaStatus.PUBLISHED,visible_publicamente=True,created_by=admin.id)
     db.session.add_all([exhibitor,category,fair]);db.session.flush()

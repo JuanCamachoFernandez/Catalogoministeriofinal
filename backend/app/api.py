@@ -73,7 +73,7 @@ def change_password():
 def fair_json(f):return {"id":str(f.id),"nombre":f.nombre,"slug":f.slug,"descripcion":f.descripcion,"lugar":f.lugar,"departamento":f.departamento,"municipio":f.municipio,"fecha_inicio":f.fecha_inicio.isoformat(),"fecha_fin":f.fecha_fin.isoformat(),"imagen_portada":f.imagen_portada,"estado":f.estado.value}
 def product_json(p):
     imgs=db.session.scalars(select(ProductImage).where(ProductImage.product_id==p.id).order_by(ProductImage.is_cover.desc(),ProductImage.display_order)).all()
-    return {"id":str(p.id),"exhibitor_id":str(p.exhibitor_id),"category_id":str(p.category_id),"nombre":p.nombre,"slug":p.slug,"descripcion":p.descripcion,"estado":p.estado.value,"destacado":p.destacado,"imagenes":[{"id":str(i.id),"url":i.url,"is_cover":i.is_cover} for i in imgs]}
+    return {"id":str(p.id),"exhibitor_id":str(p.exhibitor_id),"category_id":str(p.category_id),"nombre":p.nombre,"slug":p.slug,"descripcion":p.descripcion,"precio":float(p.precio) if p.precio is not None else None,"estado":p.estado.value,"destacado":p.destacado,"imagenes":[{"id":str(i.id),"url":i.url,"is_cover":i.is_cover} for i in imgs]}
 
 @api.get("/public/fairs")
 def public_fairs():
@@ -87,7 +87,7 @@ def public_fair(slug):
     f=db.session.scalar(select(Fair).where(Fair.slug==slug,Fair.estado==FeriaStatus.PUBLISHED,Fair.visible_publicamente.is_(True),Fair.deleted_at.is_(None)))
     if not f:return error("Feria no encontrada",404)
     rows=db.session.execute(select(Exhibitor,FairExhibitor).join(FairExhibitor,FairExhibitor.exhibitor_id==Exhibitor.id).where(FairExhibitor.fair_id==f.id,FairExhibitor.estado==AssignmentStatus.AUTHORIZED,Exhibitor.estado==UserStatus.ACTIVE,Exhibitor.deleted_at.is_(None))).all()
-    return {**fair_json(f),"expositores":[{"id":str(e.id),"nombre_comercial":e.nombre_comercial,"descripcion":e.descripcion,"fotografia_perfil":e.fotografia_perfil,"numero_stand":a.numero_stand,"sector":a.sector} for e,a in rows]}
+    return {**fair_json(f),"expositores":[{"id":str(e.id),"nombre_comercial":e.nombre_comercial,"descripcion":e.descripcion,"logo":e.logo,"numero_stand":a.numero_stand,"sector":a.sector} for e,a in rows]}
 
 @api.get("/public/fairs/<slug>/exhibitors/<uuid:exhibitor_id>")
 def public_exhibitor(slug,exhibitor_id):
@@ -121,7 +121,7 @@ def own_products():
 @api.post("/exhibitor/products")
 @roles(Role.EXPOSITOR)
 def create_product():
-    e=current_user().exhibitor;d=request.get_json() or {};p=Product(exhibitor_id=e.id,category_id=d.get("category_id"),nombre=d.get("nombre",""),slug=slugify(d.get("nombre","")),descripcion=d.get("descripcion",""),estado=ProductStatus(d.get("estado","AVAILABLE")));db.session.add(p);db.session.commit();return product_json(p),201
+    e=current_user().exhibitor;d=request.get_json() or {};p=Product(exhibitor_id=e.id,category_id=d.get("category_id"),nombre=d.get("nombre",""),slug=slugify(d.get("nombre","")),descripcion=d.get("descripcion",""),precio=d.get("precio"),estado=ProductStatus(d.get("estado","AVAILABLE")));db.session.add(p);db.session.commit();return product_json(p),201
 
 @api.get("/categories")
 @jwt_required()
@@ -215,7 +215,7 @@ def category_status(category_id):
 def list_audit():
     return {"items":[{"id":str(a.id),"accion":a.accion,"entidad":a.entidad,"entidad_id":str(a.entidad_id) if a.entidad_id else None,"descripcion":a.descripcion,"created_at":a.created_at.isoformat()} for a in db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(200)).all()]}
 
-def exhibitor_json(e):return {"id":str(e.id),"user_id":str(e.user_id),"nombre_comercial":e.nombre_comercial,"razon_social":e.razon_social,"tipo_documento":e.tipo_documento.value,"numero_documento":e.numero_documento,"nombre_responsable":e.nombre_responsable,"apellido_responsable":e.apellido_responsable,"telefono_whatsapp":e.telefono_whatsapp,"email_gmail":e.email_gmail,"departamento":e.departamento,"municipio":e.municipio,"direccion":e.direccion,"descripcion":e.descripcion,"descripcion_productos":e.descripcion_productos,"fotografia_perfil":e.fotografia_perfil,"estado":e.estado.value,"created_at":e.created_at.isoformat()}
+def exhibitor_json(e):return {"id":str(e.id),"user_id":str(e.user_id),"nombre_comercial":e.nombre_comercial,"tipo_documento":e.tipo_documento.value,"numero_documento":e.numero_documento,"nombre_responsable":e.nombre_responsable,"apellido_responsable":e.apellido_responsable,"telefono_whatsapp":e.telefono_whatsapp,"correo":e.correo,"departamento":e.departamento,"municipio":e.municipio,"direccion":e.direccion,"descripcion":e.descripcion,"descripcion_productos":e.descripcion_productos,"logo":e.logo,"estado":e.estado.value,"created_at":e.created_at.isoformat()}
 
 @api.get("/exhibitor-types")
 @roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
@@ -225,7 +225,7 @@ def exhibitor_types():return {"items":[{"id":str(t.id),"nombre":t.nombre} for t 
 @roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
 def list_exhibitors():
     q=select(Exhibitor).where(Exhibitor.deleted_at.is_(None));term=request.args.get("q","").strip();department=request.args.get("departamento");state=request.args.get("estado")
-    if term:q=q.where((Exhibitor.nombre_comercial.ilike(f"%{term}%"))|(Exhibitor.email_gmail.ilike(f"%{term}%"))|(Exhibitor.numero_documento.ilike(f"%{term}%")))
+    if term:q=q.where((Exhibitor.nombre_comercial.ilike(f"%{term}%"))|(Exhibitor.correo.ilike(f"%{term}%"))|(Exhibitor.numero_documento.ilike(f"%{term}%")))
     if department:q=q.where(Exhibitor.departamento==department)
     if state:q=q.where(Exhibitor.estado==UserStatus(state))
     return {"items":[exhibitor_json(e) for e in db.session.scalars(q.order_by(Exhibitor.created_at.desc())).all()]}
@@ -233,16 +233,16 @@ def list_exhibitors():
 @api.post("/exhibitors")
 @roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
 def create_exhibitor():
-    d=request.get_json() or {};email=(d.get("email_gmail") or "").lower().strip();type_ids=d.get("type_ids") or []
+    d=request.get_json() or {};email=(d.get("correo") or "").lower().strip();type_ids=d.get("type_ids") or []
     if not valid_gmail(email):return error("El correo debe ser una dirección @gmail.com válida")
     if not type_ids:return error("Seleccione al menos un tipo de expositor")
-    if db.session.scalar(select(User.id).where(User.email==email)) or db.session.scalar(select(Exhibitor.id).where(Exhibitor.email_gmail==email)):return error("El Gmail ya está registrado",409)
+    if db.session.scalar(select(User.id).where(User.email==email)) or db.session.scalar(select(Exhibitor.id).where(Exhibitor.correo==email)):return error("El Gmail ya está registrado",409)
     if db.session.scalar(select(Exhibitor.id).where(Exhibitor.numero_documento==d.get("numero_documento"))):return error("El documento ya está registrado",409)
     try:phone=normalize_whatsapp(d.get("telefono_whatsapp"));doc_type=DocumentType(d.get("tipo_documento","CI"))
     except ValueError as exc:return error(str(exc))
     required=[d.get(x) for x in ("nombre_comercial","numero_documento","nombre_responsable","apellido_responsable","departamento","municipio")]
     if not all(required):return error("Complete todos los campos obligatorios")
-    password=temporary_password();user=User(username=unique_username(d["nombre_responsable"],d["apellido_responsable"]),email=email,role=Role.EXPOSITOR,first_name=d["nombre_responsable"],last_name=d["apellido_responsable"],phone=phone,status=UserStatus.ACTIVE,must_change_password=True);user.set_password(password);db.session.add(user);db.session.flush();e=Exhibitor(user_id=user.id,nombre_comercial=d["nombre_comercial"],razon_social=d.get("razon_social"),tipo_documento=doc_type,numero_documento=d["numero_documento"],nombre_responsable=d["nombre_responsable"],apellido_responsable=d["apellido_responsable"],telefono_whatsapp=phone,email_gmail=email,departamento=d["departamento"],municipio=d["municipio"],direccion=d.get("direccion"),descripcion=d.get("descripcion"),descripcion_productos=d.get("descripcion_productos"),estado=UserStatus.ACTIVE);db.session.add(e);db.session.flush()
+    password=temporary_password();user=User(username=unique_username(d["nombre_responsable"],d["apellido_responsable"]),email=email,role=Role.EXPOSITOR,first_name=d["nombre_responsable"],last_name=d["apellido_responsable"],phone=phone,status=UserStatus.ACTIVE,must_change_password=True);user.set_password(password);db.session.add(user);db.session.flush();e=Exhibitor(user_id=user.id,nombre_comercial=d["nombre_comercial"],tipo_documento=doc_type,numero_documento=d["numero_documento"],nombre_responsable=d["nombre_responsable"],apellido_responsable=d["apellido_responsable"],telefono_whatsapp=phone,correo=email,departamento=d["departamento"],municipio=d["municipio"],direccion=d.get("direccion"),descripcion=d.get("descripcion"),descripcion_productos=d.get("descripcion_productos"),logo=d.get("logo"),estado=UserStatus.ACTIVE);db.session.add(e);db.session.flush()
     for type_id in type_ids:
         try:tid=uuid.UUID(type_id)
         except ValueError:return error("Tipo de expositor inválido")
