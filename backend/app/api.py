@@ -1,16 +1,20 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from functools import wraps
+import os
 from urllib.parse import quote
 import uuid
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from sqlalchemy import func, select
+from werkzeug.utils import secure_filename
 from .extensions import db
-from .models import User, UserStatus, Role, AdminProfile, Audit, DocumentType, Exhibitor, ExhibitorType, ExhibitorTypeLink, Fair, FeriaStatus, FairExhibitor, AssignmentStatus, Product, ProductStatus, ProductImage, Category
+from .models import User, UserStatus, Role, AdminProfile, Audit, DocumentType, Exhibitor, ExhibitorType, ExhibitorTypeLink, Fair, FeriaStatus, FairImage, FairExhibitor, AssignmentStatus, Product, ProductStatus, ProductImage, Category
 from .utils import normalize_whatsapp, slugify, temporary_password, valid_gmail
 
 api=Blueprint("api",__name__)
 def error(message,status=400): return jsonify({"error":message}),status
+ALLOWED_EXTENSIONS={"png","jpg","jpeg","webp","gif"}
 def user_json(u): return {"id":str(u.id),"username":u.username,"email":u.email,"role":u.role.value,"first_name":u.first_name,"last_name":u.last_name,"must_change_password":u.must_change_password}
 def current_user():
     identity = get_jwt_identity()
@@ -46,6 +50,35 @@ def admin_user_json(user):
     profile=user.admin_profile
     return {**user_json(user),"phone":user.phone,"status":user.status.value,"cargo":profile.cargo if profile else None,"unidad":profile.unidad if profile else None,"created_at":user.created_at.isoformat()}
 
+def parse_money(value):
+    if value in (None,""): return None
+    try:
+        amount=Decimal(str(value))
+    except (InvalidOperation,ValueError):
+        raise ValueError("El precio debe ser numérico")
+    if amount<0: raise ValueError("El precio no puede ser negativo")
+    return amount.quantize(Decimal("0.01"))
+
+def active_fair_query():
+    return select(Fair).where(Fair.estado==FeriaStatus.PUBLISHED,Fair.visible_publicamente.is_(True),Fair.deleted_at.is_(None))
+
+def ensure_unique_active_fair(fair):
+    for other in db.session.scalars(active_fair_query().where(Fair.id!=fair.id)).all():
+        other.estado=FeriaStatus.DISABLED;other.visible_publicamente=False
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".",1)[1].lower() in ALLOWED_EXTENSIONS
+
+def save_upload(file, folder):
+    if not file or not file.filename:return None
+    if not allowed_file(file.filename):raise ValueError("Formato de imagen no permitido")
+    ext=file.filename.rsplit(".",1)[1].lower();name=f"{uuid.uuid4().hex}.{ext}"
+    relative=os.path.join(folder,name).replace("\\","/")
+    target=os.path.join(current_app.config["UPLOAD_FOLDER"],folder)
+    os.makedirs(target,exist_ok=True)
+    file.save(os.path.join(target,secure_filename(name)))
+    return f"/uploads/{relative}"
+
 @api.post("/auth/login")
 def login():
     d=request.get_json() or {}; value=(d.get("login") or "").lower().strip()
@@ -70,10 +103,37 @@ def change_password():
     if u.check_password(new):return error("No puede reutilizar la contraseña")
     u.set_password(new);u.must_change_password=False;u.password_changed_at=datetime.now(timezone.utc);db.session.commit();return {"message":"Contraseña actualizada"}
 
-def fair_json(f):return {"id":str(f.id),"nombre":f.nombre,"slug":f.slug,"descripcion":f.descripcion,"lugar":f.lugar,"departamento":f.departamento,"municipio":f.municipio,"fecha_inicio":f.fecha_inicio.isoformat(),"fecha_fin":f.fecha_fin.isoformat(),"imagen_portada":f.imagen_portada,"estado":f.estado.value}
+@api.post("/uploads")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO,Role.EXPOSITOR)
+def upload_file():
+    folder=request.form.get("folder","general")
+    if folder not in ("general","ferias","productos","logos"):folder="general"
+    try:url=save_upload(request.files.get("file"),folder)
+    except ValueError as exc:return error(str(exc))
+    if not url:return error("Debe enviar un archivo")
+    return {"url":url},201
+
+def fair_json(f):return {"id":str(f.id),"nombre":f.nombre,"slug":f.slug,"descripcion":f.descripcion,"lugar":f.lugar,"direccion":f.direccion,"departamento":f.departamento,"municipio":f.municipio,"fecha_inicio":f.fecha_inicio.isoformat(),"fecha_fin":f.fecha_fin.isoformat(),"hora_inicio":f.hora_inicio.isoformat() if f.hora_inicio else None,"hora_fin":f.hora_fin.isoformat() if f.hora_fin else None,"fecha_limite_registro":f.fecha_limite_registro.isoformat() if f.fecha_limite_registro else None,"imagen_portada":f.imagen_portada,"observaciones":f.observaciones,"visible_publicamente":f.visible_publicamente,"estado":f.estado.value}
 def product_json(p):
     imgs=db.session.scalars(select(ProductImage).where(ProductImage.product_id==p.id).order_by(ProductImage.is_cover.desc(),ProductImage.display_order)).all()
-    return {"id":str(p.id),"exhibitor_id":str(p.exhibitor_id),"category_id":str(p.category_id),"nombre":p.nombre,"slug":p.slug,"descripcion":p.descripcion,"precio":float(p.precio) if p.precio is not None else None,"estado":p.estado.value,"destacado":p.destacado,"imagenes":[{"id":str(i.id),"url":i.url,"is_cover":i.is_cover} for i in imgs]}
+    return {"id":str(p.id),"exhibitor_id":str(p.exhibitor_id),"category_id":str(p.category_id),"nombre":p.nombre,"slug":p.slug,"descripcion":p.descripcion,"materiales_o_ingredientes":p.materiales_o_ingredientes,"lugar_origen":p.lugar_origen,"presentacion":p.presentacion,"informacion_adicional":p.informacion_adicional,"precio":float(p.precio) if p.precio is not None else None,"estado":p.estado.value,"destacado":p.destacado,"imagenes":[{"id":str(i.id),"url":i.url,"is_cover":i.is_cover,"display_order":i.display_order} for i in imgs]}
+
+def product_from_payload(product,d,exhibitor_id=None):
+    if exhibitor_id:product.exhibitor_id=exhibitor_id
+    if "category_id" in d:
+        try:product.category_id=uuid.UUID(d.get("category_id",""))
+        except (ValueError,TypeError):raise ValueError("Categoría inválida")
+    if "nombre" in d:
+        name=(d.get("nombre") or "").strip()
+        if not name:raise ValueError("El nombre del producto es obligatorio")
+        product.nombre=name;product.slug=slugify(name)
+    if "descripcion" in d: product.descripcion=d.get("descripcion") or ""
+    if "precio" in d: product.precio=parse_money(d.get("precio"))
+    for field in ("materiales_o_ingredientes","lugar_origen","presentacion","informacion_adicional"):
+        if field in d:setattr(product,field,d.get(field))
+    if "estado" in d: product.estado=ProductStatus(d.get("estado"))
+    if "destacado" in d: product.destacado=bool(d.get("destacado"))
+    return product
 
 @api.get("/public/fairs")
 def public_fairs():
@@ -81,6 +141,13 @@ def public_fairs():
     if term:q=q.where(Fair.nombre.ilike(f"%{term}%"))
     if dept:q=q.where(Fair.departamento==dept)
     return {"items":[fair_json(x) for x in db.session.scalars(q.order_by(Fair.fecha_inicio.desc())).all()]}
+
+@api.get("/public/active-fair")
+def public_active_fair():
+    f=db.session.scalar(active_fair_query().order_by(Fair.fecha_inicio.desc()))
+    if not f:return error("No existe una feria activa",404)
+    rows=db.session.execute(select(Exhibitor,FairExhibitor).join(FairExhibitor,FairExhibitor.exhibitor_id==Exhibitor.id).where(FairExhibitor.fair_id==f.id,FairExhibitor.estado==AssignmentStatus.AUTHORIZED,Exhibitor.estado==UserStatus.ACTIVE,Exhibitor.deleted_at.is_(None))).all()
+    return {**fair_json(f),"expositores":[{"id":str(e.id),"nombre_comercial":e.nombre_comercial,"descripcion":e.descripcion,"logo":e.logo,"numero_stand":a.numero_stand,"sector":a.sector} for e,a in rows]}
 
 @api.get("/public/fairs/<slug>")
 def public_fair(slug):
@@ -121,7 +188,27 @@ def own_products():
 @api.post("/exhibitor/products")
 @roles(Role.EXPOSITOR)
 def create_product():
-    e=current_user().exhibitor;d=request.get_json() or {};p=Product(exhibitor_id=e.id,category_id=d.get("category_id"),nombre=d.get("nombre",""),slug=slugify(d.get("nombre","")),descripcion=d.get("descripcion",""),precio=d.get("precio"),estado=ProductStatus(d.get("estado","AVAILABLE")));db.session.add(p);db.session.commit();return product_json(p),201
+    e=current_user().exhibitor;d=request.get_json() or {}
+    try:p=product_from_payload(Product(estado=ProductStatus.AVAILABLE),d,e.id)
+    except ValueError as exc:return error(str(exc))
+    if not p.category_id or not p.descripcion:return error("Categoría y descripción son obligatorias")
+    db.session.add(p);audit("CREAR","Producto",p.id,"Producto creado por expositor");db.session.commit();return product_json(p),201
+
+@api.patch("/exhibitor/products/<uuid:product_id>")
+@roles(Role.EXPOSITOR)
+def update_own_product(product_id):
+    e=current_user().exhibitor;p=db.session.get(Product,product_id)
+    if not p or p.exhibitor_id!=e.id or p.deleted_at:return error("Producto no encontrado",404)
+    try:product_from_payload(p,request.get_json() or {})
+    except ValueError as exc:return error(str(exc))
+    audit("EDITAR","Producto",p.id,"Producto actualizado por expositor");db.session.commit();return product_json(p)
+
+@api.post("/exhibitor/products/<uuid:product_id>/images")
+@roles(Role.EXPOSITOR)
+def add_own_product_image(product_id):
+    e=current_user().exhibitor;p=db.session.get(Product,product_id)
+    if not p or p.exhibitor_id!=e.id or p.deleted_at:return error("Producto no encontrado",404)
+    return add_product_image(p)
 
 @api.get("/categories")
 @jwt_required()
@@ -131,7 +218,8 @@ def categories():return {"items":[{"id":str(c.id),"nombre":c.nombre} for c in db
 @roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
 def admin_dashboard():
     count=lambda model,*conditions:db.session.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
-    return {"stats":{"ferias":count(Fair,Fair.deleted_at.is_(None)),"ferias_publicadas":count(Fair,Fair.estado==FeriaStatus.PUBLISHED,Fair.deleted_at.is_(None)),"expositores":count(Exhibitor,Exhibitor.deleted_at.is_(None)),"expositores_activos":count(Exhibitor,Exhibitor.estado==UserStatus.ACTIVE,Exhibitor.deleted_at.is_(None)),"productos":count(Product,Product.deleted_at.is_(None)),"productos_disponibles":count(Product,Product.estado==ProductStatus.AVAILABLE,Product.deleted_at.is_(None)),"productos_sin_stock":count(Product,Product.estado==ProductStatus.OUT_OF_STOCK,Product.deleted_at.is_(None)),"asignaciones_pendientes":count(FairExhibitor,FairExhibitor.estado==AssignmentStatus.PENDING)},"recent_audits":[{"id":str(a.id),"accion":a.accion,"entidad":a.entidad,"descripcion":a.descripcion,"created_at":a.created_at.isoformat()} for a in db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(8)).all()]}
+    active=db.session.scalar(active_fair_query().order_by(Fair.fecha_inicio.desc()))
+    return {"stats":{"ferias":count(Fair,Fair.deleted_at.is_(None)),"feria_activa":active.nombre if active else None,"ferias_publicadas":count(Fair,Fair.estado==FeriaStatus.PUBLISHED,Fair.deleted_at.is_(None)),"expositores":count(Exhibitor,Exhibitor.deleted_at.is_(None)),"expositores_activos":count(Exhibitor,Exhibitor.estado==UserStatus.ACTIVE,Exhibitor.deleted_at.is_(None)),"productos":count(Product,Product.deleted_at.is_(None)),"productos_disponibles":count(Product,Product.estado==ProductStatus.AVAILABLE,Product.deleted_at.is_(None)),"productos_sin_stock":count(Product,Product.estado==ProductStatus.OUT_OF_STOCK,Product.deleted_at.is_(None)),"asignaciones_pendientes":count(FairExhibitor,FairExhibitor.estado==AssignmentStatus.PENDING)},"recent_audits":[{"id":str(a.id),"accion":a.accion,"entidad":a.entidad,"descripcion":a.descripcion,"created_at":a.created_at.isoformat()} for a in db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(8)).all()]}
 
 @api.get("/admin/users")
 @roles(Role.SUPERADMIN)
@@ -189,7 +277,81 @@ def create_fair():
 def change_fair_status(fair_id):
     fair=db.session.get(Fair,fair_id)
     if not fair or fair.deleted_at:return error("Feria no encontrada",404)
-    status=FeriaStatus((request.get_json() or {}).get("status"));fair.estado=status;fair.visible_publicamente=status==FeriaStatus.PUBLISHED;audit("CAMBIAR_ESTADO","Feria",fair.id,f"Estado cambiado a {status.value}");db.session.commit();return fair_json(fair)
+    status=FeriaStatus((request.get_json() or {}).get("status"));fair.estado=status;fair.visible_publicamente=status==FeriaStatus.PUBLISHED
+    if status==FeriaStatus.PUBLISHED:ensure_unique_active_fair(fair)
+    audit("CAMBIAR_ESTADO","Feria",fair.id,f"Estado cambiado a {status.value}");db.session.commit();return fair_json(fair)
+
+@api.patch("/fairs/<uuid:fair_id>")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def update_fair(fair_id):
+    fair=db.session.get(Fair,fair_id);d=request.get_json() or {}
+    if not fair or fair.deleted_at:return error("Feria no encontrada",404)
+    if "fecha_inicio" in d or "fecha_fin" in d:
+        try:
+            start=date.fromisoformat(d.get("fecha_inicio") or fair.fecha_inicio.isoformat())
+            end=date.fromisoformat(d.get("fecha_fin") or fair.fecha_fin.isoformat())
+        except ValueError:return error("Las fechas deben ser válidas")
+        if end<start:return error("La fecha final no puede ser anterior a la inicial")
+        fair.fecha_inicio=start;fair.fecha_fin=end
+    for field in ("nombre","descripcion","lugar","direccion","departamento","municipio","imagen_portada","observaciones"):
+        if field in d:setattr(fair,field,d.get(field))
+    if "nombre" in d:
+        base=slugify(fair.nombre);slug=base;number=1
+        while db.session.scalar(select(Fair.id).where(Fair.slug==slug,Fair.id!=fair.id)):
+            slug=f"{base}-{number}";number+=1
+        fair.slug=slug
+    audit("EDITAR","Feria",fair.id,"Feria actualizada");db.session.commit();return fair_json(fair)
+
+@api.post("/fairs/<uuid:fair_id>/images")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def add_fair_image(fair_id):
+    fair=db.session.get(Fair,fair_id)
+    if not fair or fair.deleted_at:return error("Feria no encontrada",404)
+    try:url=save_upload(request.files.get("file"),"ferias")
+    except ValueError as exc:return error(str(exc))
+    if not url:url=(request.get_json(silent=True) or {}).get("url")
+    if not url:return error("Debe enviar una imagen")
+    img=FairImage(fair_id=fair.id,filename=os.path.basename(url),url=url,alt_text=request.form.get("alt_text"),is_cover=False)
+    db.session.add(img);audit("AGREGAR_IMAGEN","Feria",fair.id,"Imagen agregada");db.session.commit();return {"id":str(img.id),"url":img.url},201
+
+def assignment_json(a):
+    e=db.session.get(Exhibitor,a.exhibitor_id)
+    return {"id":str(a.id),"fair_id":str(a.fair_id),"exhibitor_id":str(a.exhibitor_id),"nombre_comercial":e.nombre_comercial if e else None,"estado":a.estado.value,"numero_stand":a.numero_stand,"sector":a.sector,"observaciones":a.observaciones,"authorized_by":str(a.authorized_by) if a.authorized_by else None,"authorized_at":a.authorized_at.isoformat() if a.authorized_at else None}
+
+@api.get("/fairs/<uuid:fair_id>/exhibitors")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def fair_assignments(fair_id):
+    if not db.session.get(Fair,fair_id):return error("Feria no encontrada",404)
+    q=select(FairExhibitor).where(FairExhibitor.fair_id==fair_id).order_by(FairExhibitor.created_at.desc())
+    return {"items":[assignment_json(a) for a in db.session.scalars(q).all()]}
+
+@api.post("/fairs/<uuid:fair_id>/exhibitors")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def assign_exhibitor(fair_id):
+    fair=db.session.get(Fair,fair_id);d=request.get_json() or {}
+    if not fair or fair.deleted_at:return error("Feria no encontrada",404)
+    try:exhibitor_id=uuid.UUID(d.get("exhibitor_id",""))
+    except (ValueError,TypeError):return error("Expositor inválido")
+    exhibitor=db.session.get(Exhibitor,exhibitor_id)
+    if not exhibitor or exhibitor.deleted_at:return error("Expositor no encontrado",404)
+    existing=db.session.scalar(select(FairExhibitor).where(FairExhibitor.fair_id==fair_id,FairExhibitor.exhibitor_id==exhibitor_id))
+    if existing:return error("El expositor ya está asignado a la feria",409)
+    status=AssignmentStatus(d.get("estado","AUTHORIZED"))
+    a=FairExhibitor(fair_id=fair_id,exhibitor_id=exhibitor_id,estado=status,numero_stand=d.get("numero_stand"),sector=d.get("sector"),observaciones=d.get("observaciones"))
+    if status==AssignmentStatus.AUTHORIZED:a.authorized_by=current_user().id;a.authorized_at=datetime.now(timezone.utc)
+    db.session.add(a);audit("ASIGNAR","FeriaExpositor",a.id,"Expositor asignado a feria");db.session.commit();return assignment_json(a),201
+
+@api.patch("/fair-exhibitors/<uuid:assignment_id>")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def update_assignment(assignment_id):
+    a=db.session.get(FairExhibitor,assignment_id);d=request.get_json() or {}
+    if not a:return error("Asignación no encontrada",404)
+    if "estado" in d:
+        status=AssignmentStatus(d.get("estado"));a.estado=status
+        if status==AssignmentStatus.AUTHORIZED:a.authorized_by=current_user().id;a.authorized_at=datetime.now(timezone.utc)
+    for field in ("numero_stand","sector","observaciones"):
+        if field in d:setattr(a,field,d.get(field))
+    audit("EDITAR","FeriaExpositor",a.id,"Asignación actualizada");db.session.commit();return assignment_json(a)
 
 @api.get("/admin/categories")
 @roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
@@ -256,3 +418,68 @@ def exhibitor_status(exhibitor_id):
     e=db.session.get(Exhibitor,exhibitor_id)
     if not e or e.deleted_at:return error("Expositor no encontrado",404)
     status=UserStatus((request.get_json() or {}).get("status"));e.estado=status;e.user.status=status;audit("CAMBIAR_ESTADO","Expositor",e.id);db.session.commit();return exhibitor_json(e)
+
+@api.patch("/exhibitors/<uuid:exhibitor_id>")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def update_exhibitor(exhibitor_id):
+    e=db.session.get(Exhibitor,exhibitor_id);d=request.get_json() or {}
+    if not e or e.deleted_at:return error("Expositor no encontrado",404)
+    if "correo" in d:
+        email=(d.get("correo") or "").lower().strip()
+        if not valid_gmail(email):return error("El correo debe ser una dirección @gmail.com válida")
+        if db.session.scalar(select(Exhibitor.id).where(Exhibitor.correo==email,Exhibitor.id!=e.id)):return error("El Gmail ya está registrado",409)
+        e.correo=email;e.user.email=email
+    if "telefono_whatsapp" in d:
+        try:e.telefono_whatsapp=normalize_whatsapp(d.get("telefono_whatsapp"));e.user.phone=e.telefono_whatsapp
+        except ValueError as exc:return error(str(exc))
+    if "tipo_documento" in d:e.tipo_documento=DocumentType(d.get("tipo_documento"))
+    for field in ("nombre_comercial","numero_documento","nombre_responsable","apellido_responsable","departamento","municipio","direccion","descripcion","descripcion_productos","logo"):
+        if field in d:setattr(e,field,d.get(field))
+    audit("EDITAR","Expositor",e.id,"Expositor actualizado");db.session.commit();return exhibitor_json(e)
+
+@api.get("/products")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def list_products():
+    q=select(Product).where(Product.deleted_at.is_(None));exhibitor_id=request.args.get("exhibitor_id");term=request.args.get("q","").strip()
+    if exhibitor_id:q=q.where(Product.exhibitor_id==uuid.UUID(exhibitor_id))
+    if term:q=q.where(Product.nombre.ilike(f"%{term}%"))
+    return {"items":[product_json(p) for p in db.session.scalars(q.order_by(Product.created_at.desc())).all()]}
+
+@api.post("/products")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def create_admin_product():
+    d=request.get_json() or {}
+    try:
+        exhibitor_id=uuid.UUID(d.get("exhibitor_id",""))
+        p=product_from_payload(Product(estado=ProductStatus.AVAILABLE),d,exhibitor_id)
+    except (ValueError,TypeError) as exc:return error(str(exc) or "Datos inválidos")
+    if not db.session.get(Exhibitor,exhibitor_id):return error("Expositor no encontrado",404)
+    if not p.category_id or not p.descripcion:return error("Categoría y descripción son obligatorias")
+    db.session.add(p);audit("CREAR","Producto",p.id,"Producto creado por administración");db.session.commit();return product_json(p),201
+
+@api.patch("/products/<uuid:product_id>")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def update_admin_product(product_id):
+    p=db.session.get(Product,product_id)
+    if not p or p.deleted_at:return error("Producto no encontrado",404)
+    try:product_from_payload(p,request.get_json() or {})
+    except ValueError as exc:return error(str(exc))
+    audit("EDITAR","Producto",p.id,"Producto actualizado por administración");db.session.commit();return product_json(p)
+
+def add_product_image(p):
+    try:url=save_upload(request.files.get("file"),"productos")
+    except ValueError as exc:return error(str(exc))
+    payload=request.get_json(silent=True) or {}
+    if not url:url=payload.get("url")
+    if not url:return error("Debe enviar una imagen")
+    img=ProductImage(product_id=p.id,filename=os.path.basename(url),url=url,alt_text=request.form.get("alt_text") or payload.get("alt_text"),is_cover=bool(request.form.get("is_cover") or payload.get("is_cover")),display_order=int(request.form.get("display_order") or payload.get("display_order") or 0))
+    if img.is_cover:
+        for other in db.session.scalars(select(ProductImage).where(ProductImage.product_id==p.id)).all():other.is_cover=False
+    db.session.add(img);audit("AGREGAR_IMAGEN","Producto",p.id,"Imagen agregada");db.session.commit();return {"id":str(img.id),"url":img.url,"is_cover":img.is_cover},201
+
+@api.post("/products/<uuid:product_id>/images")
+@roles(Role.SUPERADMIN,Role.ADMIN_VICEMINISTERIO)
+def add_admin_product_image(product_id):
+    p=db.session.get(Product,product_id)
+    if not p or p.deleted_at:return error("Producto no encontrado",404)
+    return add_product_image(p)
