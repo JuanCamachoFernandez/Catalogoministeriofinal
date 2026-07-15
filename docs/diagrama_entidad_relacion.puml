@@ -1,0 +1,28 @@
+@startuml
+hide methods
+entity users { * id : UUID <<PK>>; --; * username : VARCHAR(80) <<UNIQUE>>; * email : VARCHAR(255) <<UNIQUE>>; * role : user_role; * status : user_status }
+entity admin_profiles { * id : UUID <<PK>>; * user_id : UUID <<FK,UNIQUE>> }
+entity exhibitors { * id : UUID <<PK>>; * user_id : UUID <<FK,UNIQUE>>; * numero_documento : VARCHAR(50) <<UNIQUE>>; * telefono_whatsapp : VARCHAR(11); * email_gmail : VARCHAR(255) <<UNIQUE>> }
+entity exhibitor_types { * id : UUID <<PK>>; * nombre : VARCHAR(80) <<UNIQUE>> }
+entity exhibitor_type_links { * id : UUID <<PK>>; * exhibitor_id : UUID <<FK>>; * type_id : UUID <<FK>> }
+entity fairs { * id : UUID <<PK>>; * slug : VARCHAR(220) <<UNIQUE>>; * estado : fair_status; * created_by : UUID <<FK>> }
+entity fair_exhibitors { * id : UUID <<PK>>; * fair_id : UUID <<FK>>; * exhibitor_id : UUID <<FK>>; * estado : assignment_status }
+entity fair_images { * id : UUID <<PK>>; * fair_id : UUID <<FK>>; * url : VARCHAR(500) }
+entity categories { * id : UUID <<PK>>; * nombre : VARCHAR(120) <<UNIQUE>>; * slug : VARCHAR(140) <<UNIQUE>> }
+entity products { * id : UUID <<PK>>; * exhibitor_id : UUID <<FK>>; * category_id : UUID <<FK>>; * estado : product_status }
+entity product_images { * id : UUID <<PK>>; * product_id : UUID <<FK>>; * url : VARCHAR(500) }
+entity password_recoveries { * id : UUID <<PK>>; * user_id : UUID <<FK>>; * token_hash : VARCHAR(64) <<UNIQUE>> }
+entity audits { * id : UUID <<PK>>; user_id : UUID <<FK>>; * accion : VARCHAR(100) }
+users ||--o| admin_profiles
+users ||--o| exhibitors
+users ||--o{ password_recoveries
+users |o--o{ audits
+exhibitors ||--o{ exhibitor_type_links
+exhibitor_types ||--o{ exhibitor_type_links
+fairs ||--o{ fair_exhibitors
+exhibitors ||--o{ fair_exhibitors
+fairs ||--o{ fair_images
+exhibitors ||--o{ products
+categories ||--o{ products
+products ||--o{ product_images
+@enduml
