@@ -1,0 +1,9 @@
+[
+  "tests/test_auth.py::test_login_rechaza_password_incorrecta",
+  "tests/test_auth.py::test_primer_ingreso_obliga_cambio_y_actualiza_password",
+  "tests/test_utils.py::test_gmail",
+  "tests/test_utils.py::test_normaliza_whatsapp",
+  "tests/test_utils.py::test_rechaza_numero_invalido",
+  "tests/test_whatsapp.py::test_consulta_rechaza_producto_inexistente",
+  "tests/test_whatsapp.py::test_consulta_usa_whatsapp_del_propietario"
+]

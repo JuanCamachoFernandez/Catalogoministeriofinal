@@ -1,0 +1,35 @@
+@startuml
+skinparam classAttributeIconSize 0
+enum Role { SUPERADMIN; ADMIN_VICEMINISTERIO; EXPOSITOR }
+enum UserStatus { ACTIVE; INACTIVE; LOCKED }
+enum FeriaStatus { DRAFT; PUBLISHED; DISABLED; FINISHED }
+enum AssignmentStatus { PENDING; AUTHORIZED; REJECTED; REVOKED }
+enum ProductStatus { AVAILABLE; OUT_OF_STOCK; INACTIVE; DELETED }
+enum DocumentType { CI; NIT; OTRO }
+class User { +UUID id; +String username; +String email; -Text password_hash; +Role role; +UserStatus status; +Boolean must_change_password; +set_password(); +check_password() }
+class AdminProfile { +UUID id; +UUID user_id; +String cargo; +String unidad }
+class Exhibitor { +UUID id; +UUID user_id; +String nombre_comercial; +DocumentType tipo_documento; +String telefono_whatsapp; +String email_gmail; +UserStatus estado }
+class ExhibitorType { +UUID id; +String nombre; +Boolean estado }
+class ExhibitorTypeLink { +UUID id; +UUID exhibitor_id; +UUID type_id }
+class Fair { +UUID id; +String slug; +Date fecha_inicio; +Date fecha_fin; +FeriaStatus estado; +Boolean visible_publicamente }
+class FairExhibitor { +UUID id; +UUID fair_id; +UUID exhibitor_id; +AssignmentStatus estado; +String numero_stand }
+class FairImage { +UUID id; +UUID fair_id; +String url; +Boolean is_cover }
+class Category { +UUID id; +String nombre; +String slug; +Boolean estado }
+class Product { +UUID id; +UUID exhibitor_id; +UUID category_id; +String nombre; +ProductStatus estado }
+class ProductImage { +UUID id; +UUID product_id; +String url; +Boolean is_cover }
+class PasswordRecovery { +UUID id; +UUID user_id; +String token_hash; +DateTime expires_at; +DateTime used_at }
+class Audit { +UUID id; +UUID user_id; +String accion; +String entidad; +JSON datos_nuevos }
+User "1" -- "0..1" AdminProfile
+User "1" -- "0..1" Exhibitor
+User "1" -- "0..*" PasswordRecovery
+User "0..1" -- "0..*" Audit
+Exhibitor "1" -- "0..*" ExhibitorTypeLink
+ExhibitorType "1" -- "0..*" ExhibitorTypeLink
+Fair "1" -- "0..*" FairExhibitor
+Exhibitor "1" -- "0..*" FairExhibitor
+Fair "1" *-- "0..*" FairImage
+Exhibitor "1" -- "0..*" Product
+Category "1" -- "0..*" Product
+Product "1" *-- "0..*" ProductImage
+Product ..> Exhibitor : destinatario WhatsApp
+@enduml
