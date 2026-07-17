@@ -1,5 +1,5 @@
 # Plan backend MVC, ferias automáticas
-
+## plan nuevo
   ## Resumen
 
   Se completará primero el backend y se congelará su contrato antes de retomar React. El primer trabajo será convertir la estructura actual en MVC estricto sin cambiar
