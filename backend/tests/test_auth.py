@@ -54,3 +54,30 @@ def test_login_rechaza_password_incorrecta(app, client):
         json={"login": "admin.prueba", "password": "incorrecta"},
     )
     assert response.status_code == 401
+
+
+def test_logout_revoca_token(app, client):
+    with app.app_context():
+        user = create_user()
+        user.must_change_password = False
+        db.session.commit()
+    login = client.post(
+        "/api/auth/login",
+        json={"login": "admin.prueba", "password": "Temporal2026!"},
+    )
+    token = login.json["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/auth/logout", headers=headers).status_code == 200
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_recuperacion_usa_token_una_sola_vez(app, client):
+    with app.app_context():
+        create_user()
+    requested = client.post(
+        "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
+    )
+    token = requested.json["reset_token"]
+    payload = {"token": token, "new_password": "Recuperada2026!"}
+    assert client.post("/api/auth/reset-password", json=payload).status_code == 200
+    assert client.post("/api/auth/reset-password", json=payload).status_code == 400

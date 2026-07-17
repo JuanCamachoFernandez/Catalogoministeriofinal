@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import timedelta
 
 from app.extensions import db
 from app.models import (
@@ -12,6 +12,7 @@ from app.models import (
     Role,
     User,
     UserStatus,
+    bolivia_today,
 )
 
 
@@ -39,20 +40,21 @@ def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_publicar_feria_desactiva_la_anterior(app, client):
+def test_sincronizacion_publica_feria_segun_fechas(app, client):
     with app.app_context():
         admin_id, token = admin_token(client)
+        today = bolivia_today()
         first = Fair(
             nombre="Feria Uno",
             slug="feria-uno",
             lugar="Plaza",
             departamento="La Paz",
             municipio="La Paz",
-            fecha_inicio=date(2026, 1, 1),
-            fecha_fin=date(2026, 1, 2),
-            imagen_portada="/portada-1.jpg",
-            estado=FeriaStatus.PUBLISHED,
-            visible_publicamente=True,
+            fecha_inicio=today,
+            fecha_fin=today + timedelta(days=1),
+            imagen_portada=None,
+            estado=FeriaStatus.DRAFT,
+            visible_publicamente=False,
             created_by=admin_id,
         )
         second = Fair(
@@ -61,9 +63,9 @@ def test_publicar_feria_desactiva_la_anterior(app, client):
             lugar="Campo",
             departamento="Cochabamba",
             municipio="Cochabamba",
-            fecha_inicio=date(2026, 2, 1),
-            fecha_fin=date(2026, 2, 2),
-            imagen_portada="/portada-2.jpg",
+            fecha_inicio=today + timedelta(days=3),
+            fecha_fin=today + timedelta(days=4),
+            imagen_portada=None,
             estado=FeriaStatus.DRAFT,
             visible_publicamente=False,
             created_by=admin_id,
@@ -72,20 +74,16 @@ def test_publicar_feria_desactiva_la_anterior(app, client):
         db.session.commit()
         first_id, second_id = first.id, second.id
 
-    response = client.patch(
-        f"/api/fairs/{second_id}/status",
-        headers=auth(token),
-        json={"status": "PUBLISHED"},
-    )
+    response = client.get("/api/fairs", headers=auth(token))
     assert response.status_code == 200
 
     with app.app_context():
         saved_first = db.session.get(Fair, first_id)
         saved_second = db.session.get(Fair, second_id)
-        assert saved_first.estado == FeriaStatus.DISABLED
-        assert saved_first.visible_publicamente is False
-        assert saved_second.estado == FeriaStatus.PUBLISHED
-        assert saved_second.visible_publicamente is True
+        assert saved_first.estado == FeriaStatus.PUBLISHED
+        assert saved_first.visible_publicamente is True
+        assert saved_second.estado == FeriaStatus.DRAFT
+        assert saved_second.visible_publicamente is False
 
 
 def test_asignar_expositor_a_feria(app, client):
@@ -116,15 +114,16 @@ def test_asignar_expositor_a_feria(app, client):
             municipio="La Paz",
             estado=UserStatus.ACTIVE,
         )
+        today = bolivia_today()
         fair = Fair(
             nombre="Feria",
             slug="feria",
             lugar="Plaza",
             departamento="La Paz",
             municipio="La Paz",
-            fecha_inicio=date(2026, 1, 1),
-            fecha_fin=date(2026, 1, 2),
-            imagen_portada="/portada.jpg",
+            fecha_inicio=today,
+            fecha_fin=today + timedelta(days=1),
+            imagen_portada=None,
             estado=FeriaStatus.DRAFT,
             visible_publicamente=False,
             created_by=admin_id,
