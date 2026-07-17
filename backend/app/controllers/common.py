@@ -13,16 +13,33 @@ from sqlalchemy import select
 from werkzeug.utils import secure_filename
 
 from ..extensions import db
-from ..models import Audit, ProductStatus, Role, User, UserStatus
+from ..models import Audit, CacheState, ProductStatus, Role, User, UserStatus
 from ..utils import slugify
 from ..views import error
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 PUBLIC_CACHE = {}
-PUBLIC_CACHE_TTL_SECONDS = 60
+PUBLIC_CACHE_KEY = "public_catalog"
+
+
+def public_cache_version():
+    state = db.session.scalar(
+        select(CacheState).where(CacheState.key == PUBLIC_CACHE_KEY)
+    )
+    return state.version if state else 0
 
 
 def invalidate_public_cache():
+    state = db.session.scalar(
+        select(CacheState)
+        .where(CacheState.key == PUBLIC_CACHE_KEY)
+        .with_for_update()
+    )
+    if state:
+        state.version += 1
+    else:
+        db.session.add(CacheState(key=PUBLIC_CACHE_KEY, version=1))
+    db.session.commit()
     PUBLIC_CACHE.clear()
 
 
@@ -30,15 +47,16 @@ def get_public_cache(key):
     cached = PUBLIC_CACHE.get(key)
     if not cached:
         return None
-    expires_at, value = cached
-    if expires_at <= monotonic():
+    version, expires_at, value = cached
+    if version != public_cache_version() or expires_at <= monotonic():
         PUBLIC_CACHE.pop(key, None)
         return None
     return value
 
 
 def set_public_cache(key, value):
-    PUBLIC_CACHE[key] = (monotonic() + PUBLIC_CACHE_TTL_SECONDS, value)
+    ttl = current_app.config["PUBLIC_CACHE_TTL_SECONDS"]
+    PUBLIC_CACHE[key] = (public_cache_version(), monotonic() + ttl, value)
     return value
 
 
@@ -117,7 +135,8 @@ def product_from_payload(product, data, exhibitor_id=None):
         product.exhibitor_id = exhibitor_id
     if "category_id" in data:
         try:
-            product.category_id = uuid.UUID(data.get("category_id", ""))
+            value = data.get("category_id")
+            product.category_id = value if isinstance(value, uuid.UUID) else uuid.UUID(value or "")
         except (ValueError, TypeError) as exc:
             raise ValueError("Categoría inválida") from exc
     if "nombre" in data:

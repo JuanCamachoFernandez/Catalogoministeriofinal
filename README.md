@@ -46,6 +46,5 @@ npm run dev
 - [Brevo](docs/CONFIGURACION_BREVO.md)
 - [API](docs/API.md)
 - [Arquitectura MVC](docs/ARQUITECTURA_MVC.md)
-- [Pruebas con Postman](postman/README.md)
 - [Seguridad](docs/SEGURIDAD.md)
 - [Archivos configurables](docs/ARCHIVOS_CONFIGURABLES.md)

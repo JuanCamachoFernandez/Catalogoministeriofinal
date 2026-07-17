@@ -16,37 +16,20 @@ from ..models import (
     UserStatus,
 )
 from ..utils import normalize_whatsapp
-from ..views import error, fair_json, product_json
+from ..views import error, fair_json, paginate, product_json, validate_json, validated_json
+from ..views.product_view import WhatsAppSchema
 from .fair_controller import sync_fair_lifecycle
 from .common import get_public_cache, set_public_cache
 
 public_bp = Blueprint("public", __name__)
 
 
-def active_fair_query():
-    return select(Fair).where(
-        Fair.estado == FeriaStatus.PUBLISHED,
-        Fair.visible_publicamente.is_(True),
-        Fair.deleted_at.is_(None),
-    )
-
-
 def public_exhibitor_rows(fair_id):
-    query = (
-        select(Exhibitor, FairExhibitor)
-        .join(FairExhibitor, FairExhibitor.exhibitor_id == Exhibitor.id)
-        .where(
-            FairExhibitor.fair_id == fair_id,
-            FairExhibitor.estado == AssignmentStatus.AUTHORIZED,
-            Exhibitor.estado == UserStatus.ACTIVE,
-            Exhibitor.deleted_at.is_(None),
-        )
+    query = FairExhibitor.public_exhibitors_query(
+        fair_id,
+        request.args.get("q", "").strip(),
+        request.args.get("departamento"),
     )
-    term = request.args.get("q", "").strip()
-    if term:
-        query = query.where(Exhibitor.nombre_comercial.ilike(f"%{term}%"))
-    if request.args.get("departamento"):
-        query = query.where(Exhibitor.departamento == request.args["departamento"])
     return db.session.execute(query.order_by(Exhibitor.nombre_comercial)).all()
 
 
@@ -74,14 +57,14 @@ def public_fairs():
     cache_key = ("public_fairs", tuple(sorted(request.args.items())))
     if cached := get_public_cache(cache_key):
         return cached
-    query = active_fair_query()
+    query = Fair.active_query()
     term = request.args.get("q")
     if term:
         query = query.where(Fair.nombre.ilike(f"%{term}%"))
     if request.args.get("departamento"):
         query = query.where(Fair.departamento == request.args["departamento"])
-    items = db.session.scalars(query.order_by(Fair.fecha_inicio.desc())).all()
-    return set_public_cache(cache_key, {"items": [fair_json(item) for item in items]})
+    payload = paginate(query.order_by(Fair.fecha_inicio.desc()), fair_json)
+    return set_public_cache(cache_key, payload)
 
 
 @public_bp.get("/public/active-fair")
@@ -90,7 +73,7 @@ def public_active_fair():
     cache_key = ("active_fair", tuple(sorted(request.args.items())))
     if cached := get_public_cache(cache_key):
         return cached
-    fair = db.session.scalar(active_fair_query().order_by(Fair.fecha_inicio.desc()))
+    fair = db.session.scalar(Fair.active_query().order_by(Fair.fecha_inicio.desc()))
     if not fair:
         return error("No existe una feria activa", 404)
     return set_public_cache(cache_key, public_fair_payload(fair))
@@ -102,7 +85,7 @@ def public_fair(slug):
     cache_key = ("fair", slug, tuple(sorted(request.args.items())))
     if cached := get_public_cache(cache_key):
         return cached
-    fair = db.session.scalar(active_fair_query().where(Fair.slug == slug))
+    fair = db.session.scalar(Fair.active_query().where(Fair.slug == slug))
     if not fair:
         return error("Feria no encontrada", 404)
     return set_public_cache(cache_key, public_fair_payload(fair))
@@ -120,35 +103,19 @@ def public_exhibitor(slug, exhibitor_id):
     if cached := get_public_cache(cache_key):
         return cached
     row = db.session.execute(
-        select(Fair, Exhibitor)
-        .join(FairExhibitor, FairExhibitor.fair_id == Fair.id)
-        .join(Exhibitor, Exhibitor.id == FairExhibitor.exhibitor_id)
-        .where(
-            Fair.slug == slug,
-            Fair.estado == FeriaStatus.PUBLISHED,
-            Fair.visible_publicamente.is_(True),
-            FairExhibitor.exhibitor_id == exhibitor_id,
-            FairExhibitor.estado == AssignmentStatus.AUTHORIZED,
-            Exhibitor.estado == UserStatus.ACTIVE,
-            Exhibitor.deleted_at.is_(None),
-        )
+        FairExhibitor.public_exhibitor_query(slug, exhibitor_id)
     ).first()
     if not row:
         return error("Expositor no disponible en esta feria", 404)
     _, exhibitor = row
-    query = select(Product).where(
-        Product.exhibitor_id == exhibitor.id,
-        Product.estado.in_([ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK]),
-        Product.deleted_at.is_(None),
-    )
     term = request.args.get("q", "").strip()
-    if term:
-        query = query.where(Product.nombre.ilike(f"%{term}%"))
+    category_id = None
     if request.args.get("category_id"):
         try:
-            query = query.where(Product.category_id == uuid.UUID(request.args["category_id"]))
+            category_id = uuid.UUID(request.args["category_id"])
         except ValueError:
             return error("Categoría inválida")
+    state = None
     if request.args.get("availability"):
         try:
             state = ProductStatus(request.args["availability"])
@@ -156,21 +123,23 @@ def public_exhibitor(slug, exhibitor_id):
             return error("Disponibilidad inválida")
         if state not in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK):
             return error("Disponibilidad inválida")
-        query = query.where(Product.estado == state)
-    products = db.session.scalars(query.order_by(Product.nombre)).all()
+    query = Product.public_query(exhibitor.id, term, category_id, state)
+    paginated = paginate(query.order_by(Product.nombre), product_json)
     payload = {
         "id": str(exhibitor.id),
         "nombre_comercial": exhibitor.nombre_comercial,
         "descripcion": exhibitor.descripcion,
-        "productos": [product_json(product) for product in products],
+        "productos": paginated["items"],
+        "pagination": paginated["pagination"],
     }
     return set_public_cache(cache_key, payload)
 
 
 @public_bp.post("/public/whatsapp-query")
+@validate_json(WhatsAppSchema())
 def whatsapp_query():
     sync_fair_lifecycle()
-    data = request.get_json() or {}
+    data = validated_json()
     raw_items = data.get("items")
     if raw_items is None:
         raw_items = [
@@ -182,7 +151,8 @@ def whatsapp_query():
     quantities = {}
     try:
         for item in raw_items:
-            product_id = uuid.UUID(item.get("product_id", ""))
+            value = item.get("product_id")
+            product_id = value if isinstance(value, uuid.UUID) else uuid.UUID(value or "")
             quantity = int(item.get("quantity", 1))
             if quantity <= 0:
                 raise ValueError
@@ -190,11 +160,7 @@ def whatsapp_query():
     except (ValueError, TypeError, AttributeError):
         return error("Productos o cantidades inválidos")
     products = db.session.scalars(
-        select(Product).where(
-            Product.id.in_(quantities),
-            Product.estado == ProductStatus.AVAILABLE,
-            Product.deleted_at.is_(None),
-        )
+        Product.available_by_ids_query(quantities)
     ).all()
     if len(products) != len(quantities):
         return error("Algún producto no está disponible")
@@ -204,15 +170,7 @@ def whatsapp_query():
     owner_id = owners.pop()
     exhibitor = db.session.get(Exhibitor, owner_id)
     assignment = db.session.scalar(
-        select(FairExhibitor)
-        .join(Fair)
-        .where(
-            Fair.slug == data.get("fair_slug"),
-            Fair.estado == FeriaStatus.PUBLISHED,
-            Fair.visible_publicamente.is_(True),
-            FairExhibitor.exhibitor_id == owner_id,
-            FairExhibitor.estado == AssignmentStatus.AUTHORIZED,
-        )
+        FairExhibitor.authorized_query(data.get("fair_slug"), owner_id)
     )
     if (
         not assignment

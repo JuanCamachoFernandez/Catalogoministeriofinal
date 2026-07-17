@@ -18,7 +18,21 @@ from ..models import (
     bolivia_today,
 )
 from ..utils import slugify
-from ..views import assignment_json, error, fair_json
+from ..views import (
+    assignment_json,
+    error,
+    fair_json,
+    paginate,
+    validate_json,
+    validated_json,
+)
+from ..views.fair_view import (
+    AssignmentCreateSchema,
+    AssignmentUpdateSchema,
+    FairCreateSchema,
+    FairStatusSchema,
+    FairUpdateSchema,
+)
 from .common import (
     audit,
     current_user,
@@ -46,12 +60,7 @@ def cleanup_fair_images(fair):
 
 def sync_fair_lifecycle(today=None):
     today = today or bolivia_today()
-    fairs = db.session.scalars(
-        select(Fair).where(
-            Fair.deleted_at.is_(None),
-            Fair.estado.notin_([FeriaStatus.FINISHED, FeriaStatus.DISABLED]),
-        )
-    ).all()
+    fairs = db.session.scalars(Fair.lifecycle_query()).all()
     files_to_delete = []
     changed = False
     for fair in fairs:
@@ -82,13 +91,10 @@ def sync_fair_lifecycle(today=None):
 
 def parse_fair_dates(data, fair=None):
     try:
-        start = date.fromisoformat(
-            data.get("fecha_inicio")
-            or (fair.fecha_inicio.isoformat() if fair else "")
-        )
-        end = date.fromisoformat(
-            data.get("fecha_fin") or (fair.fecha_fin.isoformat() if fair else "")
-        )
+        start_value = data.get("fecha_inicio") or (fair.fecha_inicio if fair else None)
+        end_value = data.get("fecha_fin") or (fair.fecha_fin if fair else None)
+        start = start_value if isinstance(start_value, date) else date.fromisoformat(start_value)
+        end = end_value if isinstance(end_value, date) else date.fromisoformat(end_value)
     except (ValueError, TypeError) as exc:
         raise ValueError("Las fechas son obligatorias y deben ser válidas") from exc
     if end < start:
@@ -116,18 +122,16 @@ def unique_fair_slug(name, fair_id=None):
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def list_fairs():
     sync_fair_lifecycle()
-    query = select(Fair).where(Fair.deleted_at.is_(None))
     term = request.args.get("q", "").strip()
     state = request.args.get("estado")
-    if term:
-        query = query.where(Fair.nombre.ilike(f"%{term}%"))
+    parsed_state = None
     if state:
         try:
-            query = query.where(Fair.estado == FeriaStatus(state))
+            parsed_state = FeriaStatus(state)
         except ValueError:
             return error("Estado de feria inválido")
-    fairs = db.session.scalars(query.order_by(Fair.fecha_inicio.desc())).all()
-    return {"items": [fair_json(fair) for fair in fairs]}
+    query = Fair.admin_query(term, parsed_state)
+    return paginate(query.order_by(Fair.fecha_inicio.desc()), fair_json)
 
 
 @fair_bp.get("/fairs/<uuid:fair_id>")
@@ -142,8 +146,9 @@ def get_fair(fair_id):
 
 @fair_bp.post("/fairs")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(FairCreateSchema())
 def create_fair():
-    data = request.get_json() or {}
+    data = validated_json()
     try:
         start, end = parse_fair_dates(data)
         require_managed_upload(data.get("imagen_portada"), "ferias")
@@ -157,6 +162,7 @@ def create_fair():
     )
     if not all(required):
         return error("Nombre y ubicación son obligatorios")
+    Fair.acquire_schedule_lock()
     if Fair.has_overlap(start, end):
         return error("Las fechas se superponen con otra feria", 409)
     fair = Fair(
@@ -185,10 +191,11 @@ def create_fair():
 
 @fair_bp.patch("/fairs/<uuid:fair_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(FairUpdateSchema())
 def update_fair(fair_id):
     sync_fair_lifecycle()
     fair = db.session.get(Fair, fair_id)
-    data = request.get_json() or {}
+    data = validated_json()
     if not fair or fair.deleted_at:
         return error("Feria no encontrada", 404)
     if fair.terminal:
@@ -202,6 +209,7 @@ def update_fair(fair_id):
         return error("Una feria publicada no puede regresar a preparación")
     if fair.estado == FeriaStatus.PUBLISHED and end < today:
         return error("Use la finalización manual para cerrar la feria")
+    Fair.acquire_schedule_lock()
     if Fair.has_overlap(start, end, fair.id):
         return error("Las fechas se superponen con otra feria", 409)
     old_cover = None
@@ -239,6 +247,7 @@ def update_fair(fair_id):
 
 @fair_bp.patch("/fairs/<uuid:fair_id>/status")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(FairStatusSchema())
 def change_fair_status(fair_id):
     sync_fair_lifecycle()
     fair = db.session.get(Fair, fair_id)
@@ -247,7 +256,7 @@ def change_fair_status(fair_id):
     if fair.terminal:
         return error("La feria ya tiene un estado terminal", 409)
     try:
-        status = FeriaStatus((request.get_json() or {}).get("status"))
+        status = FeriaStatus(validated_json()["status"])
     except ValueError:
         return error("Estado de feria inválido")
     if status not in (FeriaStatus.FINISHED, FeriaStatus.DISABLED):
@@ -269,22 +278,20 @@ def list_fair_images(fair_id):
     fair = db.session.get(Fair, fair_id)
     if not fair:
         return error("Feria no encontrada", 404)
-    images = db.session.scalars(
+    query = (
         select(FairImage)
         .where(FairImage.fair_id == fair_id)
         .order_by(FairImage.display_order)
-    ).all()
-    return {
-        "items": [
-            {
-                "id": str(image.id),
-                "url": image.url,
-                "alt_text": image.alt_text,
-                "display_order": image.display_order,
-            }
-            for image in images
-        ]
-    }
+    )
+    return paginate(
+        query,
+        lambda image: {
+            "id": str(image.id),
+            "url": image.url,
+            "alt_text": image.alt_text,
+            "display_order": image.display_order,
+        },
+    )
 
 
 @fair_bp.post("/fairs/<uuid:fair_id>/images")
@@ -340,26 +347,26 @@ def fair_assignments(fair_id):
     fair = db.session.get(Fair, fair_id)
     if not fair:
         return error("Feria no encontrada", 404)
-    assignments = db.session.scalars(
-        select(FairExhibitor)
-        .where(FairExhibitor.fair_id == fair_id)
-        .order_by(FairExhibitor.created_at.desc())
-    ).all()
-    return {"items": [assignment_json(item) for item in assignments]}
+    query = FairExhibitor.for_fair_query(fair_id).order_by(
+        FairExhibitor.created_at.desc()
+    )
+    return paginate(query, assignment_json)
 
 
 @fair_bp.post("/fairs/<uuid:fair_id>/exhibitors")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(AssignmentCreateSchema())
 def assign_exhibitor(fair_id):
     sync_fair_lifecycle()
     fair = db.session.get(Fair, fair_id)
-    data = request.get_json() or {}
+    data = validated_json()
     if not fair or fair.deleted_at:
         return error("Feria no encontrada", 404)
     if fair.terminal:
         return error("No se puede modificar una feria terminal", 409)
     try:
-        exhibitor_id = uuid.UUID(data.get("exhibitor_id", ""))
+        value = data.get("exhibitor_id")
+        exhibitor_id = value if isinstance(value, uuid.UUID) else uuid.UUID(value or "")
     except (ValueError, TypeError):
         return error("Expositor inválido")
     exhibitor = db.session.get(Exhibitor, exhibitor_id)
@@ -398,10 +405,11 @@ def assign_exhibitor(fair_id):
 
 @fair_bp.patch("/fair-exhibitors/<uuid:assignment_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(AssignmentUpdateSchema())
 def update_assignment(assignment_id):
     sync_fair_lifecycle()
     assignment = db.session.get(FairExhibitor, assignment_id)
-    data = request.get_json() or {}
+    data = validated_json()
     if not assignment:
         return error("Asignación no encontrada", 404)
     fair = db.session.get(Fair, assignment.fair_id)

@@ -1,13 +1,17 @@
 from datetime import datetime, timezone
 
 from flask import Blueprint, request
-from flask_jwt_extended import jwt_required
 from sqlalchemy import func, select
 
 from ..extensions import db
 from ..models import Category, Product, Role
 from ..utils import slugify
-from ..views import error
+from ..views import error, paginate, validate_json, validated_json
+from ..views.category_view import (
+    CategoryCreateSchema,
+    CategoryStatusSchema,
+    CategoryUpdateSchema,
+)
 from .common import audit, invalidate_public_cache, roles
 
 category_bp = Blueprint("categories", __name__)
@@ -24,25 +28,25 @@ def category_json(category):
 
 
 @category_bp.get("/categories")
-@jwt_required()
+@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.EXPOSITOR)
 def categories():
-    items = db.session.scalars(
+    query = (
         select(Category)
         .where(Category.estado.is_(True), Category.deleted_at.is_(None))
         .order_by(Category.nombre)
-    ).all()
-    return {"items": [category_json(item) for item in items]}
+    )
+    return paginate(query, category_json)
 
 
 @category_bp.get("/admin/categories")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def admin_categories():
-    items = db.session.scalars(
+    query = (
         select(Category)
         .where(Category.deleted_at.is_(None))
         .order_by(Category.nombre)
-    ).all()
-    return {"items": [category_json(item) for item in items]}
+    )
+    return paginate(query, category_json)
 
 
 @category_bp.get("/categories/<uuid:category_id>")
@@ -56,8 +60,9 @@ def get_category(category_id):
 
 @category_bp.post("/categories")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(CategoryCreateSchema())
 def create_category():
-    data = request.get_json() or {}
+    data = validated_json()
     name = (data.get("nombre") or "").strip()
     if not name:
         return error("El nombre es obligatorio")
@@ -79,9 +84,10 @@ def create_category():
 
 @category_bp.patch("/categories/<uuid:category_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(CategoryUpdateSchema())
 def update_category(category_id):
     category = db.session.get(Category, category_id)
-    data = request.get_json() or {}
+    data = validated_json()
     if not category or category.deleted_at:
         return error("Categoría no encontrada", 404)
     if "nombre" in data:
@@ -107,11 +113,12 @@ def update_category(category_id):
 
 @category_bp.patch("/categories/<uuid:category_id>/status")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(CategoryStatusSchema())
 def category_status(category_id):
     category = db.session.get(Category, category_id)
     if not category or category.deleted_at:
         return error("Categoría no encontrada", 404)
-    category.estado = bool((request.get_json() or {}).get("active"))
+    category.estado = validated_json()["active"]
     audit("CAMBIAR_ESTADO", "Categoria", category.id)
     db.session.commit()
     invalidate_public_cache()

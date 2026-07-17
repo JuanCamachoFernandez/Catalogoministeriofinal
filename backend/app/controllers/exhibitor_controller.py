@@ -16,7 +16,12 @@ from ..models import (
     UserStatus,
 )
 from ..utils import normalize_whatsapp, temporary_password, valid_gmail
-from ..views import error, exhibitor_json
+from ..views import error, exhibitor_json, paginate, validate_json, validated_json
+from ..views.exhibitor_view import (
+    ExhibitorCreateSchema,
+    ExhibitorStatusSchema,
+    ExhibitorUpdateSchema,
+)
 from .common import (
     audit,
     current_user,
@@ -85,23 +90,15 @@ def exhibitor_types():
 @exhibitor_bp.get("/exhibitors")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def list_exhibitors():
-    query = select(Exhibitor).where(Exhibitor.deleted_at.is_(None))
     term = request.args.get("q", "").strip()
-    if term:
-        query = query.where(
-            (Exhibitor.nombre_comercial.ilike(f"%{term}%"))
-            | (Exhibitor.correo.ilike(f"%{term}%"))
-            | (Exhibitor.numero_documento.ilike(f"%{term}%"))
-        )
-    if request.args.get("departamento"):
-        query = query.where(Exhibitor.departamento == request.args["departamento"])
+    state = None
     if request.args.get("estado"):
         try:
-            query = query.where(Exhibitor.estado == UserStatus(request.args["estado"]))
+            state = UserStatus(request.args["estado"])
         except ValueError:
             return error("Estado inválido")
-    items = db.session.scalars(query.order_by(Exhibitor.created_at.desc())).all()
-    return {"items": [exhibitor_json(item) for item in items]}
+    query = Exhibitor.admin_query(term, request.args.get("departamento"), state)
+    return paginate(query.order_by(Exhibitor.created_at.desc()), exhibitor_json)
 
 
 @exhibitor_bp.get("/exhibitors/<uuid:exhibitor_id>")
@@ -115,8 +112,9 @@ def get_exhibitor(exhibitor_id):
 
 @exhibitor_bp.post("/exhibitors")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(ExhibitorCreateSchema())
 def create_exhibitor():
-    data = request.get_json() or {}
+    data = validated_json()
     email = (data.get("correo") or "").lower().strip()
     type_ids = data.get("type_ids") or []
     if not valid_gmail(email):
@@ -136,7 +134,10 @@ def create_exhibitor():
         document_type = DocumentType(data.get("tipo_documento", "CI"))
         if data.get("logo"):
             require_managed_upload(data.get("logo"), "logos")
-        parsed_types = [uuid.UUID(value) for value in type_ids]
+        parsed_types = [
+            value if isinstance(value, uuid.UUID) else uuid.UUID(value)
+            for value in type_ids
+        ]
     except (ValueError, TypeError) as exc:
         return error(str(exc) or "Datos inválidos")
     required = [
@@ -216,12 +217,13 @@ def create_exhibitor():
 
 @exhibitor_bp.patch("/exhibitors/<uuid:exhibitor_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(ExhibitorUpdateSchema())
 def update_exhibitor(exhibitor_id):
     exhibitor = db.session.get(Exhibitor, exhibitor_id)
     if not exhibitor or exhibitor.deleted_at:
         return error("Expositor no encontrado", 404)
     try:
-        old_logo = update_exhibitor_fields(exhibitor, request.get_json() or {})
+        old_logo = update_exhibitor_fields(exhibitor, validated_json())
     except ValueError as exc:
         return error(str(exc))
     audit("EDITAR", "Expositor", exhibitor.id, "Expositor actualizado")
@@ -234,12 +236,13 @@ def update_exhibitor(exhibitor_id):
 
 @exhibitor_bp.patch("/exhibitors/<uuid:exhibitor_id>/status")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(ExhibitorStatusSchema())
 def exhibitor_status(exhibitor_id):
     exhibitor = db.session.get(Exhibitor, exhibitor_id)
     if not exhibitor or exhibitor.deleted_at:
         return error("Expositor no encontrado", 404)
     try:
-        status = UserStatus((request.get_json() or {}).get("status"))
+        status = UserStatus(validated_json()["status"])
     except ValueError:
         return error("Estado inválido")
     exhibitor.estado = status
@@ -277,9 +280,10 @@ def own_profile():
 
 @exhibitor_bp.patch("/exhibitor/profile")
 @roles(Role.EXPOSITOR)
+@validate_json(ExhibitorUpdateSchema())
 def update_own_profile():
     exhibitor = current_user().exhibitor
-    data = request.get_json() or {}
+    data = validated_json()
     allowed = {
         key: value
         for key, value in data.items()

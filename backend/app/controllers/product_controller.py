@@ -14,7 +14,12 @@ from ..models import (
     ProductStatus,
     Role,
 )
-from ..views import error, product_json
+from ..views import error, paginate, product_json, validate_json, validated_json
+from ..views.product_view import (
+    ProductCreateSchema,
+    ProductImageUpdateSchema,
+    ProductUpdateSchema,
+)
 from .common import (
     audit,
     current_user,
@@ -107,19 +112,15 @@ def delete_product_record(product):
 @product_bp.get("/products")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def list_products():
-    query = select(Product).where(Product.deleted_at.is_(None))
+    exhibitor_id = None
     if request.args.get("exhibitor_id"):
         try:
-            query = query.where(
-                Product.exhibitor_id == uuid.UUID(request.args["exhibitor_id"])
-            )
+            exhibitor_id = uuid.UUID(request.args["exhibitor_id"])
         except ValueError:
             return error("Expositor inválido")
     term = request.args.get("q", "").strip()
-    if term:
-        query = query.where(Product.nombre.ilike(f"%{term}%"))
-    products = db.session.scalars(query.order_by(Product.created_at.desc())).all()
-    return {"items": [product_json(product) for product in products]}
+    query = Product.admin_query(exhibitor_id, term)
+    return paginate(query.order_by(Product.created_at.desc()), product_json)
 
 
 @product_bp.get("/products/<uuid:product_id>")
@@ -131,10 +132,12 @@ def get_admin_product(product_id):
 
 @product_bp.post("/products")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(ProductCreateSchema())
 def create_admin_product():
-    data = request.get_json() or {}
+    data = validated_json()
     try:
-        exhibitor_id = uuid.UUID(data.get("exhibitor_id", ""))
+        value = data.get("exhibitor_id")
+        exhibitor_id = value if isinstance(value, uuid.UUID) else uuid.UUID(value or "")
         product = product_from_payload(
             Product(estado=ProductStatus.AVAILABLE), data, exhibitor_id
         )
@@ -155,12 +158,13 @@ def create_admin_product():
 
 @product_bp.patch("/products/<uuid:product_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@validate_json(ProductUpdateSchema())
 def update_admin_product(product_id):
     product = product_or_404(product_id)
     if not product:
         return error("Producto no encontrado", 404)
     try:
-        product_from_payload(product, request.get_json() or {})
+        product_from_payload(product, validated_json())
         validate_product_references(product)
     except ValueError as exc:
         return error(str(exc))
@@ -184,12 +188,8 @@ def delete_admin_product(product_id):
 @roles(Role.EXPOSITOR)
 def own_products():
     exhibitor = current_user().exhibitor
-    products = db.session.scalars(
-        select(Product).where(
-            Product.exhibitor_id == exhibitor.id, Product.deleted_at.is_(None)
-        )
-    ).all()
-    return {"items": [product_json(product) for product in products]}
+    query = Product.owned_query(exhibitor.id).order_by(Product.created_at.desc())
+    return paginate(query, product_json)
 
 
 @product_bp.get("/exhibitor/products/<uuid:product_id>")
@@ -201,9 +201,10 @@ def get_own_product(product_id):
 
 @product_bp.post("/exhibitor/products")
 @roles(Role.EXPOSITOR)
+@validate_json(ProductCreateSchema())
 def create_product():
     exhibitor = current_user().exhibitor
-    data = request.get_json() or {}
+    data = validated_json()
     try:
         product = product_from_payload(
             Product(estado=ProductStatus.AVAILABLE), data, exhibitor.id
@@ -223,12 +224,13 @@ def create_product():
 
 @product_bp.patch("/exhibitor/products/<uuid:product_id>")
 @roles(Role.EXPOSITOR)
+@validate_json(ProductUpdateSchema())
 def update_own_product(product_id):
     product = product_or_404(product_id, current_user().exhibitor.id)
     if not product:
         return error("Producto no encontrado", 404)
     try:
-        product_from_payload(product, request.get_json() or {})
+        product_from_payload(product, validated_json())
         validate_product_references(product)
     except ValueError as exc:
         return error(str(exc))
@@ -273,6 +275,7 @@ def add_own_product_image(product_id):
 
 @product_bp.patch("/product-images/<uuid:image_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.EXPOSITOR)
+@validate_json(ProductImageUpdateSchema())
 def update_product_image(image_id):
     image = db.session.get(ProductImage, image_id)
     if not image:
@@ -281,7 +284,7 @@ def update_product_image(image_id):
     user = current_user()
     if user.role == Role.EXPOSITOR and product.exhibitor_id != user.exhibitor.id:
         return error("No autorizado", 403)
-    data = request.get_json() or {}
+    data = validated_json()
     if data.get("is_cover"):
         for other in db.session.scalars(
             select(ProductImage).where(ProductImage.product_id == product.id)

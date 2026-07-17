@@ -1,4 +1,4 @@
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, select
 
 from ..extensions import db
 from .base import TimestampMixin, uid
@@ -31,6 +31,21 @@ class Exhibitor(TimestampMixin, db.Model):
     )
     deleted_at = db.Column(db.DateTime(timezone=True))
     user = db.relationship("User", backref=db.backref("exhibitor", uselist=False))
+
+    @classmethod
+    def admin_query(cls, term=None, department=None, status=None):
+        query = select(cls).where(cls.deleted_at.is_(None))
+        if term:
+            query = query.where(
+                cls.nombre_comercial.ilike(f"%{term}%")
+                | cls.correo.ilike(f"%{term}%")
+                | cls.numero_documento.ilike(f"%{term}%")
+            )
+        if department:
+            query = query.where(cls.departamento == department)
+        if status:
+            query = query.where(cls.estado == status)
+        return query
 
 
 class ExhibitorType(TimestampMixin, db.Model):

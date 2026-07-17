@@ -1,4 +1,5 @@
 from argon2 import PasswordHasher
+from sqlalchemy import select
 
 from ..extensions import db
 from .base import TimestampMixin, now, uid
@@ -36,6 +37,20 @@ class User(TimestampMixin, db.Model):
             return ph.verify(self.password_hash, password)
         except Exception:
             return False
+
+    @classmethod
+    def admin_query(cls, term=None):
+        query = select(cls).where(
+            cls.role.in_([Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO]),
+            cls.deleted_at.is_(None),
+        )
+        if term:
+            query = query.where(
+                cls.first_name.ilike(f"%{term}%")
+                | cls.last_name.ilike(f"%{term}%")
+                | cls.email.ilike(f"%{term}%")
+            )
+        return query
 
 
 class AdminProfile(db.Model):

@@ -1,4 +1,4 @@
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, select
 
 from ..extensions import db
 from .base import TimestampMixin, now, uid
@@ -40,6 +40,44 @@ class Product(TimestampMixin, db.Model):
     destacado = db.Column(db.Boolean, default=False, nullable=False)
     deleted_at = db.Column(db.DateTime(timezone=True))
     __table_args__ = (UniqueConstraint("exhibitor_id", "slug"),)
+
+    @classmethod
+    def admin_query(cls, exhibitor_id=None, term=None):
+        query = select(cls).where(cls.deleted_at.is_(None))
+        if exhibitor_id:
+            query = query.where(cls.exhibitor_id == exhibitor_id)
+        if term:
+            query = query.where(cls.nombre.ilike(f"%{term}%"))
+        return query
+
+    @classmethod
+    def owned_query(cls, exhibitor_id):
+        return select(cls).where(
+            cls.exhibitor_id == exhibitor_id, cls.deleted_at.is_(None)
+        )
+
+    @classmethod
+    def public_query(cls, exhibitor_id, term=None, category_id=None, status=None):
+        query = select(cls).where(
+            cls.exhibitor_id == exhibitor_id,
+            cls.estado.in_([ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK]),
+            cls.deleted_at.is_(None),
+        )
+        if term:
+            query = query.where(cls.nombre.ilike(f"%{term}%"))
+        if category_id:
+            query = query.where(cls.category_id == category_id)
+        if status:
+            query = query.where(cls.estado == status)
+        return query
+
+    @classmethod
+    def available_by_ids_query(cls, product_ids):
+        return select(cls).where(
+            cls.id.in_(product_ids),
+            cls.estado == ProductStatus.AVAILABLE,
+            cls.deleted_at.is_(None),
+        )
 
 
 class ProductImage(db.Model):

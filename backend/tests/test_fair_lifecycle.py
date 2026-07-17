@@ -183,3 +183,28 @@ def test_productos_se_derivan_y_revocacion_los_retira(app, client):
         f"/api/public/fairs/feria-activa/exhibitors/{exhibitor_id}"
     )
     assert hidden.status_code == 404
+
+
+def test_feria_terminal_bloquea_cambios_de_asignacion(app, client):
+    with app.app_context():
+        today = bolivia_today()
+        _, _, _, fair, assignment, _ = create_catalog(today)
+        fair_id, assignment_id = fair.id, assignment.id
+
+    login = client.post(
+        "/api/auth/login",
+        json={"login": "admin", "password": "Temporal2026!"},
+    )
+    headers = {"Authorization": f"Bearer {login.json['access_token']}"}
+    closed = client.patch(
+        f"/api/fairs/{fair_id}/status",
+        headers=headers,
+        json={"status": "FINISHED"},
+    )
+    assert closed.status_code == 200
+    update = client.patch(
+        f"/api/fair-exhibitors/{assignment_id}",
+        headers=headers,
+        json={"numero_stand": "B2"},
+    )
+    assert update.status_code == 409

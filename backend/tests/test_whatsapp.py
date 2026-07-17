@@ -1,4 +1,5 @@
 from datetime import timedelta
+from urllib.parse import unquote
 from app.extensions import db
 from app.models import (
     AssignmentStatus, Category, DocumentType, Exhibitor, Fair,
@@ -32,3 +33,27 @@ def test_consulta_usa_whatsapp_del_propietario(app,client):
 def test_consulta_rechaza_producto_inexistente(client):
     response=client.post("/api/public/whatsapp-query",json={"fair_slug":"feria-test","product_ids":["00000000-0000-0000-0000-000000000001"]})
     assert response.status_code==400
+
+
+def test_consulta_incluye_cantidad_y_rechaza_cero(app, client):
+    with app.app_context():
+        product = setup_catalog()
+        product_id = str(product.id)
+    response = client.post(
+        "/api/public/whatsapp-query",
+        json={
+            "fair_slug": "feria-test",
+            "items": [{"product_id": product_id, "quantity": 3}],
+        },
+    )
+    assert response.status_code == 200
+    assert "cantidad: 3" in unquote(response.json["url"])
+
+    invalid = client.post(
+        "/api/public/whatsapp-query",
+        json={
+            "fair_slug": "feria-test",
+            "items": [{"product_id": product_id, "quantity": 0}],
+        },
+    )
+    assert invalid.status_code == 400

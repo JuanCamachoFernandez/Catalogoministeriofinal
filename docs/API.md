@@ -21,6 +21,7 @@ Base local: `http://localhost:5000/api`. Las rutas privadas requieren JWT y resp
 | GET/POST | `/admin/users` | Listar y crear administradores |
 | GET/PATCH | `/admin/users/:id` | Consultar y editar administrador |
 | PATCH | `/admin/users/:id/status` | Cambiar estado |
+| DELETE | `/admin/users/:id` | Eliminar lógicamente un administrador |
 | POST | `/admin/users/:id/reset-password` | Restablecimiento administrativo |
 | GET/POST | `/exhibitors` | Listar y crear expositores |
 | GET/PATCH/DELETE | `/exhibitors/:id` | Consultar, editar o eliminar lógicamente |
@@ -81,10 +82,17 @@ WhatsApp recibe:
 
 El backend deriva el teléfono, exige productos disponibles de un solo expositor y valida su autorización en la feria activa.
 
+## Paginación
+
+Los listados aceptan `page` y `per_page` (máximo 100), además de los filtros de cada recurso. La respuesta conserva `items` y agrega `pagination` con `page`, `per_page`, `pages`, `total`, `has_next` y `has_prev`.
+
 ## Archivos y comandos
 
 - `POST /uploads` recibe `multipart/form-data` con `folder` y `file`.
 - `flask sync-fairs` actualiza estados y limpia imágenes huérfanas.
+- `flask sync-fairs` también elimina tokens revocados que ya expiraron.
+- `flask reset-test-db --yes` reconstruye exclusivamente una base PostgreSQL terminada en `_test`.
+- `flask seed-test-data` carga catálogos y un administrador en esa base de prueba.
 - Las imágenes de feria deben ser archivos locales bajo `/uploads/ferias`.
 
-Los errores mantienen el formato `{"error": "mensaje"}`. La colección completa se encuentra en `postman/`.
+Los errores mantienen el formato `{"error": "mensaje"}` y pueden incluir `details` con errores por campo.

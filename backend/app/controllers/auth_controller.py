@@ -13,7 +13,13 @@ from sqlalchemy import select
 from ..email_service import BrevoEmailService, EmailDeliveryError
 from ..extensions import db
 from ..models import PasswordRecovery, RevokedToken, User, UserStatus
-from ..views import error, user_json
+from ..views import error, user_json, validate_json, validated_json
+from ..views.auth_view import (
+    ChangePasswordSchema,
+    ForgotPasswordSchema,
+    LoginSchema,
+    ResetPasswordSchema,
+)
 from .common import audit, current_user
 
 auth_bp = Blueprint("auth", __name__)
@@ -31,8 +37,9 @@ def strong_password(value):
 
 
 @auth_bp.post("/auth/login")
+@validate_json(LoginSchema())
 def login():
-    data = request.get_json() or {}
+    data = validated_json()
     value = (data.get("login") or "").lower().strip()
     user = db.session.scalar(
         select(User).where((User.email == value) | (User.username == value))
@@ -59,16 +66,21 @@ def login():
 @jwt_required()
 def me():
     user = current_user()
-    return user_json(user) if user else error("No autorizado", 401)
+    if not user or user.deleted_at or user.status != UserStatus.ACTIVE:
+        return error("Cuenta no disponible", 403)
+    return user_json(user)
 
 
 @auth_bp.post("/auth/change-password")
 @jwt_required()
+@validate_json(ChangePasswordSchema())
 def change_password():
     user = current_user()
-    data = request.get_json() or {}
+    data = validated_json()
     new_password = data.get("new_password", "")
-    if not user or not user.check_password(data.get("current_password", "")):
+    if not user or user.deleted_at or user.status != UserStatus.ACTIVE:
+        return error("Cuenta no disponible", 403)
+    if not user.check_password(data.get("current_password", "")):
         return error("La contraseña actual no es correcta")
     if not strong_password(new_password):
         return error("La contraseña no cumple los requisitos")
@@ -103,8 +115,9 @@ def logout():
 
 
 @auth_bp.post("/auth/forgot-password")
+@validate_json(ForgotPasswordSchema())
 def forgot_password():
-    data = request.get_json() or {}
+    data = validated_json()
     value = (data.get("email") or data.get("login") or "").lower().strip()
     user = db.session.scalar(
         select(User).where((User.email == value) | (User.username == value))
@@ -133,8 +146,9 @@ def forgot_password():
 
 
 @auth_bp.post("/auth/reset-password")
+@validate_json(ResetPasswordSchema())
 def reset_password():
-    data = request.get_json() or {}
+    data = validated_json()
     token = data.get("token") or ""
     password = data.get("new_password") or ""
     if not token or not strong_password(password):

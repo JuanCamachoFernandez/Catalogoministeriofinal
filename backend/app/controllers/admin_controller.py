@@ -20,7 +20,8 @@ from ..models import (
     UserStatus,
 )
 from ..utils import temporary_password, valid_gmail
-from ..views import admin_user_json, error
+from ..views import admin_user_json, error, paginate, validate_json, validated_json
+from ..views.admin_view import AdminCreateSchema, AdminUpdateSchema, UserStatusSchema
 from .auth_controller import strong_password
 from .common import audit, current_user, roles, unique_username
 
@@ -51,13 +52,7 @@ def admin_dashboard():
     count = lambda model, *conditions: db.session.scalar(
         select(func.count()).select_from(model).where(*conditions)
     ) or 0
-    active = db.session.scalar(
-        select(Fair).where(
-            Fair.estado == FeriaStatus.PUBLISHED,
-            Fair.visible_publicamente.is_(True),
-            Fair.deleted_at.is_(None),
-        )
-    )
+    active = db.session.scalar(Fair.active_query())
     audits = db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(8)).all()
     return {
         "stats": {
@@ -103,19 +98,9 @@ def admin_dashboard():
 @admin_bp.get("/admin/users")
 @roles(Role.SUPERADMIN)
 def list_admin_users():
-    query = select(User).where(
-        User.role.in_([Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO]),
-        User.deleted_at.is_(None),
-    )
     term = request.args.get("q", "").strip()
-    if term:
-        query = query.where(
-            (User.first_name.ilike(f"%{term}%"))
-            | (User.last_name.ilike(f"%{term}%"))
-            | (User.email.ilike(f"%{term}%"))
-        )
-    users = db.session.scalars(query.order_by(User.created_at.desc())).all()
-    return {"items": [admin_user_json(user) for user in users]}
+    query = User.admin_query(term)
+    return paginate(query.order_by(User.created_at.desc()), admin_user_json)
 
 
 @admin_bp.get("/admin/users/<uuid:user_id>")
@@ -129,8 +114,9 @@ def get_admin_user(user_id):
 
 @admin_bp.post("/admin/users")
 @roles(Role.SUPERADMIN)
+@validate_json(AdminCreateSchema())
 def create_admin_user():
-    data = request.get_json() or {}
+    data = validated_json()
     email = (data.get("email") or "").lower().strip()
     try:
         role = Role(data.get("role", "ADMIN_VICEMINISTERIO"))
@@ -181,9 +167,10 @@ def create_admin_user():
 
 @admin_bp.patch("/admin/users/<uuid:user_id>")
 @roles(Role.SUPERADMIN)
+@validate_json(AdminUpdateSchema())
 def update_admin_user(user_id):
     user = db.session.get(User, user_id)
-    data = request.get_json() or {}
+    data = validated_json()
     if not user or user.deleted_at or user.role == Role.EXPOSITOR:
         return error("Administrador no encontrado", 404)
     if "email" in data:
@@ -210,13 +197,14 @@ def update_admin_user(user_id):
 
 @admin_bp.patch("/admin/users/<uuid:user_id>/status")
 @roles(Role.SUPERADMIN)
+@validate_json(UserStatusSchema())
 def change_admin_status(user_id):
     target = db.session.get(User, user_id)
     actor = current_user()
     if not target or target.role == Role.EXPOSITOR:
         return error("Administrador no encontrado", 404)
     try:
-        new_status = UserStatus((request.get_json() or {}).get("status"))
+        new_status = UserStatus(validated_json()["status"])
     except ValueError:
         return error("Estado inválido")
     if target.id == actor.id and new_status != UserStatus.ACTIVE:
@@ -237,6 +225,32 @@ def change_admin_status(user_id):
     audit("CAMBIAR_ESTADO", "Usuario", target.id, f"Estado {new_status.value}")
     db.session.commit()
     return {"message": "Estado actualizado", "data": admin_user_json(target)}
+
+
+@admin_bp.delete("/admin/users/<uuid:user_id>")
+@roles(Role.SUPERADMIN)
+def delete_admin_user(user_id):
+    target = db.session.get(User, user_id)
+    actor = current_user()
+    if not target or target.deleted_at or target.role == Role.EXPOSITOR:
+        return error("Administrador no encontrado", 404)
+    if target.id == actor.id:
+        return error("No puede eliminar su propia cuenta", 409)
+    if target.role == Role.SUPERADMIN:
+        active = db.session.scalar(
+            select(func.count()).select_from(User).where(
+                User.role == Role.SUPERADMIN,
+                User.status == UserStatus.ACTIVE,
+                User.deleted_at.is_(None),
+            )
+        )
+        if active <= 1:
+            return error("No puede eliminar al último SUPERADMIN activo", 409)
+    target.deleted_at = datetime.now(timezone.utc)
+    target.status = UserStatus.INACTIVE
+    audit("ELIMINAR", "Usuario", target.id, "Eliminación lógica de administrador")
+    db.session.commit()
+    return "", 204
 
 
 @admin_bp.post("/admin/users/<uuid:user_id>/reset-password")
@@ -263,17 +277,14 @@ def admin_reset_password(user_id):
 @admin_bp.get("/audit")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def list_audit():
-    items = db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(200)).all()
-    return {
-        "items": [
-            {
-                "id": str(item.id),
-                "accion": item.accion,
-                "entidad": item.entidad,
-                "entidad_id": str(item.entidad_id) if item.entidad_id else None,
-                "descripcion": item.descripcion,
-                "created_at": item.created_at.isoformat(),
-            }
-            for item in items
-        ]
-    }
+    def serialize(item):
+        return {
+            "id": str(item.id),
+            "accion": item.accion,
+            "entidad": item.entidad,
+            "entidad_id": str(item.entidad_id) if item.entidad_id else None,
+            "descripcion": item.descripcion,
+            "created_at": item.created_at.isoformat(),
+        }
+
+    return paginate(select(Audit).order_by(Audit.created_at.desc()), serialize)

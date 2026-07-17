@@ -10,6 +10,7 @@ from .enums import (
 from .exhibitor import Exhibitor, ExhibitorType, ExhibitorTypeLink
 from .fair import Fair, FairExhibitor, FairImage, bolivia_today
 from .product import Category, Product, ProductImage
+from .system import CacheState
 from .user import AdminProfile, PasswordRecovery, RevokedToken, User
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "AssignmentStatus",
     "Audit",
     "Category",
+    "CacheState",
     "DocumentType",
     "Exhibitor",
     "ExhibitorType",

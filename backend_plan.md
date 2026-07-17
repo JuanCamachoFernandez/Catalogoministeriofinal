@@ -1,4 +1,4 @@
-# Plan backend MVC, ferias automáticas y validación Postman
+# Plan backend MVC, ferias automáticas
 
   ## Resumen
 
@@ -95,32 +95,14 @@
   - Incorporar paginación, búsqueda y filtros públicos.
   - Añadir caché backend con invalidación al cambiar ferias, asignaciones, expositores, productos o imágenes.
 
-  ## 4. Pruebas automáticas y Postman
+  ## 4. Pruebas automaticas
 
-  - Mantener pruebas rápidas con SQLite para reglas aisladas.
-  - Añadir pruebas de integración con una base PostgreSQL separada.
-  - Ejecutar migraciones desde cero sobre PostgreSQL de pruebas antes de validar endpoints.
-  - Usar un directorio temporal para probar cargas y eliminaciones físicas.
-  - Añadir comandos de semilla y reinicio que solo funcionen cuando la base termine en _test.
-  - Cubrir con pytest:
-      - Roles, propiedad de datos y JWT.
-      - Recuperación de contraseña.
-      - Límites de fechas y transiciones automáticas.
-      - Solapamiento de ferias.
-      - Irreversibilidad de estados terminales.
-      - Eliminación segura de imágenes.
-      - Productos derivados y revocación de expositores.
-      - WhatsApp con cantidades.
-      - Caché e invalidación.
-      - CRUD y errores de validación.
+  - Mantener pruebas rapidas con SQLite para reglas aisladas.
+  - Ejecutar migraciones desde cero sobre una base PostgreSQL separada terminada en `_test`.
+  - Cubrir roles, propiedad, JWT, recuperacion, fechas, estados terminales, imagenes, productos derivados, WhatsApp, cache, CRUD y validacion.
+  - Proteger los comandos de reinicio y semilla para que no puedan operar sobre la base normal.
 
-  postman/
-  ├── CatalogoMinisterio.postman_collection.json
-  ├── CatalogoMinisterio.test.postman_environment.json
-  └── README.md
-
-  La colección incluirá todos los endpoints organizados por módulo. Los flujos importantes quedarán automatizados y visibles:
-
+  ## 5. Endpoints
   1. Estado de API e inicio de sesión.
   2. Creación de categoría, expositor y producto.
   3. Subida de portada y creación de feria.
@@ -132,12 +114,6 @@
   9. Finalización de feria y desaparición del catálogo.
   10. Verificación de que las imágenes fueron retiradas.
   11. Casos negativos de permisos, propiedad y validación.
-
-  - La colección capturará tokens, IDs y slugs automáticamente en variables.
-  - El entorno no contendrá secretos ni credenciales reales.
-  - Postman se ejecutará únicamente contra PostgreSQL de pruebas.
-  - Se documentarán los pasos para reiniciar la base, iniciar Flask, importar la colección y ejecutar el flujo.
-  - Las mismas pruebas críticas podrán ejecutarse por consola con Newman o Postman CLI cuando esté disponible.
 
   ## Supuestos fijados
 
