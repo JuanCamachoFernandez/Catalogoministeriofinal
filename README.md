@@ -48,3 +48,5 @@ npm run dev
 - [Arquitectura MVC](docs/ARQUITECTURA_MVC.md)
 - [Seguridad](docs/SEGURIDAD.md)
 - [Archivos configurables](docs/ARCHIVOS_CONFIGURABLES.md)
+
+holis
