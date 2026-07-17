@@ -17,3 +17,4 @@ class Config:
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
     UPLOAD_FOLDER = str(BASE_DIR / os.getenv("UPLOAD_FOLDER", "uploads"))
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 10 * 1024 * 1024))
+    PUBLIC_CACHE_TTL_SECONDS = int(os.getenv("PUBLIC_CACHE_TTL_SECONDS", 60))

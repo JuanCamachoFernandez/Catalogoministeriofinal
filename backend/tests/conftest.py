@@ -10,7 +10,8 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI="sqlite+pysqlite:///:memory:"
 
 @pytest.fixture
-def app():
+def app(tmp_path):
+    TestConfig.UPLOAD_FOLDER = str(tmp_path / "uploads")
     app=create_app(TestConfig)
     with app.app_context():
         db.create_all()

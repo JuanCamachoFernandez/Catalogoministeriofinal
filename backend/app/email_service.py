@@ -1,4 +1,5 @@
 """Envío transaccional mediante la API HTTP de Brevo; no usa SMTP."""
+
 import json
 import os
 from urllib.error import HTTPError, URLError
@@ -35,7 +36,7 @@ class BrevoEmailService:
                 "htmlContent": html_content,
             }
         ).encode("utf-8")
-        request = Request(
+        brevo_request = Request(
             self.endpoint,
             data=payload,
             method="POST",
@@ -46,12 +47,14 @@ class BrevoEmailService:
             },
         )
         try:
-            with urlopen(request, timeout=15) as response:
+            with urlopen(brevo_request, timeout=15) as response:
                 result = json.loads(response.read().decode("utf-8"))
                 return {"sent": True, "message_id": result.get("messageId")}
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise EmailDeliveryError(f"Brevo rechazó el envío ({exc.code}): {detail}") from exc
+            raise EmailDeliveryError(
+                f"Brevo rechazó el envío ({exc.code}): {detail}"
+            ) from exc
         except URLError as exc:
             raise EmailDeliveryError("No se pudo conectar con la API de Brevo") from exc
 
@@ -71,4 +74,14 @@ class BrevoEmailService:
             name,
             "Contraseña actualizada",
             f"<p>Hola {name},</p><p>Su contraseña fue actualizada correctamente.</p>",
+        )
+
+    def send_password_reset(self, email, name, reset_url):
+        return self.send(
+            email,
+            name,
+            "Recuperación de contraseña",
+            f"<p>Hola {name},</p><p>Use el siguiente enlace para restablecer "
+            f"su contraseña:</p><p><a href=\"{reset_url}\">Restablecer contraseña</a></p>"
+            "<p>El enlace vence en 30 minutos y solo puede utilizarse una vez.</p>",
         )

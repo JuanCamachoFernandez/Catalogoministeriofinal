@@ -34,3 +34,16 @@ npm run test
 npm run lint
 npm run build
 ```
+
+## Base PostgreSQL de prueba
+
+Configure una base separada cuyo nombre termine en `_test`:
+
+```powershell
+$env:TEST_DATABASE_URL="postgresql+psycopg://usuario:clave@localhost:5432/catalogo_ferias_test"
+flask reset-test-db --yes
+flask seed-test-data
+pytest -m postgres
+```
+
+Los comandos destructivos rechazan cualquier base que no sea PostgreSQL o cuyo nombre no termine en `_test`.
