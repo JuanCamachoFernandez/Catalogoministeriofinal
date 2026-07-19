@@ -19,7 +19,7 @@ from ..views import error
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 PUBLIC_CACHE = {}
-PUBLIC_CACHE_KEY = "public_catalog"
+PUBLIC_CACHE_KEY = "catalogo_publico"
 
 
 def public_cache_version():
@@ -55,7 +55,7 @@ def get_public_cache(key):
 
 
 def set_public_cache(key, value):
-    ttl = current_app.config["PUBLIC_CACHE_TTL_SECONDS"]
+    ttl = current_app.config["SEGUNDOS_MEMORIA_TEMPORAL_PUBLICA"]
     PUBLIC_CACHE[key] = (public_cache_version(), monotonic() + ttl, value)
     return value
 
@@ -91,6 +91,28 @@ def roles(*allowed):
     return decorator
 
 
+AUDIT_ACTION_DESCRIPTIONS = {
+    "CREAR": "Creación",
+    "EDITAR": "Edición",
+    "ELIMINAR": "Eliminación",
+    "CAMBIAR_ESTADO": "Cambio de estado",
+    "SINCRONIZAR_ESTADO": "Sincronización automática del estado",
+    "AGREGAR_IMAGEN": "Adición de imagen",
+    "EDITAR_IMAGEN": "Edición de imagen",
+    "ELIMINAR_IMAGEN": "Eliminación de imagen",
+    "ASIGNAR": "Asignación",
+    "CAMBIAR_CONTRASENA": "Cambio de contraseña",
+    "RESTABLECER_CONTRASENA": "Restablecimiento de contraseña",
+}
+
+
+def audit_description(action, entity):
+    action_text = AUDIT_ACTION_DESCRIPTIONS.get(
+        action, (action or "Acción").replace("_", " ").capitalize()
+    )
+    return f"{action_text} de {entity.lower()}"
+
+
 def audit(action, entity, entity_id=None, description=None, before=None, after=None):
     user = current_user() if has_request_context() else None
     db.session.add(
@@ -99,7 +121,7 @@ def audit(action, entity, entity_id=None, description=None, before=None, after=N
             accion=action,
             entidad=entity,
             entidad_id=entity_id,
-            descripcion=description,
+            descripcion=(description or "").strip() or audit_description(action, entity),
             datos_anteriores=before,
             datos_nuevos=after,
             ip_address=request.remote_addr if has_request_context() else None,
@@ -180,7 +202,7 @@ def save_upload(file, folder):
     except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("El archivo no es una imagen válida") from exc
     name = secure_filename(f"{uuid.uuid4().hex}.{extension}")
-    target = Path(current_app.config["UPLOAD_FOLDER"]) / folder
+    target = Path(current_app.config["CARPETA_CARGAS"]) / folder
     target.mkdir(parents=True, exist_ok=True)
     file.save(target / name)
     return f"/uploads/{folder}/{name}"
@@ -192,7 +214,7 @@ def managed_upload_path(url, expected_folder=None):
     relative = url.removeprefix("/uploads/")
     if expected_folder and not relative.startswith(f"{expected_folder}/"):
         return None
-    root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()
+    root = Path(current_app.config["CARPETA_CARGAS"]).resolve()
     target = (root / relative).resolve()
     try:
         target.relative_to(root)

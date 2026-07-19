@@ -7,7 +7,7 @@ Compruebe primero que el servicio PostgreSQL esté iniciado.
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
-flask run --host=0.0.0.0 --port=5000
+flask --app run.py run --debug --host=0.0.0.0 --port=5000
 ```
 
 ## Terminal 2 — frontend
@@ -40,7 +40,7 @@ npm run build
 Configure una base separada cuyo nombre termine en `_test`:
 
 ```powershell
-$env:TEST_DATABASE_URL="postgresql+psycopg://usuario:clave@localhost:5432/catalogo_ferias_test"
+$env:DIRECCION_BASE_DATOS_PRUEBAS="postgresql+psycopg://usuario:clave@localhost:5432/catalogo_ferias_test"
 flask reset-test-db --yes
 flask seed-test-data
 pytest -m postgres

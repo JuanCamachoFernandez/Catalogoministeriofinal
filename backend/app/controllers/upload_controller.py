@@ -12,8 +12,8 @@ upload_bp = Blueprint("uploads", __name__)
 def upload_file():
     folder = request.form.get("folder", "general")
     allowed = {
-        Role.SUPERADMIN: {"general", "ferias", "productos", "logos"},
-        Role.ADMIN_VICEMINISTERIO: {"general", "ferias", "productos", "logos"},
+        Role.SUPERADMIN: {"general", "ferias", "productos", "logos", "perfiles"},
+        Role.ADMIN_VICEMINISTERIO: {"general", "ferias", "productos", "logos", "perfiles"},
         Role.EXPOSITOR: {"productos", "logos"},
     }
     if folder not in allowed[current_user().role]:

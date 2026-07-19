@@ -96,7 +96,7 @@ def test_finalizar_elimina_imagenes_y_conserva_registro(app):
     with app.app_context():
         today = bolivia_today()
         admin, _, _, _, _, _ = create_catalog(today)
-        upload_folder = Path(app.config["UPLOAD_FOLDER"]) / "ferias"
+        upload_folder = Path(app.config["CARPETA_CARGAS"]) / "ferias"
         upload_folder.mkdir(parents=True)
         cover = upload_folder / "cover.png"
         gallery = upload_folder / "gallery.png"
@@ -136,12 +136,33 @@ def test_finalizar_elimina_imagenes_y_conserva_registro(app):
         assert not gallery.exists()
 
 
-def test_detecta_solapamiento(app):
+def test_permite_varias_ferias_en_las_mismas_fechas(app, client):
     with app.app_context():
         today = bolivia_today()
         create_catalog(today)
-        assert Fair.has_overlap(today + timedelta(days=1), today + timedelta(days=2))
-        assert not Fair.has_overlap(today + timedelta(days=3), today + timedelta(days=4))
+
+    login = client.post(
+        "/api/auth/login",
+        json={"login": "admin", "password": "Temporal2026!"},
+    )
+    response = client.post(
+        "/api/fairs",
+        headers={"Authorization": f"Bearer {login.json['access_token']}"},
+        json={
+            "nombre": "Segunda feria simultánea",
+            "lugar": "Campo ferial",
+            "departamento": "La Paz",
+            "municipio": "La Paz",
+            "fecha_inicio": today.isoformat(),
+            "fecha_fin": (today + timedelta(days=1)).isoformat(),
+            "imagen_portada": "https://example.com/feria-simultanea.jpg",
+        },
+    )
+    assert response.status_code == 201
+
+    public = client.get("/api/public/fairs")
+    assert public.status_code == 200
+    assert public.json["pagination"]["total"] == 2
 
 
 def test_productos_se_derivan_y_revocacion_los_retira(app, client):

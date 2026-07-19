@@ -35,7 +35,7 @@ def test_consulta_rechaza_producto_inexistente(client):
     assert response.status_code==400
 
 
-def test_consulta_incluye_cantidad_y_rechaza_cero(app, client):
+def test_consulta_lista_productos_con_cantidad_y_rechaza_cero(app, client):
     with app.app_context():
         product = setup_catalog()
         product_id = str(product.id)
@@ -47,7 +47,10 @@ def test_consulta_incluye_cantidad_y_rechaza_cero(app, client):
         },
     )
     assert response.status_code == 200
-    assert "cantidad: 3" in unquote(response.json["url"])
+    message = unquote(response.json["url"])
+    assert "• Producto propio — Cantidad: 3" in message
+    assert "más información" in message
+    assert "Expositor:" not in message
 
     invalid = client.post(
         "/api/public/whatsapp-query",

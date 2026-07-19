@@ -13,7 +13,13 @@ def uid():
 
 
 class TimestampMixin:
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    created_at = db.Column(
+        "fecha_creacion", db.DateTime(timezone=True), nullable=False, default=now
+    )
     updated_at = db.Column(
-        db.DateTime(timezone=True), nullable=False, default=now, onupdate=now
+        "fecha_actualizacion",
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=now,
+        onupdate=now,
     )

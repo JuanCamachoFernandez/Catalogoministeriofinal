@@ -1,163 +1,203 @@
-import { useEffect, useState } from "react";
-import { Eye, EyeOff, LogOut, ShieldCheck, Store } from "lucide-react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
-import { api } from "./api";
-import { dashboardFor, isStrongPassword, type UserRole } from "./authUtils";
-
-type SessionUser = {
-  id: string;
-  username: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  role: UserRole;
-  must_change_password: boolean;
-};
+import { Eye, EyeOff, KeyRound, LogIn, Mail, Store } from "lucide-react";
+import { useState } from "react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { api, apiError, type SessionUser } from "./api";
+import { useAuth } from "./AuthContext";
+import { dashboardFor, isStrongPassword } from "./authUtils";
+import { ErrorBox, Field } from "./ui";
+import { InstitutionalSeal } from "./Layouts";
 
 function PasswordField({
   label,
   value,
   onChange,
-  autoComplete,
+  autoComplete = "current-password",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  autoComplete: string;
+  autoComplete?: string;
 }) {
   const [visible, setVisible] = useState(false);
   return (
-    <label className="mt-4 block">
-      {label}
-      <span className="relative mt-2 block">
+    <Field label={label}>
+      <span className="password-input">
         <input
           required
+          className="input"
           type={visible ? "text" : "password"}
-          autoComplete={autoComplete}
-          className="input pr-12"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
         />
         <button
           type="button"
-          onClick={() => setVisible((v) => !v)}
-          className="absolute inset-y-0 right-0 grid w-12 place-items-center text-muted"
+          onClick={() => setVisible(!visible)}
           aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
         >
-          {visible ? <EyeOff size={21} /> : <Eye size={21} />}
+          {visible ? <EyeOff /> : <Eye />}
         </button>
       </span>
-    </label>
+    </Field>
   );
 }
 
-export function LoginPage() {
-  const navigate = useNavigate();
-  const [login, setLogin] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage("");
-    try {
-      const r = await api.post("/auth/login", { login, password });
-      const user: SessionUser = r.data.user;
-      localStorage.setItem("token", r.data.access_token);
-      localStorage.setItem("user", JSON.stringify(user));
-      navigate(
-        user.must_change_password
-          ? "/gestion/cambiar-contrasena"
-          : dashboardFor(user.role),
-        { replace: true },
-      );
-    } catch {
-      setMessage("Credenciales inválidas.");
-    }
-  };
+function AuthShell({
+  title,
+  subtitle,
+  icon,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <main className="grid min-h-screen place-items-center bg-primary p-5">
-      <form onSubmit={submit} className="card w-full max-w-md">
-        <h1 className="text-2xl font-bold">Iniciar Sesión</h1>
-        <label className="mt-5 block">
-          Usuario o Gmail
-          <input
-            required
-            autoComplete="username"
-            className="input mt-2"
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-          />
-        </label>
-        <PasswordField
-          label="Contraseña"
-          value={password}
-          onChange={setPassword}
-          autoComplete="current-password"
-        />
-        <button className="btn mt-6 w-full">Ingresar</button>
-        {message && <p className="mt-4 text-danger">{message}</p>}
-        <Link className="mt-4 block text-center text-primary" to="/catalogo">
-          Ir al catálogo público
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <Link to="/catalogo" className="auth-brand">
+          <Store /> Catálogo Digital de Ferias
         </Link>
-      </form>
+        <div className="auth-heading">
+          <span>{icon}</span>
+          <div>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+          </div>
+        </div>
+        {children}
+      </section>
+      <aside className="auth-aside">
+        <InstitutionalSeal className="auth-seal" />
+        <div className="auth-aside-copy">
+          <strong>
+            Una vitrina digital para el talento productivo de Bolivia.
+          </strong>
+        </div>
+      </aside>
     </main>
   );
 }
 
+export function LoginPage() {
+  const { user, login: saveSession } = useAuth();
+  const navigate = useNavigate();
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  if (user)
+    return (
+      <Navigate
+        to={
+          user.must_change_password
+            ? "/gestion/cambiar-contrasena"
+            : dashboardFor(user.role)
+        }
+        replace
+      />
+    );
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const { data } = await api.post<{
+        access_token: string;
+        user: SessionUser;
+      }>("/auth/login", { login, password });
+      saveSession(data.access_token, data.user);
+      navigate(
+        data.user.must_change_password
+          ? "/gestion/cambiar-contrasena"
+          : dashboardFor(data.user.role),
+        { replace: true },
+      );
+    } catch (reason) {
+      setError(apiError(reason, "No se pudo iniciar sesión."));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <AuthShell
+      title="Bienvenido"
+      subtitle="Ingrese sus credenciales para continuar"
+      icon={<LogIn />}
+    >
+      <form onSubmit={submit} className="auth-form">
+        <Field label="Usuario">
+          <input
+            required
+            className="input"
+            autoComplete="username"
+            value={login}
+            onChange={(event) => setLogin(event.target.value)}
+          />
+        </Field>
+        <PasswordField
+          label="Contraseña"
+          value={password}
+          onChange={setPassword}
+        />
+        {error && <ErrorBox message={error} />}
+        <button disabled={pending} className="btn w-full">
+          {pending ? "Ingresando…" : "Iniciar sesión"}
+        </button>
+        <Link className="auth-link" to="/gestion/recuperar-contrasena">
+          ¿Olvidó su contraseña?
+        </Link>
+      </form>
+    </AuthShell>
+  );
+}
+
 export function ChangePasswordPage() {
+  const { user, refresh, logout } = useAuth();
   const navigate = useNavigate();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [message, setMessage] = useState("");
-  if (!localStorage.getItem("token"))
-    return <Navigate to="/gestion/login" replace />;
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage("");
-    if (next !== confirm) {
-      setMessage("Las contraseñas nuevas no coinciden.");
-      return;
-    }
-    if (!isStrongPassword(next)) {
-      setMessage(
-        "Use al menos 10 caracteres, una mayúscula, una minúscula, un número y un símbolo.",
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (next !== confirm)
+      return setError("Las contraseñas nuevas no coinciden.");
+    if (!isStrongPassword(next))
+      return setError(
+        "Use al menos 10 caracteres, mayúscula, minúscula, número y símbolo.",
       );
-      return;
-    }
+    setPending(true);
     try {
       await api.post("/auth/change-password", {
         current_password: current,
         new_password: next,
       });
-      const user: SessionUser = JSON.parse(
-        localStorage.getItem("user") ?? "null",
-      );
-      if (!user) throw new Error("Sesión incompleta");
-      user.must_change_password = false;
-      localStorage.setItem("user", JSON.stringify(user));
-      navigate(dashboardFor(user.role), { replace: true });
-    } catch (error: any) {
-      setMessage(
-        error.response?.data?.error ?? "No se pudo cambiar la contraseña.",
-      );
+      const nextUser = await refresh();
+      navigate(nextUser ? dashboardFor(nextUser.role) : "/gestion/login", {
+        replace: true,
+      });
+    } catch (reason) {
+      setError(apiError(reason, "No se pudo cambiar la contraseña."));
+    } finally {
+      setPending(false);
     }
   };
+  if (!user) return <Navigate to="/gestion/login" replace />;
   return (
-    <main className="grid min-h-screen place-items-center bg-primary p-5">
-      <form onSubmit={submit} className="card w-full max-w-lg">
-        <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-          Primer ingreso
-        </p>
-        <h1 className="mt-2 text-3xl font-bold">Cambie su contraseña</h1>
-        <p className="mt-3 text-muted">
-          Debe reemplazar la contraseña temporal antes de acceder al sistema.
-        </p>
+    <AuthShell
+      title="Cambie su contraseña"
+      subtitle="Proteja su cuenta antes de continuar"
+      icon={<KeyRound />}
+    >
+      <form onSubmit={submit} className="auth-form">
         <PasswordField
-          label="Contraseña temporal actual"
+          label="Contraseña actual"
           value={current}
           onChange={setCurrent}
-          autoComplete="current-password"
         />
         <PasswordField
           label="Nueva contraseña"
@@ -166,109 +206,228 @@ export function ChangePasswordPage() {
           autoComplete="new-password"
         />
         <PasswordField
-          label="Confirmar nueva contraseña"
+          label="Confirmar contraseña"
           value={confirm}
           onChange={setConfirm}
           autoComplete="new-password"
         />
-        <p className="mt-3 text-sm text-muted">
-          Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo.
+        <p className="form-hint">
+          Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo.
         </p>
-        {message && <p className="mt-4 rounded-lg alert-danger">{message}</p>}
-        <button className="btn mt-6 w-full">Guardar nueva contraseña</button>
+        {error && <ErrorBox message={error} />}
+        <button disabled={pending} className="btn w-full">
+          Guardar contraseña
+        </button>
         <button
           type="button"
-          className="mt-3 w-full text-sm text-muted"
-          onClick={() => {
-            localStorage.clear();
+          className="auth-link"
+          onClick={async () => {
+            await logout();
             navigate("/gestion/login");
           }}
         >
           Cerrar sesión
         </button>
       </form>
-    </main>
+    </AuthShell>
   );
 }
 
-export function DashboardPage({ area }: { area: "admin" | "expositor" }) {
-  const navigate = useNavigate();
-  const [user, setUser] = useState<SessionUser | null>(() => {
+export function ForgotPasswordPage() {
+  const [step, setStep] = useState<"email" | "code" | "password" | "done">("email");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const requestCode = async () => {
+    setPending(true);
+    setError("");
     try {
-      return JSON.parse(localStorage.getItem("user") ?? "null");
-    } catch {
-      return null;
+      await api.post("/auth/forgot-password", { email: email.trim().toLowerCase() });
+      setCode("");
+      setStep("code");
+    } catch (reason) {
+      setError(apiError(reason, "No se pudo enviar el código."));
+    } finally {
+      setPending(false);
     }
-  });
-  const [checking, setChecking] = useState(true);
-  useEffect(() => {
-    api
-      .get<SessionUser>("/auth/me")
-      .then(({ data }) => {
-        localStorage.setItem("user", JSON.stringify(data));
-        setUser(data);
-        if (data.must_change_password)
-          navigate("/gestion/cambiar-contrasena", { replace: true });
-        else if (area === "admin" && data.role === "EXPOSITOR")
-          navigate("/gestion/expositor/dashboard", { replace: true });
-        else if (area === "expositor" && data.role !== "EXPOSITOR")
-          navigate("/gestion/admin/dashboard", { replace: true });
-      })
-      .catch(() => {
-        localStorage.clear();
-        navigate("/gestion/login", { replace: true });
-      })
-      .finally(() => setChecking(false));
-  }, [area, navigate]);
-  if (!localStorage.getItem("token"))
-    return <Navigate to="/gestion/login" replace />;
-  if (checking || !user)
-    return (
-      <main className="grid min-h-screen place-items-center">
-        <p>Verificando sesión…</p>
-      </main>
-    );
-  const isAdmin = user.role !== "EXPOSITOR";
+  };
+  const submitEmail = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await requestCode();
+  };
+  const verifyCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (!/^\d{6}$/.test(code)) return setError("Ingrese los 6 números enviados a su correo.");
+    setPending(true);
+    try {
+      const { data } = await api.post<{ reset_token: string }>("/auth/verify-recovery-code", {
+        email: email.trim().toLowerCase(),
+        code,
+      });
+      setResetToken(data.reset_token);
+      setStep("password");
+    } catch (reason) {
+      setError(apiError(reason, "No se pudo verificar el código."));
+    } finally {
+      setPending(false);
+    }
+  };
+  const resetPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (password !== confirm) return setError("Las contraseñas no coinciden.");
+    if (!isStrongPassword(password))
+      return setError("Use al menos 10 caracteres, mayúscula, minúscula, número y símbolo.");
+    setPending(true);
+    try {
+      await api.post("/auth/reset-password", { token: resetToken, new_password: password });
+      setStep("done");
+    } catch (reason) {
+      setError(apiError(reason, "No se pudo cambiar la contraseña."));
+    } finally {
+      setPending(false);
+    }
+  };
   return (
-    <main className="min-h-screen bg-background">
-      <header className="bg-primary text-surface">
-        <div className="mx-auto flex max-w-6xl items-center justify-between p-5">
-          <strong>Catálogo Digital de Ferias</strong>
-          <button
-            className="flex items-center gap-2"
-            onClick={() => {
-              localStorage.clear();
-              navigate("/gestion/login", { replace: true });
-            }}
-          >
-            <LogOut size={18} />
-            Cerrar sesión
-          </button>
-        </div>
-      </header>
-      <section className="mx-auto max-w-6xl p-6">
-        <div className="card">
-          <div className="flex items-center gap-3 text-primary">
-            {isAdmin ? <ShieldCheck size={32} /> : <Store size={32} />}
-            <p className="font-semibold">
-              {isAdmin ? "Panel administrativo" : "Panel del expositor"}
-            </p>
-          </div>
-          <h1 className="mt-4 text-3xl font-bold">
-            Bienvenido, {user.first_name} {user.last_name}
-          </h1>
-          <p className="mt-2 text-muted">
-            Ingresó como {user.role.replaceAll("_", " ")}.
-          </p>
-          <p className="mt-6 rounded-xl alert-warning">
-            La sesión está activa. Los módulos administrativos completos todavía
-            están en desarrollo.
-          </p>
-          <Link to="/catalogo" className="btn mt-6">
-            Ver catálogo público
+    <AuthShell
+      title="Recuperar acceso"
+      subtitle="Verifique su correo antes de crear una nueva contraseña"
+      icon={<Mail />}
+    >
+      <div className="recovery-steps" aria-label="Progreso de recuperación">
+        <span className={step !== "email" ? "complete" : "active"}>1</span>
+        <i />
+        <span className={step === "password" || step === "done" ? "complete" : step === "code" ? "active" : ""}>2</span>
+        <i />
+        <span className={step === "done" ? "complete" : step === "password" ? "active" : ""}>3</span>
+      </div>
+      {step === "done" ? (
+        <div className="success-panel">
+          <strong>Contraseña actualizada correctamente</strong>
+          <p>Ya puede ingresar a su cuenta utilizando la nueva contraseña.</p>
+          <Link to="/gestion/login" className="btn">
+            Iniciar sesión
           </Link>
         </div>
-      </section>
-    </main>
+      ) : step === "email" ? (
+        <form className="auth-form" onSubmit={submitEmail}>
+          <Field label="Confirme su correo Gmail">
+            <input
+              type="email"
+              className="input"
+              required
+              autoComplete="email"
+              placeholder="usuario@gmail.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </Field>
+          <p className="form-hint">Enviaremos un código de 6 números al correo registrado en su cuenta.</p>
+          {error && <ErrorBox message={error} />}
+          <button className="btn w-full" disabled={pending}>
+            {pending ? "Enviando…" : "Enviar código"}
+          </button>
+          <Link className="auth-link" to="/gestion/login">
+            Volver al ingreso
+          </Link>
+        </form>
+      ) : step === "code" ? (
+        <form className="auth-form" onSubmit={verifyCode}>
+          <div className="recovery-email-notice"><Mail size={18}/><span>Enviamos el código a <strong>{email}</strong></span></div>
+          <Field label="Código de verificación">
+            <input className="input otp-input" required inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}/>
+          </Field>
+          <p className="form-hint">El código vence en 10 minutos. Después de 5 intentos incorrectos deberá solicitar uno nuevo.</p>
+          {error && (
+            <ErrorBox message={error}/>
+          )}
+          <button className="btn w-full" disabled={pending || code.length !== 6}>{pending ? "Verificando…" : "Verificar código"}</button>
+          <button type="button" className="auth-link" disabled={pending} onClick={() => void requestCode()}>Reenviar código</button>
+          <button type="button" className="auth-link" onClick={() => { setError(""); setStep("email"); }}>Cambiar correo</button>
+        </form>
+      ) : (
+        <form className="auth-form" onSubmit={resetPassword}>
+          <div className="recovery-verified"><KeyRound size={20}/><div><strong>Código verificado</strong><small>Ahora puede crear una nueva contraseña.</small></div></div>
+          <PasswordField label="Nueva contraseña" value={password} onChange={setPassword} autoComplete="new-password"/>
+          <PasswordField label="Confirmar contraseña" value={confirm} onChange={setConfirm} autoComplete="new-password"/>
+          <p className="form-hint">Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo.</p>
+          {error && (
+            <ErrorBox message={error}/>
+          )}
+          <button className="btn w-full" disabled={pending || !resetToken}>{pending ? "Guardando…" : "Cambiar contraseña"}</button>
+        </form>
+      )}
+    </AuthShell>
+  );
+}
+
+export function ResetPasswordPage() {
+  const [params] = useSearchParams();
+  const token = params.get("token") ?? "";
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState(
+    token ? "" : "El enlace no contiene un token válido.",
+  );
+  const [pending, setPending] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (password !== confirm) return setError("Las contraseñas no coinciden.");
+    if (!isStrongPassword(password))
+      return setError("La contraseña no cumple los requisitos de seguridad.");
+    setPending(true);
+    try {
+      const { data } = await api.post("/auth/reset-password", {
+        token,
+        new_password: password,
+      });
+      setMessage(data.message);
+    } catch (reason) {
+      setError(apiError(reason));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <AuthShell
+      title="Nueva contraseña"
+      subtitle="El enlace es válido durante 30 minutos"
+      icon={<KeyRound />}
+    >
+      {message ? (
+        <div className="success-panel">
+          <strong>{message}</strong>
+          <Link to="/gestion/login" className="btn">
+            Iniciar sesión
+          </Link>
+        </div>
+      ) : (
+        <form className="auth-form" onSubmit={submit}>
+          <PasswordField
+            label="Nueva contraseña"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+          />
+          <PasswordField
+            label="Confirmar contraseña"
+            value={confirm}
+            onChange={setConfirm}
+            autoComplete="new-password"
+          />
+          {error && <ErrorBox message={error} />}
+          <button className="btn w-full" disabled={pending || !token}>
+            Restablecer contraseña
+          </button>
+        </form>
+      )}
+    </AuthShell>
   );
 }

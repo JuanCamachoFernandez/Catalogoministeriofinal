@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+import re
 from pathlib import Path
 
 import click
@@ -46,7 +47,7 @@ def register_commands(app):
             for url in urls
             if (path := managed_upload_path(url, "ferias"))
         }
-        folder = Path(app.config["UPLOAD_FOLDER"]) / "ferias"
+        folder = Path(app.config["CARPETA_CARGAS"]) / "ferias"
         removed = 0
         if folder.exists():
             for path in folder.iterdir():
@@ -89,8 +90,8 @@ def register_commands(app):
     def seed_test_data():
         """Carga catÃ¡logos y un SUPERADMIN predecible para pruebas."""
         require_postgresql_test_database()
-        email = os.getenv("TEST_ADMIN_EMAIL", "catalogo.test@gmail.com").lower()
-        password = os.getenv("TEST_ADMIN_PASSWORD", "Catalogo.Test123!")
+        email = os.getenv("CORREO_ADMINISTRADOR_PRUEBAS", "catalogo.test@gmail.com").lower()
+        password = os.getenv("CONTRASENA_ADMINISTRADOR_PRUEBAS", "Catalogo.Test123!")
         if not db.session.scalar(select(User.id).where(User.email == email)):
             user = User(
                 username="catalogo.test",
@@ -117,11 +118,37 @@ def register_commands(app):
     @app.cli.command("seed-admin")
     @with_appcontext
     def seed_admin():
-        email = os.getenv("INITIAL_ADMIN_EMAIL", "").lower()
-        password = os.getenv("INITIAL_ADMIN_PASSWORD", "")
+        email = os.getenv("CORREO_ADMINISTRADOR_INICIAL", "").lower().strip()
+        password = os.getenv("CONTRASENA_ADMINISTRADOR_INICIAL", "")
+        first_name = os.getenv("NOMBRES_ADMINISTRADOR_INICIAL", "Administrador").strip()
+        paternal_last_name = (
+            os.getenv("APELLIDO_PATERNO_ADMINISTRADOR_INICIAL", "").strip()
+            or "Principal"
+        )
+        maternal_last_name = os.getenv("APELLIDO_MATERNO_ADMINISTRADOR_INICIAL", "").strip()
+        username = os.getenv("USUARIO_ADMINISTRADOR_INICIAL", "").lower().strip()
+        if not username:
+            username = slugify(email.split("@")[0])
         if not valid_gmail(email):
             raise click.ClickException(
-                "INITIAL_ADMIN_EMAIL debe ser una dirección válida terminada en @gmail.com"
+                "CORREO_ADMINISTRADOR_INICIAL debe ser una dirección válida terminada en @gmail.com"
+            )
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,79}", username):
+            raise click.ClickException(
+                "USUARIO_ADMINISTRADOR_INICIAL debe tener entre 3 y 80 caracteres y usar "
+                "solo letras minúsculas, números, punto, guion o guion bajo"
+            )
+        if not first_name or len(first_name) > 100:
+            raise click.ClickException(
+                "NOMBRES_ADMINISTRADOR_INICIAL es obligatorio y admite hasta 100 caracteres"
+            )
+        if not paternal_last_name or len(paternal_last_name) > 100:
+            raise click.ClickException(
+                "APELLIDO_PATERNO_ADMINISTRADOR_INICIAL es obligatorio y admite hasta 100 caracteres"
+            )
+        if len(maternal_last_name) > 100:
+            raise click.ClickException(
+                "APELLIDO_MATERNO_ADMINISTRADOR_INICIAL admite hasta 100 caracteres"
             )
         rules = (
             len(password) >= 10,
@@ -132,25 +159,34 @@ def register_commands(app):
         )
         if not all(rules):
             raise click.ClickException(
-                "INITIAL_ADMIN_PASSWORD debe tener al menos 10 caracteres, una mayúscula, "
+                "CONTRASENA_ADMINISTRADOR_INICIAL debe tener al menos 10 caracteres, una mayúscula, "
                 "una minúscula, un número y un carácter especial"
             )
-        if db.session.scalar(select(User).where(User.email == email)):
-            click.echo("El administrador ya existe")
-            return
+        existing = db.session.scalar(
+            select(User).where((User.email == email) | (User.username == username))
+        )
+        if existing:
+            if existing.email == email and existing.username == username:
+                click.echo("El administrador inicial ya existe")
+                return
+            raise click.ClickException(
+                "El usuario o Gmail del administrador inicial ya está registrado"
+            )
         user = User(
-            username=slugify(email.split("@")[0]),
+            username=username,
             email=email,
             role=Role.SUPERADMIN,
-            first_name=os.getenv("INITIAL_ADMIN_FIRST_NAME", "Administrador"),
-            last_name=os.getenv("INITIAL_ADMIN_LAST_NAME", "Principal"),
+            first_name=first_name,
+            last_name=paternal_last_name,
+            apellido_paterno=paternal_last_name,
+            apellido_materno=maternal_last_name or None,
             status=UserStatus.ACTIVE,
             must_change_password=True,
         )
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
-        click.echo(f"SUPERADMIN creado: {user.username}")
+        click.echo(f"SUPERADMIN creado: {user.username} ({user.first_name} {user.last_name})")
 
     @app.cli.command("seed-catalogs")
     @with_appcontext

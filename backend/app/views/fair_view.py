@@ -24,6 +24,13 @@ class FairCreateSchema(Schema):
 
 
 class FairUpdateSchema(Schema):
+    id = fields.Raw(load_only=True)
+    slug = fields.Raw(load_only=True)
+    estado = fields.Raw(load_only=True)
+    visible_publicamente = fields.Raw(load_only=True)
+    hora_inicio = fields.Raw(load_only=True, allow_none=True)
+    hora_fin = fields.Raw(load_only=True, allow_none=True)
+    fecha_limite_registro = fields.Raw(load_only=True, allow_none=True)
     nombre = fields.String(validate=validate.Length(min=1, max=200))
     descripcion = fields.String(allow_none=True)
     lugar = fields.String(validate=validate.Length(min=1, max=200))

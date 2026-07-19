@@ -13,12 +13,12 @@ from app.extensions import db
 
 @pytest.mark.postgres
 def test_postgresql_migrations_run_from_zero():
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = os.getenv("DIRECCION_BASE_DATOS_PRUEBAS")
     if not database_url:
-        pytest.skip("TEST_DATABASE_URL no configurada")
+        pytest.skip("DIRECCION_BASE_DATOS_PRUEBAS no configurada")
     database_name = make_url(database_url).database or ""
     if not database_name.endswith("_test"):
-        pytest.fail("TEST_DATABASE_URL debe apuntar a una base terminada en _test")
+        pytest.fail("DIRECCION_BASE_DATOS_PRUEBAS debe apuntar a una base terminada en _test")
 
     class PostgreSQLTestConfig(Config):
         TESTING = True
@@ -33,14 +33,34 @@ def test_postgresql_migrations_run_from_zero():
 
         tables = set(inspect(db.engine).get_table_names())
         assert {
-            "alembic_version",
-            "users",
-            "fairs",
-            "fair_exhibitors",
-            "products",
-            "revoked_tokens",
-            "cache_states",
+            "auditorias",
+            "categorias",
+            "codigos_acceso_revocados",
+            "estados_memoria_temporal",
+            "expositores",
+            "expositores_feria",
+            "version_migraciones",
+            "ferias",
+            "imagenes_feria",
+            "imagenes_producto",
+            "perfiles_administradores",
+            "productos",
+            "recuperaciones_contrasena",
+            "tipos_expositor",
+            "tipos_expositor_asignados",
+            "unidades_administrativas",
+            "usuarios",
         } <= tables
+        assert {
+            "users",
+            "exhibitors",
+            "fairs",
+            "products",
+            "categories",
+            "audits",
+        }.isdisjoint(tables)
         with db.engine.connect() as connection:
-            revision = MigrationContext.configure(connection).get_current_revision()
-        assert revision == "d742fe19a603"
+            revision = MigrationContext.configure(
+                connection, opts={"version_table": "version_migraciones"}
+            ).get_current_revision()
+        assert revision == "20260718_0001"

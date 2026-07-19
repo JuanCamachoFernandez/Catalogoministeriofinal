@@ -1,26 +1,2333 @@
-import{useState}from'react';
-import{useMutation,useQuery,useQueryClient}from'@tanstack/react-query';
-import{Link,NavLink,useNavigate}from'react-router-dom';
-import{Activity,CalendarDays,FolderTree,LayoutDashboard,LogOut,Menu,ShieldCheck,Store,Users,X}from'lucide-react';
-import{api,Category,Exhibitor,Product}from'./api';
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Activity,
+  CalendarDays,
+  Edit3,
+  ImagePlus,
+  KeyRound,
+  Plus,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Store,
+  Trash2,
+  UserCheck,
+  UserX,
+  Users,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  api,
+  apiError,
+  assetUrl,
+  emptyPagination,
+  uploadFile,
+  type AdminUser,
+  type Assignment,
+  type AssignmentStatus,
+  type AuditItem,
+  type Category,
+  type Exhibitor,
+  type Fair,
+  type FairImage,
+  type FairStatus,
+  type Paged,
+  type UserRole,
+} from "./api";
+import { useAuth } from "./AuthContext";
+import { ProductManager } from "./ProductManager";
+import {
+  gmailAddress,
+  gmailLocalPart,
+  responsibleDisplayName,
+} from "./adminUserUtils";
+import {
+  BOLIVIA_DEPARTMENTS,
+  municipalitiesFor,
+} from "./boliviaLocations";
+import {
+  ConfirmButton,
+  Empty,
+  ErrorBox,
+  Field,
+  Loading,
+  Modal,
+  PaginationBar,
+  SearchField,
+  SearchableSelect,
+  StatusBadge,
+  UploadProgress,
+  useFeedback,
+} from "./ui";
 
-const nav=[['/gestion/admin/dashboard','Resumen',LayoutDashboard],['/gestion/admin/administradores','Administradores',Users],['/gestion/admin/expositores','Expositores',Store],['/gestion/admin/ferias','Ferias',CalendarDays],['/gestion/admin/productos','Productos',Store],['/gestion/admin/categorias','Categorías',FolderTree],['/gestion/admin/auditoria','Auditoría',Activity]] as const;
-const Loading=()=> <div className="animate-pulse space-y-3"><div className="h-8 w-52 rounded bg-line"/><div className="h-32 rounded-2xl bg-line"/></div>;
-const ErrorBox=({text}:{text:string})=><p className="rounded-xl alert-danger">{text}</p>;
-const statuses=['AVAILABLE','OUT_OF_STOCK','INACTIVE'] as const;
+function Header({
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="page-header">
+      <div>
+        <span className="eyebrow">{eyebrow}</span>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
 
-export function AdminLayout({children}:{children:React.ReactNode}){const[open,setOpen]=useState(false);const navigate=useNavigate();return <div className="min-h-screen bg-background"><header className="fixed inset-x-0 top-0 z-30 h-16 bg-primary text-surface"><div className="flex h-full items-center justify-between px-5"><button className="md:hidden" onClick={()=>setOpen(true)}><Menu/></button><strong>Catálogo Digital de Ferias</strong><button className="flex items-center gap-2" onClick={()=>{localStorage.clear();navigate('/gestion/login')}}><LogOut size={18}/>Salir</button></div></header><aside className={`fixed bottom-0 left-0 top-0 z-40 w-72 bg-surface p-5 shadow-xl transition-transform md:top-16 md:translate-x-0 ${open?'translate-x-0':'-translate-x-full'}`}><button className="ml-auto block md:hidden" onClick={()=>setOpen(false)}><X/></button><p className="mb-5 flex items-center gap-2 font-bold text-primary"><ShieldCheck/>Portal de gestión</p><nav className="space-y-1">{nav.map(([to,label,Icon])=><NavLink key={to} to={to} onClick={()=>setOpen(false)} className={({isActive})=>`flex items-center gap-3 rounded-xl px-4 py-3 ${isActive?'bg-primary text-surface':'text-ink hover:bg-background'}`}><Icon size={19}/>{label}</NavLink>)}</nav><Link to="/catalogo" className="mt-8 block px-4 text-sm text-primary">Ver catálogo público</Link></aside><main className="pt-16 md:pl-72"><div className="mx-auto max-w-7xl p-6">{children}</div></main></div>}
+function LocationFields({
+  department,
+  municipality,
+  onDepartment,
+  onMunicipality,
+}: {
+  department: string;
+  municipality: string;
+  onDepartment: (value: string) => void;
+  onMunicipality: (value: string) => void;
+}) {
+  const municipalities = municipalitiesFor(department);
+  return (
+    <>
+      <Field label="Departamento">
+        <SearchableSelect
+          value={department}
+          options={BOLIVIA_DEPARTMENTS.map((item) => ({
+            value: item,
+            label: item,
+          }))}
+          placeholder="Seleccione un departamento"
+          searchPlaceholder="Buscar departamento…"
+          ariaLabel="Departamento"
+          onChange={(value) => {
+            onDepartment(value);
+            if (!municipalitiesFor(value).includes(municipality))
+              onMunicipality("");
+          }}
+        />
+      </Field>
+      <Field label="Municipio">
+        <SearchableSelect
+          disabled={!BOLIVIA_DEPARTMENTS.includes(department)}
+          value={municipality}
+          options={municipalities.map((item) => ({ value: item, label: item }))}
+          placeholder="Seleccione un municipio"
+          searchPlaceholder="Buscar municipio…"
+          ariaLabel="Municipio"
+          onChange={onMunicipality}
+        />
+      </Field>
+    </>
+  );
+}
 
-export function AdminDashboard(){const{data,isLoading,error}=useQuery({queryKey:['admin-dashboard'],queryFn:()=>api.get('/admin/dashboard').then(r=>r.data)});if(isLoading)return <AdminLayout><Loading/></AdminLayout>;if(error)return <AdminLayout><ErrorBox text="No se pudo cargar el dashboard."/></AdminLayout>;const cards=[['Feria activa',data.stats.feria_activa||'Sin feria activa'],['Ferias',data.stats.ferias],['Publicadas',data.stats.ferias_publicadas],['Expositores activos',data.stats.expositores_activos],['Productos',data.stats.productos],['Disponibles',data.stats.productos_disponibles],['No disponibles',data.stats.productos_sin_stock],['Asignaciones pendientes',data.stats.asignaciones_pendientes]];return <AdminLayout><h1 className="text-3xl font-bold">Resumen administrativo</h1><p className="mt-2 text-muted">Consulta el estado general de la plataforma y su actividad reciente.</p><div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{cards.map(([label,value])=><article className="card" key={String(label)}><p className="text-sm text-muted">{label}</p><strong className="mt-2 block text-2xl text-primary">{value}</strong></article>)}</div><section className="card mt-6"><h2 className="text-xl font-bold">Actividad reciente</h2>{data.recent_audits.length===0?<p className="mt-4 text-muted">Todavía no existen acciones registradas.</p>:<div className="mt-4 divide-y">{data.recent_audits.map((a:any)=><div className="py-3" key={a.id}><strong>{a.accion}</strong> · {a.entidad}<p className="text-sm text-muted">{a.descripcion||'Sin descripción'}</p></div>)}</div>}</section></AdminLayout>}
+type CreatedCredentials = {
+  username: string;
+  password: string;
+};
 
-export function AdministratorsPage(){const qc=useQueryClient();const[form,setForm]=useState({first_name:'',last_name:'',email:'',phone:'',cargo:'',unidad:'',role:'ADMIN_VICEMINISTERIO'});const[credentials,setCredentials]=useState<any>(null);const{data,isLoading}=useQuery({queryKey:['admins'],queryFn:()=>api.get('/admin/users').then(r=>r.data.items)});const create=useMutation({mutationFn:()=>api.post('/admin/users',form),onSuccess:r=>{setCredentials(r.data);setForm({...form,first_name:'',last_name:'',email:'',phone:'',cargo:'',unidad:''});qc.invalidateQueries({queryKey:['admins']})}});return <AdminLayout><h1 className="text-3xl font-bold">Administradores</h1>{credentials&&<div className="mt-5 rounded-xl border alert-warning"><strong>Credenciales temporales</strong><p>Usuario: {credentials.data.username}</p><p>Contraseña: {credentials.temporary_password}</p><button className="mt-2 text-sm underline" onClick={()=>setCredentials(null)}>Ya las guardé</button></div>}<form className="card mt-6 grid gap-4 md:grid-cols-2" onSubmit={e=>{e.preventDefault();create.mutate()}}>{Object.entries(form).map(([key,value])=>key==='role'?<label key={key}>Rol<select className="input mt-1" value={value} onChange={e=>setForm({...form,role:e.target.value})}><option value="ADMIN_VICEMINISTERIO">Administrador</option><option value="SUPERADMIN">Superadministrador</option></select></label>:<label key={key}>{({first_name:'Nombres',last_name:'Apellidos',email:'Gmail',phone:'Teléfono',cargo:'Cargo',unidad:'Unidad'} as any)[key]}<input required={['first_name','last_name','email'].includes(key)} className="input mt-1" value={value} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}{create.error&&<ErrorBox text={(create.error as any).response?.data?.error||'No se pudo crear.'}/>}<button disabled={create.isPending} className="btn md:col-span-2">Crear administrador</button></form><section className="card mt-6 overflow-x-auto">{isLoading?<Loading/>:<table className="w-full text-left"><thead><tr className="border-b"><th className="p-3">Nombre</th><th>Gmail</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{data?.map((u:any)=><tr className="border-b" key={u.id}><td className="p-3">{u.first_name} {u.last_name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.status}</td></tr>)}</tbody></table>}</section></AdminLayout>}
+type CredentialsDialog = {
+  title: string;
+  credentials: CreatedCredentials;
+};
 
-export function FairsPage(){const qc=useQueryClient();const[form,setForm]=useState({nombre:'',descripcion:'',lugar:'',departamento:'La Paz',municipio:'',fecha_inicio:'',fecha_fin:'',imagen_portada:''});const[selected,setSelected]=useState<any>(null);const[assignment,setAssignment]=useState({exhibitor_id:'',numero_stand:'',sector:'',observaciones:'',estado:'AUTHORIZED'});const{data,isLoading}=useQuery({queryKey:['fairs-admin'],queryFn:()=>api.get('/fairs').then(r=>r.data.items)});const{data:exhibitors=[]}=useQuery({queryKey:['exhibitors-all'],queryFn:()=>api.get('/exhibitors').then(r=>r.data.items)});const{data:assignments=[]}=useQuery({queryKey:['fair-assignments',selected?.id],enabled:!!selected?.id,queryFn:()=>api.get(`/fairs/${selected.id}/exhibitors`).then(r=>r.data.items)});const create=useMutation({mutationFn:()=>api.post('/fairs',form),onSuccess:()=>{qc.invalidateQueries({queryKey:['fairs-admin']});setForm({...form,nombre:'',descripcion:'',lugar:'',municipio:'',fecha_inicio:'',fecha_fin:'',imagen_portada:''})}});const change=useMutation({mutationFn:({id,status}:{id:string,status:string})=>api.patch(`/fairs/${id}/status`,{status}),onSuccess:()=>{qc.invalidateQueries({queryKey:['fairs-admin']});qc.invalidateQueries({queryKey:['admin-dashboard']})}});const assign=useMutation({mutationFn:()=>api.post(`/fairs/${selected.id}/exhibitors`,assignment),onSuccess:()=>{setAssignment({...assignment,exhibitor_id:'',numero_stand:'',sector:'',observaciones:''});qc.invalidateQueries({queryKey:['fair-assignments',selected.id]})}});return <AdminLayout><h1 className="text-3xl font-bold">Gestión de ferias</h1><form className="card mt-6 grid gap-4 md:grid-cols-2" onSubmit={e=>{e.preventDefault();create.mutate()}}><h2 className="text-xl font-bold md:col-span-2">Nueva feria</h2>{Object.entries(form).map(([key,value])=><label key={key}>{({nombre:'Nombre',descripcion:'Descripción',lugar:'Lugar',departamento:'Departamento',municipio:'Municipio',fecha_inicio:'Fecha inicial',fecha_fin:'Fecha final',imagen_portada:'URL de portada'} as any)[key]}<input type={key.startsWith('fecha')?'date':'text'} required={key!=='descripcion'} className="input mt-1" value={value} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}{create.error&&<ErrorBox text={(create.error as any).response?.data?.error||'No se pudo crear.'}/>}<button disabled={create.isPending} className="btn md:col-span-2">Crear feria</button></form><div className="mt-6 grid gap-5 lg:grid-cols-2">{isLoading?<Loading/>:data?.map((f:any)=><article className="card" key={f.id}><img className="h-40 w-full rounded-xl object-cover" src={f.imagen_portada} alt=""/><div className="mt-4 flex items-start justify-between"><div><h2 className="text-xl font-bold">{f.nombre}</h2><p>{f.municipio}, {f.departamento}</p><p className="text-sm text-muted">{f.fecha_inicio} - {f.fecha_fin}</p></div><span className="rounded-full bg-background px-3 py-1 text-xs">{f.estado}</span></div><div className="mt-4 flex flex-wrap gap-2"><button className="btn-outline" onClick={()=>setSelected(f)}>Asignar expositores</button>{f.estado!=='PUBLISHED'&&<button className="btn" onClick={()=>change.mutate({id:f.id,status:'PUBLISHED'})}>Publicar como activa</button>}{f.estado==='PUBLISHED'&&<button className="btn-danger" onClick={()=>change.mutate({id:f.id,status:'DISABLED'})}>Inhabilitar</button>}</div></article>)}</div>{selected&&<section className="card mt-6"><div className="flex items-center justify-between"><h2 className="text-xl font-bold">Expositores de {selected.nombre}</h2><button onClick={()=>setSelected(null)}><X/></button></div><form className="mt-4 grid gap-3 md:grid-cols-5" onSubmit={e=>{e.preventDefault();assign.mutate()}}><select required className="input" value={assignment.exhibitor_id} onChange={e=>setAssignment({...assignment,exhibitor_id:e.target.value})}><option value="">Seleccione expositor</option>{exhibitors.map((e:Exhibitor)=><option key={e.id} value={e.id}>{e.nombre_comercial}</option>)}</select><input className="input" placeholder="Stand" value={assignment.numero_stand} onChange={e=>setAssignment({...assignment,numero_stand:e.target.value})}/><input className="input" placeholder="Sector" value={assignment.sector} onChange={e=>setAssignment({...assignment,sector:e.target.value})}/><input className="input" placeholder="Observaciones" value={assignment.observaciones} onChange={e=>setAssignment({...assignment,observaciones:e.target.value})}/><button className="btn">Asignar</button></form>{assign.error&&<ErrorBox text={(assign.error as any).response?.data?.error||'No se pudo asignar.'}/>}<div className="mt-4 divide-y">{assignments.map((a:any)=><div className="grid gap-2 py-3 md:grid-cols-4" key={a.id}><strong>{a.nombre_comercial}</strong><span>{a.estado}</span><span>{a.numero_stand||'Sin stand'}</span><span>{a.sector||'Sin sector'}</span></div>)}</div></section>}</AdminLayout>}
+function CredentialsModal({
+  title,
+  credentials,
+  onClose,
+}: {
+  title: string;
+  credentials: CreatedCredentials;
+  onClose: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="credentials-modal-content">
+        <div className="credentials-success-icon" aria-hidden="true">
+          <UserCheck />
+        </div>
+        <p>Guarde estas credenciales para iniciar sesión.</p>
+        <dl className="credentials-box">
+          <div>
+            <dt>Usuario</dt>
+            <dd>{credentials.username}</dd>
+          </div>
+          <div>
+            <dt>Contraseña</dt>
+            <dd>{credentials.password}</dd>
+          </div>
+        </dl>
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose} autoFocus>
+            Entendido
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
-export function CategoriesPage(){const qc=useQueryClient();const[name,setName]=useState('');const{data,isLoading}=useQuery({queryKey:['categories-admin'],queryFn:()=>api.get('/admin/categories').then(r=>r.data.items)});const create=useMutation({mutationFn:()=>api.post('/categories',{nombre:name}),onSuccess:()=>{setName('');qc.invalidateQueries({queryKey:['categories-admin']})}});const toggle=useMutation({mutationFn:(c:any)=>api.patch(`/categories/${c.id}/status`,{active:!c.estado}),onSuccess:()=>qc.invalidateQueries({queryKey:['categories-admin']})});return <AdminLayout><h1 className="text-3xl font-bold">Categorías</h1><form className="card mt-6 flex gap-3" onSubmit={e=>{e.preventDefault();create.mutate()}}><input required className="input" placeholder="Nombre de categoría" value={name} onChange={e=>setName(e.target.value)}/><button className="btn">Agregar</button></form><section className="card mt-6">{isLoading?<Loading/>:<div className="divide-y">{data?.map((c:any)=><div className="flex items-center justify-between py-3" key={c.id}><div><strong>{c.nombre}</strong><p className="text-sm text-muted">{c.estado?'Activa':'Inactiva'}</p></div><button className="btn-outline" onClick={()=>toggle.mutate(c)}>{c.estado?'Inhabilitar':'Reactivar'}</button></div>)}</div>}</section></AdminLayout>}
+export function AdminDashboard() {
+  const dashboard = useQuery({
+    queryKey: ["admin", "dashboard"],
+    queryFn: () =>
+      api.get("/admin/dashboard").then((response) => response.data),
+  });
+  if (dashboard.isLoading) return <Loading />;
+  if (dashboard.error)
+    return (
+      <ErrorBox
+        message={apiError(dashboard.error, "No se pudo cargar el resumen.")}
+      />
+    );
+  const stats = dashboard.data.stats;
+  const cards = [
+    ["Ferias publicadas", stats.ferias_publicadas, CalendarDays],
+    ["Ferias", stats.ferias, CalendarDays],
+    ["Expositores activos", stats.expositores_activos, Store],
+    ["Productos", stats.productos, Store],
+    ["Disponibles", stats.productos_disponibles, UserCheck],
+    ["Agotados", stats.productos_sin_stock, UserX],
+    ["Asignaciones pendientes", stats.asignaciones_pendientes, Users],
+  ];
+  return (
+    <>
+      <Header
+        eyebrow="Administración"
+        title="Resumen general"
+        description="Estado actual de la plataforma y actividad reciente."
+      />
+      <div className="stats-grid">
+        {cards.map(([label, value, Icon]) => (
+          <article className="stat-card" key={String(label)}>
+            <Icon />
+            <div>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          </article>
+        ))}
+      </div>
+      <section className="panel">
+        <h2>
+          <Activity /> Actividad reciente
+        </h2>
+        {dashboard.data.recent_audits.length ? (
+          <div className="activity-list">
+            {dashboard.data.recent_audits.map((item: AuditItem) => (
+              <article key={item.id}>
+                <span className="activity-dot" />
+                <div>
+                  <strong>
+                    {item.accion} · {item.entidad}
+                  </strong>
+                  <p>{item.descripcion || "Sin descripción"}</p>
+                  <time>
+                    {new Date(item.created_at).toLocaleString("es-BO")}
+                  </time>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <Empty title="Todavía no se registró actividad" />
+        )}
+      </section>
+    </>
+  );
+}
 
-export function AuditPage(){const{data,isLoading}=useQuery({queryKey:['audit'],queryFn:()=>api.get('/audit').then(r=>r.data.items)});return <AdminLayout><h1 className="text-3xl font-bold">Auditoría</h1><section className="card mt-6 overflow-x-auto">{isLoading?<Loading/>:data?.length===0?<p>No existen registros.</p>:<table className="w-full text-left"><thead><tr className="border-b"><th className="p-3">Fecha</th><th>Acción</th><th>Entidad</th><th>Descripción</th></tr></thead><tbody>{data?.map((a:any)=><tr className="border-b" key={a.id}><td className="p-3">{new Date(a.created_at).toLocaleString('es-BO')}</td><td>{a.accion}</td><td>{a.entidad}</td><td>{a.descripcion}</td></tr>)}</tbody></table>}</section></AdminLayout>}
+type AdminDraft = {
+  first_name: string;
+  apellido_paterno: string;
+  apellido_materno: string;
+  numero_documento: string;
+  gmail_user: string;
+  phone: string;
+  cargo: string;
+  unidad: string;
+  observaciones: string;
+  role: UserRole;
+};
+const blankAdmin: AdminDraft = {
+  first_name: "",
+  apellido_paterno: "",
+  apellido_materno: "",
+  numero_documento: "",
+  gmail_user: "",
+  phone: "",
+  cargo: "",
+  unidad: "",
+  observaciones: "",
+  role: "ADMIN_VICEMINISTERIO",
+};
 
-export function ExhibitorsPage(){const qc=useQueryClient();const empty={nombre_comercial:'',tipo_documento:'CI',numero_documento:'',nombre_responsable:'',apellido_responsable:'',correo:'',telefono_whatsapp:'',departamento:'La Paz',municipio:'',direccion:'',descripcion:'',descripcion_productos:'',logo:'',type_ids:[] as string[]};const[form,setForm]=useState(empty);const[credentials,setCredentials]=useState<any>(null);const[q,setQ]=useState('');const{data,isLoading}=useQuery({queryKey:['exhibitors',q],queryFn:()=>api.get('/exhibitors',{params:{q}}).then(r=>r.data.items)});const{data:types=[]}=useQuery({queryKey:['exhibitor-types'],queryFn:()=>api.get('/exhibitor-types').then(r=>r.data.items)});const create=useMutation({mutationFn:()=>api.post('/exhibitors',form),onSuccess:r=>{setCredentials(r.data);setForm(empty);qc.invalidateQueries({queryKey:['exhibitors']})}});return <AdminLayout><h1 className="text-3xl font-bold">Expositores</h1>{credentials&&<div className="mt-5 rounded-xl border alert-warning"><strong>Credenciales temporales</strong><p>Usuario: {credentials.username}</p><p>Contraseña: {credentials.temporary_password}</p><button className="mt-2 underline" onClick={()=>setCredentials(null)}>Ya las guardé</button></div>}<form className="card mt-6 grid gap-4 md:grid-cols-2" onSubmit={e=>{e.preventDefault();create.mutate()}}>{Object.entries(form).filter(([k])=>k!=='type_ids').map(([key,value])=><label key={key}>{({nombre_comercial:'Nombre comercial',tipo_documento:'Tipo de documento',numero_documento:'Número de documento',nombre_responsable:'Nombre del responsable',apellido_responsable:'Apellido del responsable',correo:'Correo',telefono_whatsapp:'WhatsApp',departamento:'Departamento',municipio:'Municipio',direccion:'Dirección',descripcion:'Descripción',descripcion_productos:'Productos que ofrece',logo:'Logo'} as any)[key]}{key==='tipo_documento'?<select className="input mt-1" value={value as string} onChange={e=>setForm({...form,tipo_documento:e.target.value})}><option>CI</option><option>NIT</option><option>OTRO</option></select>:<input required={!['direccion','descripcion','descripcion_productos','logo'].includes(key)} className="input mt-1" value={value as string} onChange={e=>setForm({...form,[key]:e.target.value})}/>}</label>)}<fieldset className="md:col-span-2"><legend className="font-medium">Tipos de expositor</legend><div className="mt-2 flex flex-wrap gap-3">{types.map((t:any)=><label className="btn-outline" key={t.id}><input type="checkbox" className="mr-2" checked={form.type_ids.includes(t.id)} onChange={e=>setForm({...form,type_ids:e.target.checked?[...form.type_ids,t.id]:form.type_ids.filter(id=>id!==t.id)})}/>{t.nombre}</label>)}</div></fieldset>{create.error&&<ErrorBox text={(create.error as any).response?.data?.error||'No se pudo crear el expositor.'}/>}<button disabled={create.isPending} className="btn md:col-span-2">Crear expositor y cuenta</button></form><section className="card mt-6"><input className="input mb-4" placeholder="Buscar por nombre, correo o documento" value={q} onChange={e=>setQ(e.target.value)}/>{isLoading?<Loading/>:<div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="border-b"><th className="p-3">Nombre comercial</th><th>Responsable</th><th>WhatsApp</th><th>Ubicación</th><th>Estado</th></tr></thead><tbody>{data?.map((e:any)=><tr className="border-b" key={e.id}><td className="p-3 font-medium">{e.nombre_comercial}</td><td>{e.nombre_responsable} {e.apellido_responsable}</td><td>+{e.telefono_whatsapp}</td><td>{e.municipio}, {e.departamento}</td><td>{e.estado}</td></tr>)}</tbody></table></div>}</section></AdminLayout>}
+function AdminForm({
+  user,
+  onClose,
+  onCreated,
+}: {
+  user: AdminUser | null;
+  onClose: () => void;
+  onCreated: (credentials: CreatedCredentials) => void;
+}) {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const units = useQuery({
+    queryKey: ["admin-units"],
+    queryFn: () =>
+      api
+        .get<{ items: { id: string; nombre: string }[] }>("/admin/units")
+        .then((response) => response.data.items),
+  });
+  const [draft, setDraft] = useState<AdminDraft>(
+    user
+      ? {
+          first_name: user.first_name,
+          apellido_paterno: user.apellido_paterno ?? user.last_name,
+          apellido_materno: user.apellido_materno ?? "",
+          numero_documento: user.numero_documento ?? "",
+          gmail_user: gmailLocalPart(user.email),
+          phone: user.phone ?? "",
+          cargo: user.cargo ?? "",
+          unidad: user.unidad ?? "",
+          observaciones: "",
+          role: user.role,
+        }
+      : blankAdmin,
+  );
+  const [pending, setPending] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPending(true);
+    try {
+      const { gmail_user, role, ...fields } = draft;
+      const basePayload = { ...fields, email: gmailAddress(gmail_user) };
+      if (user) {
+        await api.patch(`/admin/users/${user.id}`, basePayload);
+        feedback.success(
+          "Administrador actualizado",
+          "Los cambios se guardaron correctamente.",
+        );
+      }
+      else {
+        const payload = { ...basePayload, role };
+        const { data } = await api.post<{
+          username: string;
+          temporary_password: string;
+        }>("/admin/users", payload);
+        onCreated({
+          username: data.username,
+          password: data.temporary_password,
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["admins"] });
+      onClose();
+    } catch (reason) {
+      feedback.error(
+        "No se pudo guardar el administrador",
+        apiError(reason, "Revise los datos e inténtelo nuevamente."),
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+  const change = (key: keyof AdminDraft, value: string) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  return (
+    <Modal
+      title={user ? "Editar administrador" : "Nuevo administrador"}
+      onClose={onClose}
+    >
+      <form className="form-grid" onSubmit={submit}>
+        <Field label="Nombres">
+          <input
+            className="input"
+            required
+            value={draft.first_name}
+            onChange={(e) => change("first_name", e.target.value)}
+          />
+        </Field>
+        <Field label="Apellido paterno">
+          <input
+            className="input"
+            required
+            value={draft.apellido_paterno}
+            onChange={(e) => change("apellido_paterno", e.target.value)}
+          />
+        </Field>
+        <Field label="Apellido materno">
+          <input
+            className="input"
+            required
+            value={draft.apellido_materno}
+            onChange={(e) => change("apellido_materno", e.target.value)}
+          />
+        </Field>
+        <Field label="Número de CI">
+          <input
+            className="input"
+            required
+            value={draft.numero_documento}
+            onChange={(e) => change("numero_documento", e.target.value)}
+          />
+        </Field>
+        <Field label="Correo Gmail (solo para recuperar contraseña)">
+          <div className="gmail-input">
+            <input
+              className="input"
+              required
+              aria-label="Usuario de Gmail"
+              pattern="[^@\s]+"
+              title="Escriba solo la parte anterior a @gmail.com"
+              value={draft.gmail_user}
+              onChange={(e) =>
+                change("gmail_user", e.target.value.replace(/@.*$/, ""))
+              }
+            />
+            <span>@gmail.com</span>
+          </div>
+        </Field>
+        <Field label="Celular">
+          <input
+            className="input"
+            value={draft.phone}
+            onChange={(e) => change("phone", e.target.value)}
+          />
+        </Field>
+        <Field label="Cargo">
+          <input
+            className="input"
+            value={draft.cargo}
+            onChange={(e) => change("cargo", e.target.value)}
+          />
+        </Field>
+        <Field label="Unidad">
+          <SearchableSelect
+            value={draft.unidad}
+            options={(units.data ?? []).map((unit) => ({
+              value: unit.nombre,
+              label: unit.nombre,
+            }))}
+            placeholder="Buscar o escribir una unidad nueva…"
+            searchPlaceholder="Buscar unidad…"
+            ariaLabel="Unidad"
+            allowCustom
+            onChange={(value) => change("unidad", value)}
+            onDelete={async (option) => {
+              const unit = units.data?.find(
+                (item) => item.nombre === option.value,
+              );
+              if (!unit) return;
+              const confirmed = await feedback.confirm({
+                title: "Eliminar unidad",
+                message: `¿Eliminar ${option.label} de las opciones disponibles?`,
+                confirmLabel: "Sí, eliminar",
+                danger: true,
+              });
+              if (!confirmed) return;
+              await api.delete(`/admin/units/${unit.id}`);
+              await queryClient.invalidateQueries({
+                queryKey: ["admin-units"],
+              });
+              feedback.success(
+                "Unidad eliminada",
+                `${option.label} ya no aparece entre las opciones.`,
+              );
+            }}
+          />
+        </Field>
+        {!user && (
+          <Field label="Rol">
+            <select
+              className="input"
+              value={draft.role}
+              onChange={(e) => change("role", e.target.value)}
+            >
+              <option value="ADMIN_VICEMINISTERIO">Administrador</option>
+              <option value="SUPERADMIN">Superadministrador</option>
+            </select>
+          </Field>
+        )}
+        <Field label="Observaciones">
+          <textarea
+            className="input"
+            rows={3}
+            value={draft.observaciones}
+            onChange={(e) => change("observaciones", e.target.value)}
+          />
+        </Field>
+        <div className="modal-actions full">
+          <button type="button" className="btn-outline" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn" disabled={pending}>
+            Guardar
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
-export function ProductsPage({mode}:{mode:'admin'|'expositor'}){const qc=useQueryClient();const admin=mode==='admin';const empty={exhibitor_id:'',category_id:'',nombre:'',descripcion:'',precio:'',estado:'AVAILABLE',materiales_o_ingredientes:'',lugar_origen:'',presentacion:'',informacion_adicional:''};const[form,setForm]=useState(empty);const[image,setImage]=useState({product_id:'',url:''});const{data:products=[]}=useQuery({queryKey:[admin?'products-admin':'products-own'],queryFn:()=>api.get(admin?'/products':'/exhibitor/products').then(r=>r.data.items)});const{data:categories=[]}=useQuery({queryKey:['categories'],queryFn:()=>api.get('/categories').then(r=>r.data.items)});const{data:exhibitors=[]}=useQuery({queryKey:['exhibitors-for-products'],enabled:admin,queryFn:()=>api.get('/exhibitors').then(r=>r.data.items)});const create=useMutation({mutationFn:()=>api.post(admin?'/products':'/exhibitor/products',form),onSuccess:()=>{setForm(empty);qc.invalidateQueries({queryKey:[admin?'products-admin':'products-own']})}});const update=useMutation({mutationFn:(p:Product)=>api.patch(admin?`/products/${p.id}`:`/exhibitor/products/${p.id}`,{estado:p.estado==='AVAILABLE'?'INACTIVE':'AVAILABLE'}),onSuccess:()=>qc.invalidateQueries({queryKey:[admin?'products-admin':'products-own']})});const addImage=useMutation({mutationFn:()=>api.post(admin?`/products/${image.product_id}/images`:`/exhibitor/products/${image.product_id}/images`,{url:image.url}),onSuccess:()=>{setImage({product_id:'',url:''});qc.invalidateQueries({queryKey:[admin?'products-admin':'products-own']})}});return <AdminLayout><h1 className="text-3xl font-bold">{admin?'Productos':'Mis productos'}</h1><form className="card mt-6 grid gap-4 md:grid-cols-2" onSubmit={e=>{e.preventDefault();create.mutate()}}>{admin&&<label>Expositor<select required className="input mt-1" value={form.exhibitor_id} onChange={e=>setForm({...form,exhibitor_id:e.target.value})}><option value="">Seleccione expositor</option>{exhibitors.map((e:Exhibitor)=><option key={e.id} value={e.id}>{e.nombre_comercial}</option>)}</select></label>}<label>Categoría<select required className="input mt-1" value={form.category_id} onChange={e=>setForm({...form,category_id:e.target.value})}><option value="">Seleccione categoría</option>{categories.map((c:Category)=><option key={c.id} value={c.id}>{c.nombre}</option>)}</select></label><label>Nombre<input required className="input mt-1" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/></label><label>Precio<input type="number" min="0" step="0.01" className="input mt-1" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})}/></label><label className="md:col-span-2">Descripción<textarea required className="input mt-1" value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})}/></label><label>Materiales o ingredientes<input className="input mt-1" value={form.materiales_o_ingredientes} onChange={e=>setForm({...form,materiales_o_ingredientes:e.target.value})}/></label><label>Origen<input className="input mt-1" value={form.lugar_origen} onChange={e=>setForm({...form,lugar_origen:e.target.value})}/></label><label>Presentación<input className="input mt-1" value={form.presentacion} onChange={e=>setForm({...form,presentacion:e.target.value})}/></label><label>Estado<select className="input mt-1" value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>{statuses.map(s=><option key={s}>{s}</option>)}</select></label>{create.error&&<ErrorBox text={(create.error as any).response?.data?.error||'No se pudo crear el producto.'}/>}<button className="btn md:col-span-2">Crear producto</button></form><form className="card mt-6 grid gap-3 md:grid-cols-3" onSubmit={e=>{e.preventDefault();addImage.mutate()}}><select required className="input" value={image.product_id} onChange={e=>setImage({...image,product_id:e.target.value})}><option value="">Producto para imagen</option>{products.map((p:Product)=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select><input required className="input" placeholder="URL de imagen o /uploads/..." value={image.url} onChange={e=>setImage({...image,url:e.target.value})}/><button className="btn">Agregar imagen</button></form><section className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{products.map((p:Product)=><article className="card" key={p.id}>{p.imagenes[0]&&<img className="mb-4 h-40 w-full rounded-xl object-cover" src={p.imagenes[0].url}/>}<h2 className="text-xl font-bold">{p.nombre}</h2><p className="mt-2 text-muted">{p.descripcion}</p>{p.precio!==null&&<p className="mt-3 font-semibold text-price">Bs. {p.precio.toFixed(2)}</p>}<p className="mt-2 text-sm">{p.estado}</p><button className="mt-4 btn-outline" onClick={()=>update.mutate(p)}>{p.estado==='AVAILABLE'?'Inhabilitar':'Activar'}</button></article>)}</section></AdminLayout>}
+export function AdministratorsPage() {
+  const { user: current } = useAuth();
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [role, setRole] = useState("");
+  const [unit, setUnit] = useState("");
+  const [page, setPage] = useState(1);
+  const [editing, setEditing] = useState<AdminUser | "new" | null>(null);
+  const [credentialsDialog, setCredentialsDialog] =
+    useState<CredentialsDialog | null>(null);
+  const list = useQuery({
+    queryKey: ["admins", query, status, role, unit, page],
+    queryFn: () =>
+      api
+        .get<Paged<AdminUser>>("/admin/users", {
+          params: { q: query || undefined, status: status || undefined, role: role || undefined, unit: unit || undefined, page },
+        })
+        .then((response) => response.data),
+  });
+  const units = useQuery({
+    queryKey: ["admin-units"],
+    queryFn: () => api.get<{ items: { id: string; nombre: string }[] }>("/admin/units").then((response) => response.data.items),
+  });
+  const action = async (
+    operation: () => Promise<unknown>,
+    successMessage?: string,
+  ) => {
+    try {
+      await operation();
+      await queryClient.invalidateQueries({ queryKey: ["admins"] });
+      if (successMessage)
+        feedback.success("Operación realizada", successMessage);
+    } catch (reason) {
+      const message = apiError(reason);
+      feedback.error("No se pudo completar la operación", message);
+    }
+  };
+  return (
+    <>
+      <Header
+        eyebrow="Seguridad"
+        title="Administradores"
+        description="Cuentas con acceso a la gestión institucional."
+        action={
+          <button className="btn" onClick={() => setEditing("new")}>
+            <Plus /> Nuevo administrador
+          </button>
+        }
+      />
+      <div className="toolbar">
+        <SearchField
+          value={query}
+          onChange={(value) => {
+            setQuery(value);
+            setPage(1);
+          }}
+          placeholder="Buscar administrador…"
+        />
+        <select className="input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Todos los estados</option><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option><option value="LOCKED">Bloqueados</option></select>
+        <select className="input" value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }}><option value="">Todos los roles</option><option value="SUPERADMIN">Superadministradores</option><option value="ADMIN_VICEMINISTERIO">Administradores</option></select>
+        <select className="input" value={unit} onChange={(event) => { setUnit(event.target.value); setPage(1); }}><option value="">Todas las unidades</option>{units.data?.map((item) => <option key={item.id} value={item.nombre}>{item.nombre}</option>)}</select>
+      </div>
+      {list.isLoading ? (
+        <Loading />
+      ) : list.data?.items.length ? (
+        <>
+          <div className="data-cards">
+            {list.data.items.map((item) => (
+              <article className="data-card" key={item.id}>
+                <div className="data-card-main">
+                  <div className="avatar">
+                    <ShieldCheck />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      <h2>
+                        {item.first_name}{" "}
+                        {item.apellido_paterno ?? item.last_name}{" "}
+                        {item.apellido_materno ?? ""}
+                      </h2>
+                      <StatusBadge value={item.status} />
+                    </div>
+                    <p>
+                      {item.email} ·{" "}
+                      {item.role === "SUPERADMIN"
+                        ? "Superadministrador"
+                        : "Administrador"}
+                    </p>
+                    <small>
+                      {item.cargo || "Sin cargo"}
+                      {item.unidad && ` · ${item.unidad}`}
+                    </small>
+                  </div>
+                </div>
+                <div className="data-card-actions">
+                  <button
+                    className="btn-outline"
+                    onClick={() => setEditing(item)}
+                  >
+                    <Edit3 size={17} /> Editar
+                  </button>
+                  <ConfirmButton
+                    className="btn-outline"
+                    question="¿Restablecer la contraseña de esta cuenta?"
+                    onConfirm={() =>
+                      action(async () => {
+                        const { data } = await api.post(
+                          `/admin/users/${item.id}/reset-password`,
+                        );
+                        setCredentialsDialog({
+                          title: "Contraseña restablecida correctamente",
+                          credentials: {
+                            username: item.username,
+                            password: data.temporary_password,
+                          },
+                        });
+                      })
+                    }
+                  >
+                    <KeyRound size={17} /> Restablecer
+                  </ConfirmButton>
+                  <ConfirmButton
+                    className="btn-outline"
+                    disabled={item.id === current?.id}
+                    question={`¿${item.status === "ACTIVE" ? "Inhabilitar" : "Activar"} la cuenta de ${item.first_name}?`}
+                    onConfirm={() =>
+                      action(
+                        () => api.patch(`/admin/users/${item.id}/status`, {
+                          status:
+                            item.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                        }),
+                        item.status === "ACTIVE"
+                          ? "El administrador fue inhabilitado correctamente."
+                          : "El administrador fue activado correctamente.",
+                      )
+                    }
+                  >
+                    {item.status === "ACTIVE" ? (
+                      <UserX size={17} />
+                    ) : (
+                      <UserCheck size={17} />
+                    )}{" "}
+                    {item.status === "ACTIVE" ? "Inhabilitar" : "Activar"}
+                  </ConfirmButton>
+                  <ConfirmButton
+                    disabled={item.id === current?.id}
+                    question={`¿Eliminar la cuenta de ${item.first_name}?`}
+                    onConfirm={() =>
+                      action(
+                        () => api.delete(`/admin/users/${item.id}`),
+                        "El administrador fue eliminado correctamente.",
+                      )
+                    }
+                  >
+                    <Trash2 size={17} />
+                  </ConfirmButton>
+                </div>
+              </article>
+            ))}
+          </div>
+          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+        </>
+      ) : (
+        <Empty title="No hay administradores" />
+      )}
+      {editing && (
+        <AdminForm
+          user={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onCreated={(credentials) =>
+            setCredentialsDialog({
+              title: "Administrador creado correctamente",
+              credentials,
+            })
+          }
+        />
+      )}
+      {credentialsDialog && (
+        <CredentialsModal
+          title={credentialsDialog.title}
+          credentials={credentialsDialog.credentials}
+          onClose={() => setCredentialsDialog(null)}
+        />
+      )}
+    </>
+  );
+}
+
+type ExhibitorDraft = {
+  nombre_comercial: string;
+  tipo_documento: "CI" | "NIT" | "OTRO";
+  numero_documento: string;
+  nombre_responsable: string;
+  apellido_paterno_responsable: string;
+  apellido_materno_responsable: string;
+  gmail_user: string;
+  telefono_whatsapp: string;
+  departamento: string;
+  municipio: string;
+  direccion: string;
+  descripcion: string;
+  descripcion_productos: string;
+  nombre_tipo_expositor: string;
+  logo: string;
+  type_ids: string[];
+};
+const blankExhibitor: ExhibitorDraft = {
+  nombre_comercial: "",
+  tipo_documento: "CI",
+  numero_documento: "",
+  nombre_responsable: "",
+  apellido_paterno_responsable: "",
+  apellido_materno_responsable: "",
+  gmail_user: "",
+  telefono_whatsapp: "591",
+  departamento: "La Paz",
+  municipio: "",
+  direccion: "",
+  descripcion: "",
+  descripcion_productos: "",
+  nombre_tipo_expositor: "",
+  logo: "",
+  type_ids: [],
+};
+
+function ExhibitorForm({
+  exhibitor,
+  types,
+  onClose,
+  onCreated,
+}: {
+  exhibitor: Exhibitor | null;
+  types: { id: string; nombre: string }[];
+  onClose: () => void;
+  onCreated: (credentials: CreatedCredentials) => void;
+}) {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const source: ExhibitorDraft = exhibitor
+    ? {
+        nombre_comercial: exhibitor.nombre_comercial,
+        tipo_documento: exhibitor.tipo_documento ?? "CI",
+        numero_documento: exhibitor.numero_documento ?? "",
+        nombre_responsable: exhibitor.nombre_responsable ?? "",
+        apellido_paterno_responsable:
+          exhibitor.apellido_paterno_responsable ??
+          exhibitor.apellido_responsable ??
+          "",
+        apellido_materno_responsable:
+          exhibitor.apellido_materno_responsable ?? "",
+        gmail_user: gmailLocalPart(exhibitor.correo ?? ""),
+        telefono_whatsapp: exhibitor.telefono_whatsapp ?? "591",
+        departamento: exhibitor.departamento ?? "La Paz",
+        municipio: exhibitor.municipio ?? "",
+        direccion: exhibitor.direccion ?? "",
+        descripcion: exhibitor.descripcion ?? "",
+        descripcion_productos: exhibitor.descripcion_productos ?? "",
+        nombre_tipo_expositor: exhibitor.nombre_tipo_expositor ?? "",
+        logo: exhibitor.logo ?? "",
+        type_ids: exhibitor.type_ids ?? [],
+      }
+    : blankExhibitor;
+  const [draft, setDraft] = useState(source);
+  const [useResponsibleName, setUseResponsibleName] = useState(false);
+  const [logo, setLogo] = useState<File | null>(null);
+  const [logoMode, setLogoMode] = useState<"UPLOAD" | "URL">(
+    /^https?:\/\//i.test(source.logo) ? "URL" : "UPLOAD",
+  );
+  const [pending, setPending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const change = (key: keyof ExhibitorDraft, value: string | string[]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  const responsibleFullName = responsibleDisplayName(
+    draft.nombre_responsable,
+    draft.apellido_paterno_responsable,
+    draft.apellido_materno_responsable,
+  );
+  const selectedType = types.find((item) => item.id === draft.type_ids[0]);
+  const typeNameLabels: Record<string, string> = {
+    "Asociación": "Nombre de la asociación",
+    Cooperativa: "Nombre de la cooperativa",
+    Emprendimiento: "Nombre del emprendimiento",
+    Microempresa: "Nombre de la microempresa",
+  };
+  const typeNameLabel = selectedType ? typeNameLabels[selectedType.nombre] : undefined;
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPending(true);
+    try {
+      const logoUrl =
+        logoMode === "URL"
+          ? draft.logo.trim() || null
+          : logo
+            ? await uploadFile(logo, "logos", setUploadProgress)
+            : /^https?:\/\//i.test(draft.logo)
+              ? null
+              : draft.logo || null;
+      const { gmail_user, type_ids, ...fields } = draft;
+      const basePayload = {
+        ...fields,
+        nombre_comercial: useResponsibleName
+          ? responsibleFullName
+          : draft.nombre_comercial.trim(),
+        correo: gmailAddress(gmail_user),
+        logo: logoUrl,
+      };
+      if (exhibitor) {
+        await api.patch(`/exhibitors/${exhibitor.id}`, { ...basePayload, type_ids });
+        feedback.success(
+          "Expositor actualizado",
+          "Los cambios se guardaron correctamente.",
+        );
+      } else {
+        const payload = { ...basePayload, type_ids };
+        const { data } = await api.post<{
+          username: string;
+          temporary_password: string;
+        }>("/exhibitors", payload);
+        onCreated({
+          username: data.username,
+          password: data.temporary_password,
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["exhibitors"] });
+      onClose();
+    } catch (reason) {
+      feedback.error(
+        "No se pudo guardar el expositor",
+        apiError(reason, "Revise los datos e inténtelo nuevamente."),
+      );
+    } finally {
+      setPending(false);
+      setUploadProgress(0);
+    }
+  };
+  return (
+    <Modal
+      title={exhibitor ? "Editar expositor" : "Nuevo expositor"}
+      onClose={onClose}
+      wide
+    >
+      <form className="form-grid" onSubmit={submit}>
+        <Field label="Nombre comercial">
+          <input
+            className="input"
+            required
+            disabled={useResponsibleName}
+            placeholder={
+              useResponsibleName
+                ? "Se usará el nombre completo del responsable"
+                : undefined
+            }
+            value={
+              useResponsibleName ? responsibleFullName : draft.nombre_comercial
+            }
+            onChange={(e) => change("nombre_comercial", e.target.value)}
+          />
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={useResponsibleName}
+              onChange={(event) => setUseResponsibleName(event.target.checked)}
+            />
+            No tiene nombre comercial; usar el nombre del responsable
+          </label>
+        </Field>
+        <Field label="Tipo de documento">
+          <select
+            className="input"
+            value={draft.tipo_documento}
+            onChange={(e) => change("tipo_documento", e.target.value)}
+          >
+            <option value="CI">CI</option>
+            <option value="NIT">NIT</option>
+            <option value="OTRO">Otro</option>
+          </select>
+        </Field>
+        <Field
+          label={
+            draft.tipo_documento === "CI"
+              ? "CI"
+              : draft.tipo_documento === "NIT"
+                ? "NIT"
+                : "Número de documento"
+          }
+        >
+          <input
+            className="input"
+            required
+            value={draft.numero_documento}
+            onChange={(e) => change("numero_documento", e.target.value)}
+          />
+        </Field>
+        <Field label="Nombres del responsable">
+          <input
+            className="input"
+            required
+            value={draft.nombre_responsable}
+            onChange={(e) => change("nombre_responsable", e.target.value)}
+          />
+        </Field>
+        <Field label="Apellido paterno del responsable">
+          <input
+            className="input"
+            required
+            value={draft.apellido_paterno_responsable}
+            onChange={(e) =>
+              change("apellido_paterno_responsable", e.target.value)
+            }
+          />
+        </Field>
+        <Field label="Apellido materno del responsable">
+          <input
+            className="input"
+            required
+            value={draft.apellido_materno_responsable}
+            onChange={(e) =>
+              change("apellido_materno_responsable", e.target.value)
+            }
+          />
+        </Field>
+        <Field label="Correo Gmail (solo para recuperar contraseña)">
+          <div className="gmail-input">
+            <input
+              className="input"
+              required
+              aria-label="Usuario de Gmail del expositor"
+              pattern="[^@\s]+"
+              title="Escriba solo la parte anterior a @gmail.com"
+              value={draft.gmail_user}
+              onChange={(e) =>
+                change("gmail_user", e.target.value.replace(/@.*$/, ""))
+              }
+            />
+            <span>@gmail.com</span>
+          </div>
+        </Field>
+        <Field label="WhatsApp">
+          <div className="phone-input">
+            <span>+591</span>
+            <input
+              className="input"
+              required
+              inputMode="numeric"
+              maxLength={8}
+              pattern="[67][0-9]{7}"
+              title="Ingrese los 8 dígitos del celular boliviano"
+              value={draft.telefono_whatsapp.replace(/^591/, "")}
+              onChange={(event) =>
+                change(
+                  "telefono_whatsapp",
+                  `591${event.target.value.replace(/\D/g, "").slice(0, 8)}`,
+                )
+              }
+            />
+          </div>
+        </Field>
+        <LocationFields
+          department={draft.departamento}
+          municipality={draft.municipio}
+          onDepartment={(value) => change("departamento", value)}
+          onMunicipality={(value) => change("municipio", value)}
+        />
+        <Field label="Dirección">
+          <input
+            className="input"
+            value={draft.direccion}
+            onChange={(e) => change("direccion", e.target.value)}
+          />
+        </Field>
+        <Field label="Tipo de expositor">
+          <div className="check-list exhibitor-type-list">
+            {types.map((type) => (
+              <label key={type.id}>
+                <input
+                  type="radio"
+                  name="tipo_expositor"
+                  checked={draft.type_ids[0] === type.id}
+                  onChange={() => {
+                    change("type_ids", [type.id]);
+                    change("nombre_tipo_expositor", "");
+                  }}
+                />
+                {type.nombre}
+              </label>
+            ))}
+          </div>
+        </Field>
+        {typeNameLabel && (
+          <Field label={typeNameLabel}>
+            <input
+              className="input"
+              required
+              value={draft.nombre_tipo_expositor}
+              onChange={(event) => change("nombre_tipo_expositor", event.target.value)}
+            />
+          </Field>
+        )}
+        <Field label="Origen del logo">
+          <select
+            className="input"
+            value={logoMode}
+            onChange={(e) => {
+              setLogoMode(e.target.value as "UPLOAD" | "URL");
+              setLogo(null);
+            }}
+          >
+            <option value="UPLOAD">Cargar desde el dispositivo</option>
+            <option value="URL">Usar URL de imagen</option>
+          </select>
+        </Field>
+        <Field
+          label={logoMode === "URL" ? "URL del logo" : "Archivo del logo"}
+        >
+          {logoMode === "URL" ? (
+            <input
+              className="input"
+              type="url"
+              placeholder="https://ejemplo.com/logo.jpg"
+              value={draft.logo}
+              onChange={(e) => change("logo", e.target.value)}
+            />
+          ) : (
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
+            />
+          )}
+        </Field>
+        <UploadProgress value={uploadProgress} />
+        <Field label="Descripción">
+          <textarea
+            className="input"
+            rows={4}
+            value={draft.descripcion}
+            onChange={(e) => change("descripcion", e.target.value)}
+          />
+        </Field>
+        <Field label="Descripción de productos">
+          <textarea
+            className="input"
+            rows={4}
+            value={draft.descripcion_productos}
+            onChange={(e) => change("descripcion_productos", e.target.value)}
+          />
+        </Field>
+        <div className="modal-actions full">
+          <button type="button" className="btn-outline" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            className="btn"
+            disabled={pending || draft.type_ids.length !== 1 || Boolean(typeNameLabel && !draft.nombre_tipo_expositor.trim())}
+          >
+            Guardar expositor
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function ExhibitorsPage() {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [department, setDepartment] = useState("");
+  const [municipality, setMunicipality] = useState("");
+  const [documentType, setDocumentType] = useState("");
+  const [page, setPage] = useState(1);
+  const [editing, setEditing] = useState<Exhibitor | "new" | null>(null);
+  const [credentialsDialog, setCredentialsDialog] =
+    useState<CredentialsDialog | null>(null);
+  const list = useQuery({
+    queryKey: ["exhibitors", query, status, department, municipality, documentType, page],
+    queryFn: () =>
+      api
+        .get<Paged<Exhibitor>>("/exhibitors", {
+          params: {
+            q: query || undefined,
+            estado: status || undefined,
+            departamento: department || undefined,
+            municipio: municipality || undefined,
+            tipo_documento: documentType || undefined,
+            page,
+          },
+        })
+        .then((r) => r.data),
+  });
+  const types = useQuery({
+    queryKey: ["exhibitor-types"],
+    queryFn: () =>
+      api
+        .get<{ items: { id: string; nombre: string }[] }>("/exhibitor-types")
+        .then((r) => r.data.items),
+  });
+  const action = async (
+    operation: () => Promise<unknown>,
+    successMessage?: string,
+  ) => {
+    try {
+      await operation();
+      await queryClient.invalidateQueries({ queryKey: ["exhibitors"] });
+      if (successMessage)
+        feedback.success("Operación realizada", successMessage);
+    } catch (reason) {
+      const message = apiError(reason);
+      feedback.error("No se pudo completar la operación", message);
+    }
+  };
+  return (
+    <>
+      <Header
+        eyebrow="Empresas"
+        title="Expositores"
+        description="Cuentas y emprendimientos registrados en la plataforma."
+        action={
+          <button className="btn" onClick={() => setEditing("new")}>
+            <Plus /> Nuevo expositor
+          </button>
+        }
+      />
+      <div className="toolbar">
+        <SearchField
+          value={query}
+          onChange={(v) => {
+            setQuery(v);
+            setPage(1);
+          }}
+          placeholder="Buscar por nombre comercial o responsable…"
+        />
+        <select
+          className="input"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        >
+          <option value="">Todos los estados</option>
+          <option value="ACTIVE">Activos</option>
+          <option value="INACTIVE">Inactivos</option>
+          <option value="LOCKED">Bloqueados</option>
+        </select>
+        <SearchableSelect
+          value={department}
+          options={[
+            { value: "", label: "Todos los departamentos" },
+            ...BOLIVIA_DEPARTMENTS.map((item) => ({ value: item, label: item })),
+          ]}
+          placeholder="Todos los departamentos"
+          searchPlaceholder="Buscar departamento…"
+          ariaLabel="Filtrar por departamento"
+          onChange={(value) => {
+            setDepartment(value);
+            setMunicipality("");
+            setPage(1);
+          }}
+        />
+        <SearchableSelect
+          disabled={!department}
+          value={municipality}
+          options={[{ value: "", label: "Todos los municipios" }, ...municipalitiesFor(department).map((item) => ({ value: item, label: item }))]}
+          placeholder="Todos los municipios"
+          searchPlaceholder="Buscar municipio…"
+          ariaLabel="Filtrar por municipio"
+          onChange={(value) => { setMunicipality(value); setPage(1); }}
+        />
+        <select className="input" value={documentType} onChange={(event) => { setDocumentType(event.target.value); setPage(1); }}><option value="">Todos los documentos</option><option value="CI">CI</option><option value="NIT">NIT</option><option value="OTRO">Otro</option></select>
+      </div>
+      {list.isLoading ? (
+        <Loading />
+      ) : list.data?.items.length ? (
+        <>
+          <div className="data-cards">
+            {list.data.items.map((item) => (
+              <article className="data-card" key={item.id}>
+                <div className="data-card-main">
+                  {item.logo ? (
+                    <img
+                      className="data-thumb"
+                      src={assetUrl(item.logo)}
+                      alt=""
+                    />
+                  ) : (
+                    <div className="avatar">
+                      <Store />
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      <h2>{item.nombre_comercial}</h2>
+                      <StatusBadge value={item.estado ?? "INACTIVE"} />
+                    </div>
+                    <p>
+                      {item.nombre_responsable}{" "}
+                      {item.apellido_paterno_responsable ??
+                        item.apellido_responsable}{" "}
+                      {item.apellido_materno_responsable ?? ""} ·{" "}
+                      {item.correo}
+                    </p>
+                    <small>
+                      {item.municipio}, {item.departamento} · WhatsApp{" "}
+                      {item.telefono_whatsapp}
+                    </small>
+                  </div>
+                </div>
+                <div className="data-card-actions">
+                  <button
+                    className="btn-outline"
+                    onClick={() => setEditing(item)}
+                  >
+                    <Edit3 size={17} /> Editar
+                  </button>
+                  <ConfirmButton
+                    className="btn-outline"
+                    question={`¿Restablecer la contraseña de ${item.nombre_comercial}?`}
+                    onConfirm={() =>
+                      action(async () => {
+                        const { data } = await api.post<{
+                          username: string;
+                          temporary_password: string;
+                        }>(`/admin/users/${item.user_id}/reset-password`);
+                        setCredentialsDialog({
+                          title: "Contraseña restablecida correctamente",
+                          credentials: {
+                            username: data.username,
+                            password: data.temporary_password,
+                          },
+                        });
+                      })
+                    }
+                  >
+                    <KeyRound size={17} /> Restablecer contraseña
+                  </ConfirmButton>
+                  <ConfirmButton
+                    className="btn-outline"
+                    question={`¿${item.estado === "ACTIVE" ? "Inhabilitar" : "Activar"} al expositor ${item.nombre_comercial}?`}
+                    onConfirm={() =>
+                      action(
+                        () => api.patch(`/exhibitors/${item.id}/status`, {
+                          status:
+                            item.estado === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                        }),
+                        item.estado === "ACTIVE"
+                          ? "El expositor fue inhabilitado correctamente."
+                          : "El expositor fue activado correctamente.",
+                      )
+                    }
+                  >
+                    {item.estado === "ACTIVE" ? (
+                      <UserX size={17} />
+                    ) : (
+                      <UserCheck size={17} />
+                    )}{" "}
+                    {item.estado === "ACTIVE" ? "Inhabilitar" : "Activar"}
+                  </ConfirmButton>
+                  <ConfirmButton
+                    question={`¿Eliminar ${item.nombre_comercial} y desactivar su cuenta?`}
+                    onConfirm={() =>
+                      action(
+                        () => api.delete(`/exhibitors/${item.id}`),
+                        "El expositor y su cuenta fueron eliminados correctamente.",
+                      )
+                    }
+                  >
+                    <Trash2 size={17} />
+                  </ConfirmButton>
+                </div>
+              </article>
+            ))}
+          </div>
+          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+        </>
+      ) : (
+        <Empty title="No se encontraron expositores" />
+      )}
+      {editing && (
+        <ExhibitorForm
+          exhibitor={editing === "new" ? null : editing}
+          types={types.data ?? []}
+          onClose={() => setEditing(null)}
+          onCreated={(credentials) =>
+            setCredentialsDialog({
+              title: "Expositor creado correctamente",
+              credentials,
+            })
+          }
+        />
+      )}
+      {credentialsDialog && (
+        <CredentialsModal
+          title={credentialsDialog.title}
+          credentials={credentialsDialog.credentials}
+          onClose={() => setCredentialsDialog(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function CategoryForm({
+  category,
+  onClose,
+}: {
+  category: Category | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const [nombre, setNombre] = useState(category?.nombre ?? "");
+  const [descripcion, setDescripcion] = useState(category?.descripcion ?? "");
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (category)
+        await api.patch(`/categories/${category.id}`, { nombre, descripcion });
+      else await api.post("/categories", { nombre, descripcion });
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
+      onClose();
+      feedback.success(
+        category ? "Categoría actualizada" : "Categoría creada",
+        category
+          ? "Los cambios se guardaron correctamente."
+          : "La nueva categoría está disponible en el catálogo.",
+      );
+    } catch (reason) {
+      const message = apiError(reason);
+      feedback.error("No se pudo guardar la categoría", message);
+    }
+  };
+  return (
+    <Modal
+      title={category ? "Editar categoría" : "Nueva categoría"}
+      onClose={onClose}
+    >
+      <form className="form-stack" onSubmit={submit}>
+        <Field label="Nombre">
+          <input
+            className="input"
+            required
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+          />
+        </Field>
+        <Field label="Descripción">
+          <textarea
+            className="input"
+            rows={4}
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+          />
+        </Field>
+        <div className="modal-actions">
+          <button type="button" className="btn-outline" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn">Guardar</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function CategoriesPage() {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const [editing, setEditing] = useState<Category | "new" | null>(null);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const list = useQuery({
+    queryKey: ["categories", "admin", query, status, page],
+    queryFn: () =>
+      api
+        .get<Paged<Category>>("/admin/categories", { params: { q: query || undefined, status: status || undefined, page } })
+        .then((r) => r.data),
+  });
+  const action = async (
+    operation: () => Promise<unknown>,
+    successMessage: string,
+  ) => {
+    try {
+      await operation();
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
+      feedback.success("Operación realizada", successMessage);
+    } catch (reason) {
+      const message = apiError(reason);
+      feedback.error("No se pudo completar la operación", message);
+    }
+  };
+  return (
+    <>
+      <Header
+        eyebrow="Clasificación"
+        title="Categorías"
+        description="Organice los productos publicados en el catálogo."
+        action={
+          <button className="btn" onClick={() => setEditing("new")}>
+            <Plus /> Nueva categoría
+          </button>
+        }
+      />
+      <div className="toolbar">
+        <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Buscar categoría…" />
+        <select className="input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Todos los estados</option><option value="active">Activas</option><option value="inactive">Inactivas</option></select>
+      </div>
+      {list.isLoading ? (
+        <Loading />
+      ) : list.data?.items.length ? (
+        <>
+          <div className="data-cards">
+            {list.data.items.map((item) => (
+              <article className="data-card" key={item.id}>
+                <div className="data-card-main">
+                  <div className="avatar">
+                    <Store />
+                  </div>
+                  <div>
+                    <div className="flex gap-2">
+                      <h2>{item.nombre}</h2>
+                      <StatusBadge value={item.estado} />
+                    </div>
+                    <p>{item.descripcion || "Sin descripción"}</p>
+                  </div>
+                </div>
+                <div className="data-card-actions">
+                  <button
+                    className="btn-outline"
+                    onClick={() => setEditing(item)}
+                  >
+                    <Edit3 size={17} /> Editar
+                  </button>
+                  <ConfirmButton
+                    className="btn-outline"
+                    question={`¿${item.estado ? "Inhabilitar" : "Activar"} la categoría ${item.nombre}?`}
+                    onConfirm={() =>
+                      action(
+                        () => api.patch(`/categories/${item.id}/status`, {
+                          active: !item.estado,
+                        }),
+                        item.estado
+                          ? "La categoría fue inhabilitada correctamente."
+                          : "La categoría fue activada correctamente.",
+                      )
+                    }
+                  >
+                    {item.estado ? "Inhabilitar" : "Activar"}
+                  </ConfirmButton>
+                  <ConfirmButton
+                    question={`¿Eliminar la categoría ${item.nombre}? Solo será posible si no tiene productos.`}
+                    onConfirm={() =>
+                      action(
+                        () => api.delete(`/categories/${item.id}`),
+                        "La categoría fue eliminada correctamente.",
+                      )
+                    }
+                  >
+                    <Trash2 size={17} />
+                  </ConfirmButton>
+                </div>
+              </article>
+            ))}
+          </div>
+          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+        </>
+      ) : (
+        <Empty title="No hay categorías" />
+      )}
+      {editing && (
+        <CategoryForm
+          category={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </>
+  );
+}
+
+type FairDraft = {
+  nombre: string;
+  descripcion: string;
+  lugar: string;
+  direccion: string;
+  departamento: string;
+  municipio: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+  observaciones: string;
+  imagen_portada: string;
+};
+const blankFair: FairDraft = {
+  nombre: "",
+  descripcion: "",
+  lugar: "",
+  direccion: "",
+  departamento: "La Paz",
+  municipio: "",
+  fecha_inicio: "",
+  fecha_fin: "",
+  observaciones: "",
+  imagen_portada: "",
+};
+
+function ImagePreviewModal({ src, title, onClose }: { src: string; title: string; onClose: () => void }) {
+  return <Modal title={title} onClose={onClose} wide>
+    <div className="image-preview-dialog">
+      <img src={src} alt={title} />
+      <div className="modal-actions"><button type="button" className="btn" onClick={onClose} autoFocus>OK</button></div>
+    </div>
+  </Modal>;
+}
+
+function FairForm({
+  fair,
+  onClose,
+}: {
+  fair: Fair | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const [draft, setDraft] = useState<FairDraft>(
+    fair
+      ? {
+          nombre: fair.nombre,
+          lugar: fair.lugar,
+          imagen_portada: fair.imagen_portada ?? "",
+          observaciones: fair.observaciones ?? "",
+          descripcion: fair.descripcion ?? "",
+          direccion: fair.direccion ?? "",
+          departamento: fair.departamento,
+          municipio: fair.municipio,
+          fecha_inicio: fair.fecha_inicio,
+          fecha_fin: fair.fecha_fin,
+        }
+      : blankFair,
+  );
+  const [cover, setCover] = useState<File | null>(null);
+  const [coverMode, setCoverMode] = useState<"UPLOAD" | "URL">(
+    /^https?:\/\//i.test(fair?.imagen_portada ?? "") ? "URL" : "UPLOAD",
+  );
+  const [coverPreview, setCoverPreview] = useState(assetUrl(fair?.imagen_portada));
+  const [showCoverPreview, setShowCoverPreview] = useState(false);
+  useEffect(() => () => {
+    if (coverPreview.startsWith("blob:")) URL.revokeObjectURL(coverPreview);
+  }, [coverPreview]);
+  const [pending, setPending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const change = (key: keyof FairDraft, value: string) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPending(true);
+    if (draft.fecha_fin < draft.fecha_inicio) {
+      setPending(false);
+      const message = "La fecha final no puede ser anterior a la inicial.";
+      feedback.error("Fechas incorrectas", message);
+      return;
+    }
+    try {
+      const imagen_portada =
+        coverMode === "URL"
+          ? draft.imagen_portada.trim()
+          : cover
+            ? await uploadFile(cover, "ferias", setUploadProgress)
+            : /^https?:\/\//i.test(draft.imagen_portada)
+              ? ""
+              : draft.imagen_portada;
+      const payload = { ...draft, imagen_portada };
+      if (fair) await api.patch(`/fairs/${fair.id}`, payload);
+      else await api.post("/fairs", payload);
+      await queryClient.invalidateQueries({ queryKey: ["fairs"] });
+      onClose();
+      feedback.success(
+        fair ? "Feria actualizada" : "Feria creada",
+        fair
+          ? "Los cambios se guardaron correctamente."
+          : "La feria fue registrada correctamente.",
+      );
+    } catch (reason) {
+      const message = apiError(reason, "No se pudo guardar la feria.");
+      feedback.error("No se pudo guardar la feria", message);
+    } finally {
+      setPending(false);
+      setUploadProgress(0);
+    }
+  };
+  return <>
+    <Modal title={fair ? "Editar feria" : "Nueva feria"} onClose={onClose} wide>
+      <form className="form-grid" onSubmit={submit}>
+        <Field label="Nombre">
+          <input
+            className="input"
+            required
+            value={draft.nombre}
+            onChange={(e) => change("nombre", e.target.value)}
+          />
+        </Field>
+        <Field label="Lugar">
+          <input
+            className="input"
+            required
+            value={draft.lugar}
+            onChange={(e) => change("lugar", e.target.value)}
+          />
+        </Field>
+        <Field label="Dirección">
+          <input
+            className="input"
+            value={draft.direccion}
+            onChange={(e) => change("direccion", e.target.value)}
+          />
+        </Field>
+        <LocationFields
+          department={draft.departamento}
+          municipality={draft.municipio}
+          onDepartment={(value) => change("departamento", value)}
+          onMunicipality={(value) => change("municipio", value)}
+        />
+        <Field label="Fecha de inicio">
+          <input
+            className="input"
+            type="date"
+            required
+            value={draft.fecha_inicio}
+            onChange={(e) => change("fecha_inicio", e.target.value)}
+          />
+        </Field>
+        <Field label="Fecha final">
+          <input
+            className="input"
+            type="date"
+            required
+            value={draft.fecha_fin}
+            onChange={(e) => change("fecha_fin", e.target.value)}
+          />
+        </Field>
+        <Field label="Origen de la portada">
+          <select
+            className="input"
+            value={coverMode}
+            onChange={(event) => {
+              const mode = event.target.value as "UPLOAD" | "URL";
+              setCoverMode(mode);
+              setCover(null);
+              if (mode === "URL") setCoverPreview(assetUrl(draft.imagen_portada));
+            }}
+          >
+            <option value="UPLOAD">Cargar desde el dispositivo</option>
+            <option value="URL">Usar URL de imagen</option>
+          </select>
+        </Field>
+        <Field
+          label={coverMode === "URL" ? "URL de la portada" : "Archivo de portada"}
+        >
+          {coverMode === "URL" ? (
+            <input
+              className="input"
+              type="url"
+              required
+              placeholder="https://ejemplo.com/portada.jpg"
+              value={draft.imagen_portada}
+              onChange={(event) => {
+                change("imagen_portada", event.target.value);
+                setCover(null);
+                setCoverPreview(assetUrl(event.target.value));
+              }}
+              onBlur={() => {
+                if (draft.imagen_portada.trim())
+                  feedback.success("Imagen cargada satisfactoriamente", "El enlace de la portada está listo para guardar.");
+              }}
+            />
+          ) : (
+            <input
+              type="file"
+              accept="image/*"
+              required={!fair && !draft.imagen_portada}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (!file) return;
+                if (!file.type.startsWith("image/")) {
+                  event.target.value = "";
+                  feedback.error("Archivo no válido", "Seleccione únicamente una imagen.");
+                  return;
+                }
+                setCover(file);
+                change("imagen_portada", "");
+                setCoverPreview(URL.createObjectURL(file));
+                feedback.success("Imagen cargada satisfactoriamente", "La portada está lista y puede verla antes de guardar la feria.");
+              }}
+            />
+          )}
+        </Field>
+        {coverPreview && (
+          <div className="full fair-cover-preview">
+            <span>Vista previa de la portada</span>
+            <button type="button" onClick={() => setShowCoverPreview(true)} title="Ampliar imagen">
+              <img src={coverPreview} alt="Vista previa de la portada de la feria" />
+              <small>Haga clic para ampliar</small>
+            </button>
+          </div>
+        )}
+        <UploadProgress value={uploadProgress} />
+        <Field label="Descripción">
+          <textarea
+            className="input"
+            rows={4}
+            value={draft.descripcion}
+            onChange={(e) => change("descripcion", e.target.value)}
+          />
+        </Field>
+        <Field label="Observaciones">
+          <textarea
+            className="input"
+            rows={4}
+            value={draft.observaciones}
+            onChange={(e) => change("observaciones", e.target.value)}
+          />
+        </Field>
+        <div className="full alert-warning">
+          <strong>Publicación automática</strong>
+          <p>
+            El estado se determina según las fechas. No es necesario activar la
+            feria manualmente.
+          </p>
+        </div>
+        <div className="modal-actions full">
+          <button className="btn-outline" type="button" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn" disabled={pending}>
+            Guardar feria
+          </button>
+        </div>
+      </form>
+    </Modal>
+    {showCoverPreview && coverPreview && <ImagePreviewModal src={coverPreview} title="Vista previa de la portada" onClose={() => setShowCoverPreview(false)} />}
+  </>;
+}
+
+function AssignmentEditor({
+  item,
+  terminal,
+  onSave,
+}: {
+  item: Assignment;
+  terminal: boolean;
+  onSave: (patch: {
+    estado: AssignmentStatus;
+    numero_stand: string;
+    sector: string;
+    observaciones: string;
+  }) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState({
+    estado: item.estado,
+    numero_stand: item.numero_stand ?? "",
+    sector: item.sector ?? "",
+    observaciones: item.observaciones ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <article className="assignment-editor">
+      <strong>{item.nombre_comercial}</strong>
+      <select
+        className="input compact"
+        disabled={terminal}
+        value={draft.estado}
+        aria-label={`Estado de ${item.nombre_comercial}`}
+        onChange={(event) =>
+          setDraft({ ...draft, estado: event.target.value as AssignmentStatus })
+        }
+      >
+        <option value="AUTHORIZED">Autorizado</option>
+        <option value="PENDING">Pendiente</option>
+        <option value="REJECTED">Rechazado</option>
+        <option value="REVOKED">Revocado</option>
+      </select>
+      <input
+        className="input compact"
+        disabled={terminal}
+        aria-label={`Stand de ${item.nombre_comercial}`}
+        placeholder="Stand"
+        value={draft.numero_stand}
+        onChange={(event) =>
+          setDraft({ ...draft, numero_stand: event.target.value })
+        }
+      />
+      <input
+        className="input compact"
+        disabled={terminal}
+        aria-label={`Sector de ${item.nombre_comercial}`}
+        placeholder="Sector"
+        value={draft.sector}
+        onChange={(event) => setDraft({ ...draft, sector: event.target.value })}
+      />
+      <input
+        className="input compact"
+        disabled={terminal}
+        aria-label={`Observaciones de ${item.nombre_comercial}`}
+        placeholder="Observaciones"
+        value={draft.observaciones}
+        onChange={(event) =>
+          setDraft({ ...draft, observaciones: event.target.value })
+        }
+      />
+      <button
+        type="button"
+        className="btn-outline"
+        disabled={terminal || saving}
+        onClick={save}
+      >
+        <Save size={17} /> {saving ? "Guardando…" : "Guardar"}
+      </button>
+    </article>
+  );
+}
+
+function FairWorkspace({
+  fair,
+  exhibitors,
+  onClose,
+}: {
+  fair: Fair;
+  exhibitors: Exhibitor[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const terminal = fair.estado === "FINISHED" || fair.estado === "DISABLED";
+  const [tab, setTab] = useState<"participants" | "gallery">("participants");
+  const [form, setForm] = useState({
+    exhibitor_id: "",
+    estado: "AUTHORIZED" as AssignmentStatus,
+    numero_stand: "",
+    sector: "",
+    observaciones: "",
+  });
+  const [image, setImage] = useState<File | null>(null);
+  const [alt, setAlt] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const assignments = useQuery({
+    queryKey: ["fair-assignments", fair.id],
+    queryFn: () =>
+      api
+        .get<Paged<Assignment>>(`/fairs/${fair.id}/exhibitors`, {
+          params: { per_page: 100 },
+        })
+        .then((r) => r.data.items),
+  });
+  const gallery = useQuery({
+    queryKey: ["fair-images", fair.id],
+    queryFn: () =>
+      api
+        .get<Paged<FairImage>>(`/fairs/${fair.id}/images`, {
+          params: { per_page: 100 },
+        })
+        .then((r) => r.data.items),
+  });
+  const mutate = async (
+    operation: () => Promise<unknown>,
+    key: string[],
+    successMessage: string,
+  ) => {
+    try {
+      await operation();
+      await queryClient.invalidateQueries({ queryKey: key });
+      feedback.success("Operación realizada", successMessage);
+    } catch (reason) {
+      const message = apiError(reason);
+      feedback.error("No se pudo completar la operación", message);
+    }
+  };
+  const assign = (e: React.FormEvent) => {
+    e.preventDefault();
+    void mutate(
+      () => api.post(`/fairs/${fair.id}/exhibitors`, form),
+      ["fair-assignments", fair.id],
+      "El expositor fue asignado correctamente a la feria.",
+    );
+  };
+  const upload = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!image) return;
+    const data = new FormData();
+    data.append("file", image);
+    data.append("alt_text", alt);
+    void mutate(
+      () =>
+        api.post(`/fairs/${fair.id}/images`, data, {
+          onUploadProgress: (event) => {
+            if (event.total)
+              setUploadProgress(
+                Math.round((event.loaded * 100) / event.total),
+              );
+          },
+        }),
+      ["fair-images", fair.id],
+      "La imagen fue agregada correctamente a la feria.",
+    ).then(() => {
+      setImage(null);
+      setAlt("");
+      setUploadProgress(0);
+    });
+  };
+  return (
+    <Modal title={`Gestión de ${fair.nombre}`} onClose={onClose} wide>
+      <div className="tabs">
+        <button
+          className={tab === "participants" ? "active" : ""}
+          onClick={() => setTab("participants")}
+        >
+          Participantes
+        </button>
+        <button
+          className={tab === "gallery" ? "active" : ""}
+          onClick={() => setTab("gallery")}
+        >
+          Galería
+        </button>
+      </div>
+      {terminal && (
+        <div className="alert-warning">
+          Esta feria es terminal y ya no admite modificaciones.
+        </div>
+      )}
+      {tab === "participants" ? (
+        <>
+          <form className="inline-form" onSubmit={assign}>
+            <select
+              className="input"
+              required
+              disabled={terminal}
+              value={form.exhibitor_id}
+              onChange={(e) =>
+                setForm({ ...form, exhibitor_id: e.target.value })
+              }
+            >
+              <option value="">Seleccione expositor</option>
+              {exhibitors.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nombre_comercial}
+                </option>
+              ))}
+            </select>
+            <input
+              className="input"
+              disabled={terminal}
+              placeholder="Stand"
+              value={form.numero_stand}
+              onChange={(e) =>
+                setForm({ ...form, numero_stand: e.target.value })
+              }
+            />
+            <input
+              className="input"
+              disabled={terminal}
+              placeholder="Sector"
+              value={form.sector}
+              onChange={(e) => setForm({ ...form, sector: e.target.value })}
+            />
+            <button className="btn" disabled={terminal}>
+              Asignar
+            </button>
+          </form>
+          <p className="form-hint">
+            Los productos vigentes del expositor autorizado se publican
+            automáticamente; no se seleccionan por feria.
+          </p>
+          {assignments.isLoading ? (
+            <Loading />
+          ) : assignments.data?.length ? (
+            <div className="compact-list">
+              {assignments.data.map((item) => (
+                <AssignmentEditor
+                  key={item.id}
+                  item={item}
+                  terminal={terminal}
+                  onSave={(patch) =>
+                    mutate(
+                      () => api.patch(`/fair-exhibitors/${item.id}`, patch),
+                      ["fair-assignments", fair.id],
+                      "La asignación del expositor fue actualizada.",
+                    )
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <Empty title="No hay expositores asignados" />
+          )}
+        </>
+      ) : (
+        <>
+          <form className="inline-form" onSubmit={upload}>
+            <input
+              required
+              disabled={terminal}
+              type="file"
+              accept="image/*"
+              onChange={(e) => setImage(e.target.files?.[0] ?? null)}
+            />
+            <input
+              className="input"
+              disabled={terminal}
+              placeholder="Texto alternativo"
+              value={alt}
+              onChange={(e) => setAlt(e.target.value)}
+            />
+            <button className="btn" disabled={terminal || !image}>
+              <ImagePlus /> Agregar
+            </button>
+          </form>
+          <UploadProgress value={uploadProgress} />
+          {gallery.isLoading ? (
+            <Loading />
+          ) : gallery.data?.length ? (
+            <div className="gallery-admin">
+              {gallery.data.map((item) => (
+                <article key={item.id}>
+                  <img
+                    src={assetUrl(item.url)}
+                    alt={item.alt_text || "Imagen de feria"}
+                  />
+                  <ConfirmButton
+                    disabled={terminal}
+                    question="¿Eliminar esta imagen?"
+                    onConfirm={() =>
+                      mutate(
+                        () => api.delete(`/fair-images/${item.id}`),
+                        ["fair-images", fair.id],
+                        "La imagen fue eliminada correctamente.",
+                      )
+                    }
+                  >
+                    <Trash2 />
+                  </ConfirmButton>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <Empty title="La feria no tiene imágenes adicionales" />
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
+export function FairsPage() {
+  const queryClient = useQueryClient();
+  const feedback = useFeedback();
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [department, setDepartment] = useState("");
+  const [municipality, setMunicipality] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [editing, setEditing] = useState<Fair | "new" | null>(null);
+  const [workspace, setWorkspace] = useState<Fair | null>(null);
+  const list = useQuery({
+    queryKey: ["fairs", query, status, department, municipality, dateFrom, dateTo, page],
+    queryFn: () =>
+      api
+        .get<Paged<Fair>>("/fairs", {
+          params: { q: query || undefined, estado: status || undefined, departamento: department || undefined, municipio: municipality || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, page },
+        })
+        .then((r) => r.data),
+  });
+  const exhibitors = useQuery({
+    queryKey: ["exhibitors", "fair-options"],
+    queryFn: () =>
+      api
+        .get<Paged<Exhibitor>>("/exhibitors", {
+          params: { per_page: 100, estado: "ACTIVE" },
+        })
+        .then((r) => r.data.items),
+  });
+  const finish = async (fair: Fair, state: FairStatus) => {
+    try {
+      await api.patch(`/fairs/${fair.id}/status`, { status: state });
+      await queryClient.invalidateQueries({ queryKey: ["fairs"] });
+      feedback.success(
+        state === "FINISHED" ? "Feria finalizada" : "Feria cancelada",
+        state === "FINISHED"
+          ? "La feria fue finalizada correctamente."
+          : "La feria fue cancelada correctamente.",
+      );
+    } catch (reason) {
+      const message = apiError(reason);
+      feedback.error("No se pudo actualizar la feria", message);
+    }
+  };
+  return (
+    <>
+      <Header
+        eyebrow="Programación"
+        title="Ferias"
+        description="Las fechas controlan automáticamente la publicación del catálogo."
+        action={
+          <button className="btn" onClick={() => setEditing("new")}>
+            <Plus /> Nueva feria
+          </button>
+        }
+      />
+      <div className="toolbar">
+        <SearchField
+          value={query}
+          onChange={(v) => {
+            setQuery(v);
+            setPage(1);
+          }}
+          placeholder="Buscar feria…"
+        />
+        <select
+          className="input"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        >
+          <option value="">Todos los estados</option>
+          <option value="DRAFT">En preparación</option>
+          <option value="PUBLISHED">Publicada</option>
+          <option value="FINISHED">Finalizada</option>
+          <option value="DISABLED">Cancelada</option>
+        </select>
+        <SearchableSelect value={department} options={[{ value: "", label: "Todos los departamentos" }, ...BOLIVIA_DEPARTMENTS.map((item) => ({ value: item, label: item }))]} placeholder="Todos los departamentos" ariaLabel="Departamento de feria" onChange={(value) => { setDepartment(value); setMunicipality(""); setPage(1); }} />
+        <SearchableSelect disabled={!department} value={municipality} options={[{ value: "", label: "Todos los municipios" }, ...municipalitiesFor(department).map((item) => ({ value: item, label: item }))]} placeholder="Todos los municipios" ariaLabel="Municipio de feria" onChange={(value) => { setMunicipality(value); setPage(1); }} />
+        <input className="input" type="date" aria-label="Ferias desde" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
+        <input className="input" type="date" aria-label="Ferias hasta" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
+      </div>
+      {list.isLoading ? (
+        <Loading />
+      ) : list.data?.items.length ? (
+        <>
+          <div className="fair-admin-grid">
+            {list.data.items.map((fair) => {
+              const terminal =
+                fair.estado === "FINISHED" || fair.estado === "DISABLED";
+              return (
+                <article className="fair-admin-card" key={fair.id}>
+                  {fair.imagen_portada ? (
+                    <img src={assetUrl(fair.imagen_portada)} alt="" />
+                  ) : (
+                    <div className="image-placeholder">
+                      <ImagePlus />
+                    </div>
+                  )}
+                  <div className="card-body">
+                    <div className="flex justify-between gap-2">
+                      <h2>{fair.nombre}</h2>
+                      <StatusBadge value={fair.estado} />
+                    </div>
+                    <p>
+                      {fair.lugar}, {fair.municipio}
+                    </p>
+                    <small>
+                      {fair.fecha_inicio} – {fair.fecha_fin}
+                    </small>
+                    <div className="data-card-actions">
+                      <button
+                        className="btn-outline"
+                        disabled={terminal}
+                        onClick={() => setEditing(fair)}
+                      >
+                        <Edit3 size={17} /> Editar
+                      </button>
+                      <button
+                        className="btn-outline"
+                        onClick={() => setWorkspace(fair)}
+                      >
+                        <Users size={17} /> Participantes e imágenes
+                      </button>
+                      {!terminal && (
+                        <>
+                          <ConfirmButton
+                            question="¿Finalizar esta feria? Sus imágenes se eliminarán y no podrá reactivarse."
+                            onConfirm={() => finish(fair, "FINISHED")}
+                          >
+                            <RefreshCw size={17} /> Finalizar
+                          </ConfirmButton>
+                          <ConfirmButton
+                            question="¿Cancelar definitivamente esta feria? Sus imágenes se eliminarán."
+                            onConfirm={() => finish(fair, "DISABLED")}
+                          >
+                            <Trash2 size={17} /> Cancelar
+                          </ConfirmButton>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+        </>
+      ) : (
+        <Empty title="No hay ferias registradas" />
+      )}
+      {editing && (
+        <FairForm
+          fair={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+        />
+      )}{" "}
+      {workspace && (
+        <FairWorkspace
+          fair={workspace}
+          exhibitors={exhibitors.data ?? []}
+          onClose={() => setWorkspace(null)}
+        />
+      )}
+    </>
+  );
+}
+
+export function ProductsPage() {
+  return <ProductManager mode="admin" />;
+}
+
+export function AuditPage() {
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [action, setAction] = useState("");
+  const [entity, setEntity] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const list = useQuery({
+    queryKey: ["audit", query, action, entity, dateFrom, dateTo, page],
+    queryFn: () =>
+      api
+        .get<Paged<AuditItem>>("/audit", { params: { q: query || undefined, action: action || undefined, entity: entity || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, page } })
+        .then((r) => r.data),
+  });
+  const actions = useMemo(
+    () => [...new Set(list.data?.items.map((item) => item.accion) ?? [])].sort(),
+    [list.data],
+  );
+  const entities = useMemo(
+    () => [...new Set(list.data?.items.map((item) => item.entidad) ?? [])].sort(),
+    [list.data],
+  );
+  const reportOptions = useQuery({ queryKey: ["report-options"], queryFn: () => api.get<{ actions: string[]; entities: string[] }>("/reports/options").then((response) => response.data) });
+  const filtered = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase("es");
+    return (list.data?.items ?? []).filter(
+      (item) =>
+        (!action || item.accion === action) &&
+        (!entity || item.entidad === entity) &&
+        (!term ||
+          `${item.usuario} ${item.accion} ${item.entidad} ${item.descripcion ?? ""}`
+            .toLocaleLowerCase("es")
+            .includes(term)),
+    );
+  }, [list.data, query, action, entity]);
+  return (
+    <>
+      <Header
+        eyebrow="Trazabilidad"
+        title="Auditoría"
+        description="Historial de las operaciones relevantes realizadas en el sistema."
+      />
+      <div className="toolbar">
+        <SearchField
+          value={query}
+          onChange={(value) => { setQuery(value); setPage(1); }}
+          placeholder="Buscar en esta página…"
+        />
+        <select
+          className="input"
+          aria-label="Filtrar por acción"
+          value={action}
+          onChange={(event) => setAction(event.target.value)}
+        >
+          <option value="">Todas las acciones</option>
+          {(reportOptions.data?.actions ?? actions).map((value) => (
+            <option key={value}>{value}</option>
+          ))}
+        </select>
+        <select
+          className="input"
+          aria-label="Filtrar por entidad"
+          value={entity}
+          onChange={(event) => setEntity(event.target.value)}
+        >
+          <option value="">Todas las entidades</option>
+          {(reportOptions.data?.entities ?? entities).map((value) => (
+            <option key={value}>{value}</option>
+          ))}
+        </select>
+        <input className="input" type="date" aria-label="Auditoría desde" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
+        <input className="input" type="date" aria-label="Auditoría hasta" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
+      </div>
+      {list.isLoading ? (
+        <Loading />
+      ) : list.error ? (
+        <ErrorBox message={apiError(list.error)} />
+      ) : list.data?.items.length ? (
+        <>
+          <div className="audit-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Usuario</th>
+                  <th>Acción</th>
+                  <th>Entidad</th>
+                  <th>Descripción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((item) => (
+                  <tr key={item.id}>
+                    <td>{new Date(item.created_at).toLocaleString("es-BO")}</td>
+                    <td>{item.usuario}</td>
+                    <td>
+                      <strong>{item.accion}</strong>
+                    </td>
+                    <td>{item.entidad}</td>
+                    <td>{item.descripcion || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!filtered.length && (
+            <Empty
+              title="No hay coincidencias en esta página"
+              description="Cambie los filtros o avance a otra página."
+            />
+          )}
+          <PaginationBar
+            pagination={list.data.pagination ?? emptyPagination}
+            onPage={setPage}
+          />
+        </>
+      ) : (
+        <Empty title="No hay eventos de auditoría" />
+      )}
+    </>
+  );
+}
