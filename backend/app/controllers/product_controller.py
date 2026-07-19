@@ -3,7 +3,7 @@ import os
 import uuid
 
 from flask import Blueprint, request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..extensions import db
 from ..models import (
@@ -53,6 +53,15 @@ def validate_product_references(product):
 
 def add_product_image(product):
     payload = request.get_json(silent=True) or {}
+    alt_text = (request.form.get("alt_text") or payload.get("alt_text") or "").strip()
+    if not alt_text:
+        return error("El texto alternativo es obligatorio")
+    existing_images = db.session.scalars(
+        select(ProductImage)
+        .where(ProductImage.product_id == product.id)
+        .order_by(ProductImage.display_order, ProductImage.created_at, ProductImage.id)
+    ).all()
+    display_order = len(existing_images)
     try:
         url = save_upload(request.files.get("file"), "productos")
         if not url:
@@ -70,16 +79,12 @@ def add_product_image(product):
         product_id=product.id,
         filename=os.path.basename(url),
         url=url,
-        alt_text=request.form.get("alt_text") or payload.get("alt_text"),
+        alt_text=alt_text,
         is_cover=is_cover,
-        display_order=int(
-            request.form.get("display_order") or payload.get("display_order") or 0
-        ),
+        display_order=display_order,
     )
     if image.is_cover:
-        for other in db.session.scalars(
-            select(ProductImage).where(ProductImage.product_id == product.id)
-        ).all():
+        for other in existing_images:
             other.is_cover = False
     db.session.add(image)
     audit("AGREGAR_IMAGEN", "Producto", product.id, "Imagen agregada")
@@ -120,6 +125,20 @@ def list_products():
             return error("Expositor inválido")
     term = request.args.get("q", "").strip()
     query = Product.admin_query(exhibitor_id, term)
+    if request.args.get("category_id"):
+        try:
+            category_id = uuid.UUID(request.args["category_id"])
+        except ValueError:
+            return error("Categoría inválida")
+        query = query.where(Product.category_id == category_id)
+    if request.args.get("estado") in {item.value for item in ProductStatus}:
+        query = query.where(Product.estado == ProductStatus(request.args["estado"]))
+    if request.args.get("destacado") in {"true", "false"}:
+        query = query.where(Product.destacado.is_(request.args["destacado"] == "true"))
+    if request.args.get("date_from"):
+        query = query.where(func.date(Product.created_at) >= request.args["date_from"])
+    if request.args.get("date_to"):
+        query = query.where(func.date(Product.created_at) <= request.args["date_to"])
     return paginate(query.order_by(Product.created_at.desc()), product_json)
 
 
@@ -134,54 +153,20 @@ def get_admin_product(product_id):
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 @validate_json(ProductCreateSchema())
 def create_admin_product():
-    data = validated_json()
-    try:
-        value = data.get("exhibitor_id")
-        exhibitor_id = value if isinstance(value, uuid.UUID) else uuid.UUID(value or "")
-        product = product_from_payload(
-            Product(estado=ProductStatus.AVAILABLE), data, exhibitor_id
-        )
-        validate_product_references(product)
-    except (ValueError, TypeError) as exc:
-        return error(str(exc) or "Datos inválidos")
-    if not db.session.get(Exhibitor, exhibitor_id):
-        return error("Expositor no encontrado", 404)
-    if not product.category_id or not product.descripcion:
-        return error("Categoría y descripción son obligatorias")
-    db.session.add(product)
-    db.session.flush()
-    audit("CREAR", "Producto", product.id, "Producto creado por administración")
-    db.session.commit()
-    invalidate_public_cache()
-    return product_json(product), 201
+    return error("Los productos solo pueden ser creados por su expositor", 403)
 
 
 @product_bp.patch("/products/<uuid:product_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 @validate_json(ProductUpdateSchema())
 def update_admin_product(product_id):
-    product = product_or_404(product_id)
-    if not product:
-        return error("Producto no encontrado", 404)
-    try:
-        product_from_payload(product, validated_json())
-        validate_product_references(product)
-    except ValueError as exc:
-        return error(str(exc))
-    audit("EDITAR", "Producto", product.id, "Producto actualizado")
-    db.session.commit()
-    invalidate_public_cache()
-    return product_json(product)
+    return error("Los productos solo pueden ser editados por su expositor", 403)
 
 
 @product_bp.delete("/products/<uuid:product_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def delete_admin_product(product_id):
-    product = product_or_404(product_id)
-    if not product:
-        return error("Producto no encontrado", 404)
-    delete_product_record(product)
-    return "", 204
+    return error("Los productos solo pueden ser eliminados por su expositor", 403)
 
 
 @product_bp.get("/exhibitor/products")
@@ -262,8 +247,7 @@ def list_admin_product_images(product_id):
 @product_bp.post("/products/<uuid:product_id>/images")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def add_admin_product_image(product_id):
-    product = product_or_404(product_id)
-    return add_product_image(product) if product else error("Producto no encontrado", 404)
+    return error("Las imágenes solo pueden ser gestionadas por su expositor", 403)
 
 
 @product_bp.post("/exhibitor/products/<uuid:product_id>/images")
@@ -277,12 +261,14 @@ def add_own_product_image(product_id):
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.EXPOSITOR)
 @validate_json(ProductImageUpdateSchema())
 def update_product_image(image_id):
+    user = current_user()
+    if user.role != Role.EXPOSITOR:
+        return error("Las imágenes solo pueden ser editadas por su expositor", 403)
     image = db.session.get(ProductImage, image_id)
     if not image:
         return error("Imagen no encontrada", 404)
     product = product_or_404(image.product_id)
-    user = current_user()
-    if user.role == Role.EXPOSITOR and product.exhibitor_id != user.exhibitor.id:
+    if product.exhibitor_id != user.exhibitor.id:
         return error("No autorizado", 403)
     data = validated_json()
     if data.get("is_cover"):
@@ -297,7 +283,7 @@ def update_product_image(image_id):
             image.display_order = int(data.get("display_order"))
         except (TypeError, ValueError):
             return error("Orden inválido")
-    audit("EDITAR_IMAGEN", "Producto", product.id)
+    audit("EDITAR_IMAGEN", "Producto", product.id, f"Imagen actualizada del producto {product.nombre}")
     db.session.commit()
     invalidate_public_cache()
     return product_json(product)
@@ -306,16 +292,28 @@ def update_product_image(image_id):
 @product_bp.delete("/product-images/<uuid:image_id>")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.EXPOSITOR)
 def delete_product_image(image_id):
+    user = current_user()
+    if user.role != Role.EXPOSITOR:
+        return error("Las imágenes solo pueden ser eliminadas por su expositor", 403)
     image = db.session.get(ProductImage, image_id)
     if not image:
         return error("Imagen no encontrada", 404)
     product = product_or_404(image.product_id)
-    user = current_user()
-    if user.role == Role.EXPOSITOR and product.exhibitor_id != user.exhibitor.id:
+    if product.exhibitor_id != user.exhibitor.id:
         return error("No autorizado", 403)
     url = image.url
     db.session.delete(image)
-    audit("ELIMINAR_IMAGEN", "Producto", product.id)
+    db.session.flush()
+    remaining_images = db.session.scalars(
+        select(ProductImage)
+        .where(ProductImage.product_id == product.id)
+        .order_by(ProductImage.display_order, ProductImage.created_at, ProductImage.id)
+    ).all()
+    for display_order, remaining in enumerate(remaining_images):
+        remaining.display_order = display_order
+    if remaining_images and not any(remaining.is_cover for remaining in remaining_images):
+        remaining_images[0].is_cover = True
+    audit("ELIMINAR_IMAGEN", "Producto", product.id, f"Imagen eliminada del producto {product.nombre}")
     db.session.commit()
     delete_managed_upload(url, "productos")
     invalidate_public_cache()

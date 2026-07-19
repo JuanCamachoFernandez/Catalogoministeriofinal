@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import base64
 from io import BytesIO
 
 from flask_jwt_extended import create_access_token
@@ -15,6 +16,7 @@ from app.models import (
     DocumentType,
     Exhibitor,
     Product,
+    ProductImage,
     ProductStatus,
     Role,
     User,
@@ -110,7 +112,7 @@ def test_cache_detecta_invalidacion_persistida(app):
         invalidate_public_cache()
         set_public_cache(("catalog",), {"value": 1})
         assert get_public_cache(("catalog",)) == {"value": 1}
-        state = db.session.get(CacheState, "public_catalog")
+        state = db.session.get(CacheState, "catalogo_publico")
         state.version += 1
         db.session.commit()
         assert get_public_cache(("catalog",)) is None
@@ -209,3 +211,79 @@ def test_expositor_no_puede_consultar_producto_ajeno(app, client):
         f"/api/exhibitor/products/{product_id}", headers=headers(token)
     )
     assert response.status_code == 404
+
+
+def test_imagen_producto_exige_datos_y_permite_varias(app, client):
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    with app.app_context():
+        owner = create_user("expoimagenes", Role.EXPOSITOR)
+        exhibitor = Exhibitor(
+            user_id=owner.id,
+            nombre_comercial="Taller de imágenes",
+            tipo_documento=DocumentType.CI,
+            numero_documento="9001",
+            nombre_responsable="Expo",
+            apellido_responsable="Imágenes",
+            telefono_whatsapp="59171234569",
+            correo=owner.email,
+            departamento="La Paz",
+            municipio="La Paz",
+            estado=UserStatus.ACTIVE,
+        )
+        category = Category(nombre="Imágenes", slug="imagenes", estado=True)
+        db.session.add_all([exhibitor, category])
+        db.session.flush()
+        product = Product(
+            exhibitor_id=exhibitor.id,
+            category_id=category.id,
+            nombre="Producto con galería",
+            slug="producto-con-galeria",
+            descripcion="Prueba",
+            estado=ProductStatus.AVAILABLE,
+        )
+        db.session.add(product)
+        db.session.commit()
+        product_id = product.id
+        token = create_access_token(identity=str(owner.id))
+
+    missing_alt = client.post(
+        f"/api/exhibitor/products/{product_id}/images",
+        headers=headers(token),
+        data={"file": (BytesIO(png), "primera.png"), "display_order": "0"},
+        content_type="multipart/form-data",
+    )
+    assert missing_alt.status_code == 400
+    assert "texto alternativo" in missing_alt.json["error"].lower()
+
+    image_ids = []
+    for expected_order, submitted_order in enumerate((8, 3)):
+        response = client.post(
+            f"/api/exhibitor/products/{product_id}/images",
+            headers=headers(token),
+            data={
+                "file": (BytesIO(png), f"imagen-{expected_order}.png"),
+                "alt_text": f"Vista {expected_order + 1} del producto",
+                "display_order": str(submitted_order),
+                "is_cover": str(expected_order == 0).lower(),
+            },
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 201
+        assert response.json["display_order"] == expected_order
+        image_ids.append(response.json["id"])
+
+    with app.app_context():
+        images = ProductImage.query.filter_by(product_id=product_id).all()
+        assert len(images) == 2
+        assert sorted(image.display_order for image in images) == [0, 1]
+
+    deleted = client.delete(
+        f"/api/product-images/{image_ids[0]}", headers=headers(token)
+    )
+    assert deleted.status_code == 204
+    with app.app_context():
+        remaining = ProductImage.query.filter_by(product_id=product_id).one()
+        assert remaining.display_order == 0
+        assert remaining.is_cover is True

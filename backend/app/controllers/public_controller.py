@@ -181,11 +181,12 @@ def whatsapp_query():
         return error("El expositor no está autorizado en esta feria", 403)
     phone = normalize_whatsapp(exhibitor.telefono_whatsapp)
     lines = "\n".join(
-        f"- {product.nombre} (cantidad: {quantities[product.id]})"
+        f"• {product.nombre} — Cantidad: {quantities[product.id]}"
         for product in products
     )
     message = (
-        "Hola, vi sus productos en el Catálogo Digital de Ferias y quisiera "
-        f"consultar por:\n{lines}\n\nExpositor: {exhibitor.nombre_comercial}"
+        "Hola, vi sus productos en el Catálogo Digital de Ferias.\n\n"
+        "Quisiera más información sobre los siguientes productos:\n"
+        f"{lines}\n\nGracias."
     )
     return {"url": f"https://wa.me/{phone}?text={quote(message)}"}

@@ -1,266 +1,243 @@
-import { Routes, Route, Link, Navigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { CalendarDays, MessageCircle, MapPin, Store } from "lucide-react";
-import { api, Exhibitor, Fair, Product } from "./api";
-import { useState } from "react";
-import { LoginPage, ChangePasswordPage, DashboardPage } from "./AuthPages";
-import {
-  AdminDashboard,
-  AdministratorsPage,
-  ExhibitorsPage,
-  FairsPage,
-  CategoriesPage,
-  AuditPage,
-  ProductsPage,
-} from "./AdminPortal";
+import { lazy, Suspense, useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { ProtectedRoute } from "./AuthContext";
+import { ManagementLayout } from "./Layouts";
+import { Loading } from "./ui";
 
-const date = (v: string) =>
-  new Intl.DateTimeFormat("es-BO", { timeZone: "America/La_Paz" }).format(
-    new Date(v + "T12:00:00"),
+const page = <T extends Record<string, unknown>, K extends keyof T>(
+  loader: () => Promise<T>,
+  name: K,
+) =>
+  lazy(() =>
+    loader().then((module) => ({
+      default: module[name] as React.ComponentType,
+    })),
   );
-const money = (v: number | null) => (v === null ? "" : `Bs. ${v.toFixed(2)}`);
+const CatalogPage = page(() => import("./PublicPages"), "CatalogPage");
+const FairDetailPage = page(() => import("./PublicPages"), "FairDetailPage");
+const ExhibitorCatalogPage = page(
+  () => import("./PublicPages"),
+  "ExhibitorCatalogPage",
+);
+const NotFoundPage = page(() => import("./PublicPages"), "NotFoundPage");
+const LoginPage = page(() => import("./AuthPages"), "LoginPage");
+const ForgotPasswordPage = page(
+  () => import("./AuthPages"),
+  "ForgotPasswordPage",
+);
+const ResetPasswordPage = page(
+  () => import("./AuthPages"),
+  "ResetPasswordPage",
+);
+const ChangePasswordPage = page(
+  () => import("./AuthPages"),
+  "ChangePasswordPage",
+);
+const AdminDashboard = page(() => import("./AdminPortal"), "AdminDashboard");
+const AdministratorsPage = page(
+  () => import("./AdminPortal"),
+  "AdministratorsPage",
+);
+const ExhibitorsPage = page(() => import("./AdminPortal"), "ExhibitorsPage");
+const FairsPage = page(() => import("./AdminPortal"), "FairsPage");
+const ProductsPage = page(() => import("./AdminPortal"), "ProductsPage");
+const CategoriesPage = page(() => import("./AdminPortal"), "CategoriesPage");
+const AuditPage = page(() => import("./AdminPortal"), "AuditPage");
+const ReportsPage = page(() => import("./ReportsPage"), "ReportsPage");
+const AdminProfilePage = page(() => import("./AdminProfilePage"), "AdminProfilePage");
+const ExhibitorProductsPage = page(
+  () => import("./ExhibitorPortal"),
+  "ExhibitorProductsPage",
+);
+const ExhibitorProfilePage = page(
+  () => import("./ExhibitorPortal"),
+  "ExhibitorProfilePage",
+);
 
-function Header() {
+const adminRoles = ["SUPERADMIN", "ADMIN_VICEMINISTERIO"] as const;
+function AdminRoute({
+  children,
+  superOnly = false,
+}: {
+  children: React.ReactNode;
+  superOnly?: boolean;
+}) {
   return (
-    <header className="bg-primary text-surface">
-      <div className="mx-auto flex max-w-6xl items-center justify-between p-5">
-        <Link to="/catalogo" className="text-xl font-bold">
-          Catálogo Digital de Ferias
-        </Link>
-        <Link
-          to="/gestion/login"
-          className="rounded-lg border border-surface px-4 py-2"
-        >
-          Iniciar Sesión
-        </Link>
-      </div>
-    </header>
+    <ProtectedRoute roles={superOnly ? ["SUPERADMIN"] : [...adminRoles]}>
+      <ManagementLayout area="admin">{children}</ManagementLayout>
+    </ProtectedRoute>
+  );
+}
+function ExhibitorRoute({ children }: { children: React.ReactNode }) {
+  return (
+    <ProtectedRoute roles={["EXPOSITOR"]}>
+      <ManagementLayout area="exhibitor">{children}</ManagementLayout>
+    </ProtectedRoute>
   );
 }
 
-function Catalog() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["active-fair"],
-    queryFn: () =>
-      api
-        .get<Fair & { expositores: Exhibitor[] }>("/public/active-fair")
-        .then((r) => r.data),
-  });
-  return (
-    <>
-      <Header />
-      <main className="mx-auto max-w-6xl p-6">
-        {isLoading ? (
-          <p>Cargando feria activa...</p>
-        ) : error ? (
-          <section className="bg-active rounded-xl p-6">
-            <h1 className="text-2xl font-bold">No existe una feria activa</h1>
-            <p className="mt-2">
-              El catálogo público estará disponible cuando exista una Feria
-              disponible.
-            </p>
-          </section>
-        ) : (
-          data && (
-            <>
-              <div className="mb-8 overflow-hidden rounded-2xl bg-primary text-surface">
-                <img
-                  className="h-64 w-full object-cover opacity-80"
-                  src={data.imagen_portada}
-                  alt=""
-                />
-                <div className="p-6">
-                  <p className="mb-2 font-semibold text-accent">Feria activa</p>
-                  <h1 className="text-4xl font-bold">{data.nombre}</h1>
-                  <p className="mt-3 max-w-3xl">{data.descripcion}</p>
-                  <p className="mt-4 flex flex-wrap gap-4 text-sm">
-                    <span className="flex items-center gap-2">
-                      <MapPin size={18} />
-                      {data.lugar}, {data.municipio}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <CalendarDays size={18} />
-                      {date(data.fecha_inicio)} - {date(data.fecha_fin)}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <h2 className="text-2xl font-bold">Expositores autorizados</h2>
-              <div className="mt-5 grid gap-5 md:grid-cols-3">
-                {data.expositores?.length ? (
-                  data.expositores.map((e) => (
-                    <motion.article
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="card"
-                      key={e.id}
-                    >
-                      {e.logo && (
-                        <img
-                          className="mb-4 h-32 w-full rounded-xl object-cover"
-                          src={e.logo}
-                          alt=""
-                        />
-                      )}
-                      <Store className="text-primary" />
-                      <h3 className="mt-3 text-xl font-bold">
-                        {e.nombre_comercial}
-                      </h3>
-                      <p className="mt-2 text-muted">{e.descripcion}</p>
-                      <Link
-                        className="btn mt-5 w-full"
-                        to={`/catalogo/expositores/${e.id}`}
-                      >
-                        Ver productos
-                      </Link>
-                    </motion.article>
-                  ))
-                ) : (
-                  <p className="rounded-xl bg-active p-5">
-                    Todavía no hay expositores autorizados para esta feria.
-                  </p>
-                )}
-              </div>
-            </>
-          )
-        )}
-      </main>
-    </>
-  );
-}
-
-function ExhibitorPage() {
-  const { expositorId } = useParams();
-  const { data: fair } = useQuery({
-    queryKey: ["active-fair"],
-    queryFn: () => api.get<Fair>("/public/active-fair").then((r) => r.data),
-  });
-  const { data, isLoading } = useQuery({
-    queryKey: ["active-exhibitor", fair?.slug, expositorId],
-    enabled: !!fair?.slug && !!expositorId,
-    queryFn: () =>
-      api
-        .get(`/public/fairs/${fair!.slug}/exhibitors/${expositorId}`)
-        .then((r) => r.data),
-  });
-  const [selected, setSelected] = useState<Product[]>([]);
-  const toggle = (p: Product) =>
-    setSelected((s) =>
-      s.some((x) => x.id === p.id) ? s.filter((x) => x.id !== p.id) : [...s, p],
+function RouteTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const labels: Record<string, string> = {
+      "/catalogo": "Catálogo de la feria",
+      "/gestion/login": "Iniciar sesión",
+      "/gestion/admin/dashboard": "Resumen administrativo",
+      "/gestion/admin/administradores": "Administradores",
+      "/gestion/admin/expositores": "Expositores",
+      "/gestion/admin/ferias": "Ferias",
+      "/gestion/admin/productos": "Productos",
+      "/gestion/admin/categorias": "Categorías",
+      "/gestion/admin/auditoria": "Auditoría",
+      "/gestion/admin/perfil": "Mi perfil",
+      "/gestion/expositor/dashboard": "Mis productos",
+      "/gestion/expositor/perfil": "Mi empresa",
+    };
+    const pageLabel =
+      labels[pathname] ??
+      (pathname.startsWith("/catalogo/")
+        ? "Productos del expositor"
+        : "Catálogo Digital");
+    const description = pathname.startsWith("/catalogo")
+      ? "Conozca las ferias publicadas, sus expositores y productos bolivianos."
+      : "Portal de gestión del Catálogo Digital de Ferias.";
+    document.title = `${pageLabel} | Ferias`;
+    const setMeta = (selector: string, attribute: string, value: string) => {
+      const element = document.head.querySelector<HTMLMetaElement>(selector);
+      element?.setAttribute(attribute, value);
+    };
+    setMeta('meta[name="description"]', "content", description);
+    setMeta('meta[property="og:title"]', "content", document.title);
+    setMeta('meta[property="og:description"]', "content", description);
+    const canonical = document.head.querySelector<HTMLLinkElement>(
+      'link[rel="canonical"]',
     );
-  const consult = async () => {
-    const r = await api.post("/public/whatsapp-query", {
-      fair_slug: fair?.slug,
-      product_ids: selected.map((p) => p.id),
-    });
-    window.open(r.data.url, "_blank", "noopener,noreferrer");
-  };
-  return (
-    <>
-      <Header />
-      <main className="mx-auto max-w-6xl p-6">
-        <Link to="/catalogo" className="text-primary">
-          ← Volver al catálogo
-        </Link>
-        {isLoading ? (
-          <p className="mt-6">Cargando productos...</p>
-        ) : (
-          data && (
-            <>
-              <h1 className="mt-5 text-4xl font-bold">
-                {data.nombre_comercial}
-              </h1>
-              <p className="mt-2 text-muted">{data.descripcion}</p>
-              <div className="mt-8 grid gap-5 md:grid-cols-3">
-                {data.productos.map((p: Product) => {
-                  const available = p.estado === "AVAILABLE";
-                  return (
-                    <article className="card" key={p.id}>
-                      {p.imagenes[0] && (
-                        <img
-                          className="mb-4 h-44 w-full rounded-xl object-cover"
-                          src={p.imagenes[0].url}
-                        />
-                      )}
-                      <h2 className="text-xl font-bold">{p.nombre}</h2>
-                      <p className="mt-2 text-muted">{p.descripcion}</p>
-                      {p.precio !== null && (
-                        <p className="mt-3 font-semibold text-price">
-                          {money(p.precio)}
-                        </p>
-                      )}
-                      <button
-                        disabled={!available}
-                        onClick={() => toggle(p)}
-                        className={`mt-4 w-full rounded-xl border p-3 font-semibold ${selected.some((x) => x.id === p.id) ? "bg-primary text-surface" : "border-primary text-primary"}`}
-                      >
-                        {available
-                          ? selected.some((x) => x.id === p.id)
-                            ? "Seleccionado"
-                            : "Seleccionar"
-                          : "No disponible"}
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
-            </>
-          )
-        )}
-        {selected.length > 0 && (
-          <div className="fixed bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-2xl bg-surface p-4 shadow-2xl">
-            <span>{selected.length} seleccionado(s)</span>
-            <button
-              className="btn-secondary gap-2 rounded-xl px-5 py-3 font-semibold"
-              onClick={consult}
-            >
-              <MessageCircle />
-              Consultar por WhatsApp
-            </button>
-          </div>
-        )}
-      </main>
-    </>
-  );
+    canonical?.setAttribute("href", window.location.href);
+  }, [pathname]);
+  return null;
 }
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/catalogo" replace />} />
-      <Route path="/catalogo" element={<Catalog />} />
-      <Route
-        path="/catalogo/expositores/:expositorId"
-        element={<ExhibitorPage />}
-      />
-      <Route
-        path="/catalogo/ferias/:slug"
-        element={<Navigate to="/catalogo" replace />}
-      />
-      <Route path="/gestion/login" element={<LoginPage />} />
-      <Route
-        path="/gestion/cambiar-contrasena"
-        element={<ChangePasswordPage />}
-      />
-      <Route path="/gestion/admin/dashboard" element={<AdminDashboard />} />
-      <Route
-        path="/gestion/admin/administradores"
-        element={<AdministratorsPage />}
-      />
-      <Route path="/gestion/admin/expositores" element={<ExhibitorsPage />} />
-      <Route path="/gestion/admin/ferias" element={<FairsPage />} />
-      <Route path="/gestion/admin/categorias" element={<CategoriesPage />} />
-      <Route
-        path="/gestion/admin/productos"
-        element={<ProductsPage mode="admin" />}
-      />
-      <Route path="/gestion/admin/auditoria" element={<AuditPage />} />
-      <Route
-        path="/gestion/expositor/dashboard"
-        element={<ProductsPage mode="expositor" />}
-      />
-      <Route path="*" element={<Navigate to="/catalogo" />} />
-    </Routes>
+    <>
+      <RouteTitle />
+      <Suspense fallback={<Loading label="Cargando página…" />}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/catalogo" replace />} />
+          <Route path="/catalogo" element={<CatalogPage />} />
+          <Route path="/catalogo/ferias/:slug" element={<FairDetailPage />} />
+          <Route
+            path="/catalogo/ferias/:slug/expositores/:exhibitorId"
+            element={<ExhibitorCatalogPage />}
+          />
+          <Route path="/gestion/login" element={<LoginPage />} />
+          <Route
+            path="/gestion/recuperar-contrasena"
+            element={<ForgotPasswordPage />}
+          />
+          <Route
+            path="/gestion/restablecer-contrasena"
+            element={<ResetPasswordPage />}
+          />
+          <Route
+            path="/gestion/cambiar-contrasena"
+            element={
+              <ProtectedRoute>
+                <ChangePasswordPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/dashboard"
+            element={
+              <AdminRoute>
+                <AdminDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/administradores"
+            element={
+              <AdminRoute superOnly>
+                <AdministratorsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/expositores"
+            element={
+              <AdminRoute>
+                <ExhibitorsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/ferias"
+            element={
+              <AdminRoute>
+                <FairsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/productos"
+            element={
+              <AdminRoute>
+                <ProductsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/categorias"
+            element={
+              <AdminRoute>
+                <CategoriesPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/auditoria"
+            element={
+              <AdminRoute>
+                <AuditPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/reportes"
+            element={
+              <AdminRoute>
+                <ReportsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/admin/perfil"
+            element={
+              <AdminRoute>
+                <AdminProfilePage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/gestion/expositor/dashboard"
+            element={
+              <ExhibitorRoute>
+                <ExhibitorProductsPage />
+              </ExhibitorRoute>
+            }
+          />
+          <Route
+            path="/gestion/expositor/perfil"
+            element={
+              <ExhibitorRoute>
+                <ExhibitorProfilePage />
+              </ExhibitorRoute>
+            }
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Suspense>
+    </>
   );
 }

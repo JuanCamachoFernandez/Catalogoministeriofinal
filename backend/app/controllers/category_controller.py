@@ -41,11 +41,16 @@ def categories():
 @category_bp.get("/admin/categories")
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def admin_categories():
-    query = (
-        select(Category)
-        .where(Category.deleted_at.is_(None))
-        .order_by(Category.nombre)
-    )
+    query = select(Category).where(Category.deleted_at.is_(None))
+    term = request.args.get("q", "").strip()
+    if term:
+        query = query.where(
+            Category.nombre.ilike(f"%{term}%")
+            | Category.descripcion.ilike(f"%{term}%")
+        )
+    if request.args.get("status") in {"active", "inactive"}:
+        query = query.where(Category.estado.is_(request.args["status"] == "active"))
+    query = query.order_by(Category.nombre)
     return paginate(query, category_json)
 
 
@@ -76,7 +81,7 @@ def create_category():
     )
     db.session.add(category)
     db.session.flush()
-    audit("CREAR", "Categoria", category.id, "Categoría creada")
+    audit("CREAR", "Categoria", category.id, f"Categoría creada: {category.nombre}")
     db.session.commit()
     invalidate_public_cache()
     return category_json(category), 201
@@ -105,7 +110,7 @@ def update_category(category_id):
         category.slug = slugify(name)
     if "descripcion" in data:
         category.descripcion = data.get("descripcion")
-    audit("EDITAR", "Categoria", category.id)
+    audit("EDITAR", "Categoria", category.id, f"Categoría actualizada: {category.nombre}")
     db.session.commit()
     invalidate_public_cache()
     return category_json(category)
@@ -119,7 +124,13 @@ def category_status(category_id):
     if not category or category.deleted_at:
         return error("Categoría no encontrada", 404)
     category.estado = validated_json()["active"]
-    audit("CAMBIAR_ESTADO", "Categoria", category.id)
+    state = "habilitada" if category.estado else "inhabilitada"
+    audit(
+        "CAMBIAR_ESTADO",
+        "Categoria",
+        category.id,
+        f"Categoría {category.nombre} {state}",
+    )
     db.session.commit()
     invalidate_public_cache()
     return category_json(category)
@@ -138,7 +149,7 @@ def delete_category(category_id):
         return error("La categoría tiene productos asociados; inhabilítela", 409)
     category.deleted_at = datetime.now(timezone.utc)
     category.estado = False
-    audit("ELIMINAR", "Categoria", category.id)
+    audit("ELIMINAR", "Categoria", category.id, f"Categoría eliminada: {category.nombre}")
     db.session.commit()
     invalidate_public_cache()
     return "", 204

@@ -12,11 +12,11 @@ def create_app(config=Config):
     load_dotenv()
     app = Flask(__name__)
     app.config.from_object(config)
-    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["CARPETA_CARGAS"], exist_ok=True)
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-    CORS(app, origins=app.config["CORS_ORIGINS"])
+    CORS(app, origins=app.config["ORIGENES_PERMITIDOS"])
 
     from .controllers import register_controllers
     from .models import RevokedToken
@@ -35,7 +35,7 @@ def create_app(config=Config):
 
     @app.get("/uploads/<path:name>")
     def uploads(name):
-        return send_from_directory(app.config["UPLOAD_FOLDER"], name)
+        return send_from_directory(app.config["CARPETA_CARGAS"], name)
 
     from .commands import register_commands
 

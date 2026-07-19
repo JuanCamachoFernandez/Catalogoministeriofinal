@@ -1,10 +1,16 @@
 from sqlalchemy import select
 
 from ..extensions import db
-from ..models import Category, Exhibitor, ProductImage
+from ..models import Category, Exhibitor, ExhibitorType, ExhibitorTypeLink, ProductImage, Role
 
 
 def user_json(user):
+    profile_photo = user.foto_perfil
+    if user.role == Role.EXPOSITOR:
+        exhibitor = db.session.scalar(
+            select(Exhibitor).where(Exhibitor.user_id == user.id)
+        )
+        profile_photo = exhibitor.logo if exhibitor else None
     return {
         "id": str(user.id),
         "username": user.username,
@@ -12,6 +18,7 @@ def user_json(user):
         "role": user.role.value,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "foto_perfil": profile_photo,
         "must_change_password": user.must_change_password,
     }
 
@@ -20,10 +27,14 @@ def admin_user_json(user):
     profile = user.admin_profile
     return {
         **user_json(user),
+        "apellido_paterno": user.apellido_paterno,
+        "apellido_materno": user.apellido_materno,
+        "numero_documento": profile.numero_documento if profile else None,
         "phone": user.phone,
         "status": user.status.value,
         "cargo": profile.cargo if profile else None,
         "unidad": profile.unidad if profile else None,
+        "observaciones": profile.observaciones if profile else None,
         "created_at": user.created_at.isoformat(),
     }
 
@@ -61,9 +72,11 @@ def product_json(product):
         .order_by(ProductImage.is_cover.desc(), ProductImage.display_order)
     ).all()
     category = db.session.get(Category, product.category_id)
+    exhibitor = db.session.get(Exhibitor, product.exhibitor_id)
     return {
         "id": str(product.id),
         "exhibitor_id": str(product.exhibitor_id),
+        "nombre_comercial": exhibitor.nombre_comercial if exhibitor else None,
         "category_id": str(product.category_id),
         "categoria": (
             {"id": str(category.id), "nombre": category.nombre}
@@ -94,6 +107,12 @@ def product_json(product):
 
 
 def exhibitor_json(exhibitor):
+    type_rows = db.session.execute(
+        select(ExhibitorTypeLink, ExhibitorType)
+        .join(ExhibitorType, ExhibitorTypeLink.type_id == ExhibitorType.id)
+        .where(ExhibitorTypeLink.exhibitor_id == exhibitor.id)
+        .order_by(ExhibitorType.nombre)
+    ).all()
     return {
         "id": str(exhibitor.id),
         "user_id": str(exhibitor.user_id),
@@ -102,6 +121,8 @@ def exhibitor_json(exhibitor):
         "numero_documento": exhibitor.numero_documento,
         "nombre_responsable": exhibitor.nombre_responsable,
         "apellido_responsable": exhibitor.apellido_responsable,
+        "apellido_paterno_responsable": exhibitor.apellido_paterno_responsable,
+        "apellido_materno_responsable": exhibitor.apellido_materno_responsable,
         "telefono_whatsapp": exhibitor.telefono_whatsapp,
         "correo": exhibitor.correo,
         "departamento": exhibitor.departamento,
@@ -109,6 +130,9 @@ def exhibitor_json(exhibitor):
         "direccion": exhibitor.direccion,
         "descripcion": exhibitor.descripcion,
         "descripcion_productos": exhibitor.descripcion_productos,
+        "nombre_tipo_expositor": exhibitor.nombre_tipo_expositor,
+        "type_ids": [str(link.type_id) for link, _ in type_rows],
+        "tipos_expositor": [type_item.nombre for _, type_item in type_rows],
         "logo": exhibitor.logo,
         "estado": exhibitor.estado.value,
         "created_at": exhibitor.created_at.isoformat(),

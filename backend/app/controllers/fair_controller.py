@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 import os
 import uuid
+from urllib.parse import urlparse
 
 from flask import Blueprint, request
 from sqlalchemy import select
@@ -44,6 +45,13 @@ from .common import (
 )
 
 fair_bp = Blueprint("fairs", __name__)
+
+
+def validate_cover_reference(value):
+    parsed = urlparse(value or "")
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return
+    require_managed_upload(value, "ferias")
 
 
 def cleanup_fair_images(fair):
@@ -131,6 +139,19 @@ def list_fairs():
         except ValueError:
             return error("Estado de feria inválido")
     query = Fair.admin_query(term, parsed_state)
+    if request.args.get("departamento"):
+        query = query.where(Fair.departamento == request.args["departamento"])
+    if request.args.get("municipio"):
+        query = query.where(Fair.municipio == request.args["municipio"])
+    try:
+        date_from = date.fromisoformat(request.args["date_from"]) if request.args.get("date_from") else None
+        date_to = date.fromisoformat(request.args["date_to"]) if request.args.get("date_to") else None
+    except ValueError:
+        return error("Rango de fechas inválido")
+    if date_from:
+        query = query.where(Fair.fecha_fin >= date_from)
+    if date_to:
+        query = query.where(Fair.fecha_inicio <= date_to)
     return paginate(query.order_by(Fair.fecha_inicio.desc()), fair_json)
 
 
@@ -151,7 +172,7 @@ def create_fair():
     data = validated_json()
     try:
         start, end = parse_fair_dates(data)
-        require_managed_upload(data.get("imagen_portada"), "ferias")
+        validate_cover_reference(data.get("imagen_portada"))
     except ValueError as exc:
         return error(str(exc))
     required = (
@@ -162,9 +183,6 @@ def create_fair():
     )
     if not all(required):
         return error("Nombre y ubicación son obligatorios")
-    Fair.acquire_schedule_lock()
-    if Fair.has_overlap(start, end):
-        return error("Las fechas se superponen con otra feria", 409)
     fair = Fair(
         nombre=data["nombre"].strip(),
         slug=unique_fair_slug(data["nombre"]),
@@ -183,7 +201,7 @@ def create_fair():
     fair.visible_publicamente = fair.estado == FeriaStatus.PUBLISHED
     db.session.add(fair)
     db.session.flush()
-    audit("CREAR", "Feria", fair.id, "Feria creada")
+    audit("CREAR", "Feria", fair.id, f"Feria creada: {fair.nombre}")
     db.session.commit()
     invalidate_public_cache()
     return fair_json(fair), 201
@@ -209,13 +227,10 @@ def update_fair(fair_id):
         return error("Una feria publicada no puede regresar a preparación")
     if fair.estado == FeriaStatus.PUBLISHED and end < today:
         return error("Use la finalización manual para cerrar la feria")
-    Fair.acquire_schedule_lock()
-    if Fair.has_overlap(start, end, fair.id):
-        return error("Las fechas se superponen con otra feria", 409)
     old_cover = None
     if "imagen_portada" in data and data.get("imagen_portada") != fair.imagen_portada:
         try:
-            require_managed_upload(data.get("imagen_portada"), "ferias")
+            validate_cover_reference(data.get("imagen_portada"))
         except ValueError as exc:
             return error(str(exc))
         old_cover = fair.imagen_portada
@@ -237,7 +252,7 @@ def update_fair(fair_id):
         fair.slug = unique_fair_slug(fair.nombre, fair.id)
     fair.estado = fair.expected_status(today)
     fair.visible_publicamente = fair.estado == FeriaStatus.PUBLISHED
-    audit("EDITAR", "Feria", fair.id, "Feria actualizada")
+    audit("EDITAR", "Feria", fair.id, f"Feria actualizada: {fair.nombre}")
     db.session.commit()
     if old_cover:
         delete_managed_upload(old_cover, "ferias")
@@ -264,7 +279,10 @@ def change_fair_status(fair_id):
     fair.estado = status
     fair.visible_publicamente = False
     urls = cleanup_fair_images(fair)
-    audit("CAMBIAR_ESTADO", "Feria", fair.id, f"Estado cambiado a {status.value}")
+    audit(
+        "CAMBIAR_ESTADO", "Feria", fair.id,
+        f"Estado de {fair.nombre} cambiado a {status.value}",
+    )
     db.session.commit()
     for url in urls:
         delete_managed_upload(url, "ferias")
@@ -317,7 +335,7 @@ def add_fair_image(fair_id):
         display_order=int(request.form.get("display_order") or 0),
     )
     db.session.add(image)
-    audit("AGREGAR_IMAGEN", "Feria", fair.id, "Imagen agregada")
+    audit("AGREGAR_IMAGEN", "Feria", fair.id, f"Imagen agregada a la feria {fair.nombre}")
     db.session.commit()
     invalidate_public_cache()
     return {"id": str(image.id), "url": image.url}, 201
@@ -334,7 +352,7 @@ def delete_fair_image(image_id):
         return error("La feria es inmutable", 409)
     url = image.url
     db.session.delete(image)
-    audit("ELIMINAR_IMAGEN", "Feria", fair.id)
+    audit("ELIMINAR_IMAGEN", "Feria", fair.id, f"Imagen eliminada de la feria {fair.nombre}")
     db.session.commit()
     delete_managed_upload(url, "ferias")
     invalidate_public_cache()

@@ -14,9 +14,20 @@ class ChangePasswordSchema(Schema):
     new_password = password
 
 
+class ReauthenticateSchema(Schema):
+    current_password = fields.String(required=True, load_only=True)
+
+
 class ForgotPasswordSchema(Schema):
-    email = fields.Email(load_default=None)
-    login = fields.String(load_default=None, validate=validate.Length(max=255))
+    email = fields.Email(required=True, validate=validate.Length(max=255))
+
+
+class VerifyRecoveryCodeSchema(Schema):
+    email = fields.Email(required=True, validate=validate.Length(max=255))
+    code = fields.String(
+        required=True,
+        validate=validate.Regexp(r"^\d{6}$", error="Ingrese los 6 números del código"),
+    )
 
 
 class ResetPasswordSchema(Schema):

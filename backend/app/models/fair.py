@@ -1,7 +1,7 @@
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import CheckConstraint, UniqueConstraint, select, text
+from sqlalchemy import CheckConstraint, UniqueConstraint, select
 
 from ..extensions import db
 from .base import TimestampMixin, now, uid
@@ -15,10 +15,12 @@ def bolivia_today():
 
 
 class Fair(TimestampMixin, db.Model):
-    __tablename__ = "fairs"
+    __tablename__ = "ferias"
     id = db.Column(db.Uuid, primary_key=True, default=uid)
     nombre = db.Column(db.String(200), nullable=False, index=True)
-    slug = db.Column(db.String(220), unique=True, nullable=False, index=True)
+    slug = db.Column(
+        "identificador_url", db.String(220), unique=True, nullable=False, index=True
+    )
     descripcion = db.Column(db.Text)
     lugar = db.Column(db.String(200), nullable=False)
     direccion = db.Column(db.String(255))
@@ -32,15 +34,17 @@ class Fair(TimestampMixin, db.Model):
     imagen_portada = db.Column(db.String(500), nullable=True)
     observaciones = db.Column(db.Text)
     estado = db.Column(
-        db.Enum(FeriaStatus, name="fair_status"),
+        db.Enum(FeriaStatus, name="estado_feria"),
         nullable=False,
         default=FeriaStatus.DRAFT,
     )
     visible_publicamente = db.Column(db.Boolean, nullable=False, default=False)
-    created_by = db.Column(db.Uuid, db.ForeignKey("users.id"), nullable=False)
-    deleted_at = db.Column(db.DateTime(timezone=True))
+    created_by = db.Column(
+        "creado_por_usuario_id", db.Uuid, db.ForeignKey("usuarios.id"), nullable=False
+    )
+    deleted_at = db.Column("fecha_eliminacion", db.DateTime(timezone=True))
     __table_args__ = (
-        CheckConstraint("fecha_fin >= fecha_inicio", name="ck_fair_dates"),
+        CheckConstraint("fecha_fin >= fecha_inicio", name="fechas_validas"),
     )
 
     @property
@@ -56,26 +60,6 @@ class Fair(TimestampMixin, db.Model):
         if today <= self.fecha_fin:
             return FeriaStatus.PUBLISHED
         return FeriaStatus.FINISHED
-
-    @classmethod
-    def has_overlap(cls, start, end, exclude_id=None):
-        query = select(cls.id).where(
-            cls.deleted_at.is_(None),
-            cls.estado.notin_([FeriaStatus.FINISHED, FeriaStatus.DISABLED]),
-            cls.fecha_inicio <= end,
-            cls.fecha_fin >= start,
-        )
-        if exclude_id:
-            query = query.where(cls.id != exclude_id)
-        return db.session.scalar(query) is not None
-
-    @classmethod
-    def acquire_schedule_lock(cls):
-        if db.session.get_bind().dialect.name == "postgresql":
-            db.session.execute(
-                text("SELECT pg_advisory_xact_lock(:lock_id)"),
-                {"lock_id": 182736451},
-            )
 
     @classmethod
     def active_query(cls):
@@ -103,36 +87,47 @@ class Fair(TimestampMixin, db.Model):
 
 
 class FairImage(db.Model):
-    __tablename__ = "fair_images"
+    __tablename__ = "imagenes_feria"
     id = db.Column(db.Uuid, primary_key=True, default=uid)
     fair_id = db.Column(
-        db.Uuid, db.ForeignKey("fairs.id", ondelete="CASCADE"), nullable=False
+        "feria_id",
+        db.Uuid,
+        db.ForeignKey("ferias.id", ondelete="CASCADE"),
+        nullable=False,
     )
-    filename = db.Column(db.String(255), nullable=False)
-    url = db.Column(db.String(500), nullable=False)
-    alt_text = db.Column(db.String(255))
-    is_cover = db.Column(db.Boolean, default=False)
-    display_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    filename = db.Column("nombre_archivo", db.String(255), nullable=False)
+    url = db.Column("direccion_url", db.String(500), nullable=False)
+    alt_text = db.Column("texto_alternativo", db.String(255))
+    is_cover = db.Column("es_portada", db.Boolean, default=False)
+    display_order = db.Column("orden_visualizacion", db.Integer, default=0)
+    created_at = db.Column(
+        "fecha_creacion", db.DateTime(timezone=True), default=now, nullable=False
+    )
 
 
 class FairExhibitor(TimestampMixin, db.Model):
-    __tablename__ = "fair_exhibitors"
+    __tablename__ = "expositores_feria"
     id = db.Column(db.Uuid, primary_key=True, default=uid)
-    fair_id = db.Column(db.Uuid, db.ForeignKey("fairs.id"), nullable=False)
-    exhibitor_id = db.Column(db.Uuid, db.ForeignKey("exhibitors.id"), nullable=False)
+    fair_id = db.Column("feria_id", db.Uuid, db.ForeignKey("ferias.id"), nullable=False)
+    exhibitor_id = db.Column(
+        "expositor_id", db.Uuid, db.ForeignKey("expositores.id"), nullable=False
+    )
     estado = db.Column(
-        db.Enum(AssignmentStatus, name="assignment_status"),
+        db.Enum(AssignmentStatus, name="estado_asignacion"),
         nullable=False,
         default=AssignmentStatus.PENDING,
     )
     numero_stand = db.Column(db.String(40))
     sector = db.Column(db.String(100))
     observaciones = db.Column(db.Text)
-    authorized_by = db.Column(db.Uuid, db.ForeignKey("users.id"))
-    authorized_at = db.Column(db.DateTime(timezone=True))
+    authorized_by = db.Column(
+        "autorizado_por_usuario_id", db.Uuid, db.ForeignKey("usuarios.id")
+    )
+    authorized_at = db.Column("fecha_autorizacion", db.DateTime(timezone=True))
     __table_args__ = (
-        UniqueConstraint("fair_id", "exhibitor_id", name="uq_fair_exhibitor"),
+        UniqueConstraint(
+            "feria_id", "expositor_id", name="expositor_feria_unico"
+        ),
     )
 
     @classmethod
