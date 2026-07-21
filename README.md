@@ -1,114 +1,80 @@
 # Catálogo Digital de Ferias
 
-Sistema web para administrar y publicar ferias, expositores, productos y categorías del sector productivo boliviano.
+Aplicación web para registrar Unidades Productivas, administrar ferias y publicar automáticamente sus productos en un catálogo público.
 
-El proyecto utiliza Flask con PostgreSQL en el backend y React con TypeScript en el frontend. Incluye paneles diferenciados para superadministradores, administradores y expositores, además de un catálogo público para la ciudadanía.
-
-## Funcionalidades principales
-
-- Administración de usuarios, unidades, expositores, ferias y categorías.
-- Perfil editable para superadministradores, administradores y expositores.
-- Productos administrados exclusivamente por el expositor propietario.
-- Galerías con múltiples imágenes, portada y orden automático.
-- Imágenes de ferias y logotipos mediante URL o archivo del dispositivo.
-- Varias ferias pueden publicarse simultáneamente, incluso cuando comparten las mismas fechas.
-- Catálogo público organizado por tarjetas de feria, detalle de participantes y productos por expositor.
-- Departamentos y municipios de Bolivia mediante listas seleccionables.
-- Auditoría con usuario, acción, entidad y descripción.
-- Reportes generales o filtrados en PDF y Excel.
-- Recuperación de contraseña mediante un código de seis dígitos enviado por Brevo.
-- Consultas de productos mediante WhatsApp con cantidades.
-- Bloqueo por inactividad a los dos minutos y cierre de sesión a los cinco minutos.
-- Mensajes, confirmaciones y resultados mediante modales centrales.
-- Identidad visual institucional con el escudo de Bolivia centrado y una paleta basada en negro, dorado, rojo, amarillo y verde.
-
-## Roles
-
-- `SUPERADMIN`: administra usuarios administradores y todos los módulos.
-- `ADMIN_VICEMINISTERIO`: administra expositores, ferias, categorías, auditoría y reportes; solamente consulta productos.
-- `EXPOSITOR`: administra su empresa, perfil, productos e imágenes.
+El sistema tiene un backend Flask con PostgreSQL y un frontend React con TypeScript. La participación se asigna a una Unidad Productiva completa: cuando está autorizada en una feria activa, sus productos publicables aparecen automáticamente en el catálogo.
 
 ## Tecnologías
 
-### Backend
+- Backend: Python 3.11+, Flask, SQLAlchemy, Alembic, JWT y PostgreSQL 16+.
+- Frontend: React 19, TypeScript, Vite y TanStack Query.
+- Pruebas: Pytest, Vitest y Playwright.
+- Integraciones: Brevo para correos y WhatsApp para consultas de productos.
 
+## Requisitos
+
+Instale antes de comenzar:
+
+- Git.
 - Python 3.11 o superior.
-- Flask y Flask-SQLAlchemy.
+- Node.js 20 LTS o superior y npm.
 - PostgreSQL 16 o superior.
-- Alembic y Flask-Migrate.
-- JWT para autenticación.
-- Argon2 para contraseñas.
-- Brevo Transactional Email mediante HTTPS.
-- ReportLab y OpenPyXL para reportes.
 
-### Frontend
+Compruebe las instalaciones:
 
-- React.
-- TypeScript.
-- Vite.
-- TanStack Query.
-- Vitest.
-- Playwright para pruebas de navegador.
-
-## Estructura general
-
-```text
-CatalogoMinisterio/
-├── backend/
-│   ├── app/
-│   │   ├── controllers/
-│   │   ├── models/
-│   │   └── views/
-│   ├── migrations/
-│   ├── tests/
-│   ├── .env.example
-│   └── run.py
-├── frontend/
-│   ├── src/
-│   ├── e2e/
-│   └── .env.example
-└── docs/
+```powershell
+git --version
+python --version
+node --version
+npm --version
+psql --version
 ```
 
-El escudo utilizado por la interfaz se encuentra en `frontend/public/escudo-bolivia.png`. Los colores globales se administran desde `frontend/src/styles/theme.css` y su presentación desde `frontend/src/index.css`.
+## Instalación por primera vez
 
-## Primera instalación
+Los comandos principales están escritos para PowerShell en Windows. En Linux o macOS use `python3`, active el entorno con `source .venv/bin/activate` y reemplace `Copy-Item` por `cp`.
 
-### 1. Preparar PostgreSQL
+### 1. Descargar el proyecto
 
-Cree una base llamada `catalogo_ferias` y un usuario con permisos sobre ella. La dirección configurada debe tener este formato:
-
-```env
-DIRECCION_BASE_DATOS=postgresql+psycopg://usuario:contrasena@localhost:5432/catalogo_ferias
+```powershell
+git clone https://github.com/mich-rp/CatalogoMinisterio.git
+cd CatalogoMinisterio
 ```
 
-Consulte la guía [Configuración de PostgreSQL](docs/CONFIGURACION_POSTGRESQL.md) para una instalación detallada.
+### 2. Crear PostgreSQL
 
-### 2. Configurar el backend
+Desde pgAdmin o `psql`, cree un usuario y la base local:
 
-Desde la raíz del proyecto:
+```sql
+CREATE USER catalogo WITH PASSWORD 'CONTRASENA_LOCAL_SEGURA';
+CREATE DATABASE catalogo_ferias OWNER catalogo;
+GRANT ALL PRIVILEGES ON DATABASE catalogo_ferias TO catalogo;
+```
+
+Si la contraseña contiene caracteres especiales reservados para URL, deberá codificarlos en la cadena de conexión.
+
+### 3. Configurar el backend
+
+Desde la raíz del repositorio:
 
 ```powershell
 Copy-Item backend\.env.example backend\.env
 cd backend
 python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Edite `backend/.env` antes de continuar. No utilice los valores de ejemplo en un sistema real.
-
-Variables principales:
+Edite `backend/.env`. Como mínimo, cambie:
 
 ```env
-CLAVE_SECRETA_APLICACION=genere-una-clave-aleatoria
-CLAVE_SECRETA_SESIONES=genere-otra-clave-diferente
-DIRECCION_BASE_DATOS=postgresql+psycopg://usuario:contrasena@localhost:5432/catalogo_ferias
+CLAVE_SECRETA_APLICACION=SECRETO_ALEATORIO_1
+CLAVE_SECRETA_SESIONES=SECRETO_ALEATORIO_2
+DIRECCION_BASE_DATOS=postgresql+psycopg://catalogo:CONTRASENA_LOCAL_SEGURA@localhost:5432/catalogo_ferias
 DIRECCION_INTERFAZ_WEB=http://localhost:5173
 ORIGENES_PERMITIDOS=http://localhost:5173
-CARPETA_CARGAS=uploads
-TAMANO_MAXIMO_CONTENIDO=10485760
-SEGUNDOS_MEMORIA_TEMPORAL_PUBLICA=60
 
 USUARIO_ADMINISTRADOR_INICIAL=administrador.principal
 NOMBRES_ADMINISTRADOR_INICIAL=Administrador
@@ -116,44 +82,41 @@ APELLIDO_PATERNO_ADMINISTRADOR_INICIAL=Principal
 APELLIDO_MATERNO_ADMINISTRADOR_INICIAL=Sistema
 CORREO_ADMINISTRADOR_INICIAL=administrador@gmail.com
 CONTRASENA_ADMINISTRADOR_INICIAL=CambieEstaClave123!
-
-CLAVE_BREVO=
-CORREO_REMITENTE_BREVO=
-NOMBRE_REMITENTE_BREVO=Catálogo Digital de Ferias
-ENVIO_CORREO_HABILITADO=false
 ```
 
-Las contraseñas deben tener al menos diez caracteres, mayúscula, minúscula, número y carácter especial. El correo inicial debe terminar en `@gmail.com`.
-
-Para generar secretos aleatorios:
+Genere cada secreto por separado:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-Ejecute el comando dos veces y utilice resultados diferentes.
+No use en producción los secretos ni las contraseñas del archivo de ejemplo.
 
-### 3. Crear el esquema y los datos iniciales
+### 4. Preparar la base de datos
+
+Con el entorno virtual activado y dentro de `backend`:
 
 ```powershell
 python -m flask --app run.py db upgrade
 python -m flask --app run.py seed-catalogs
+python -m flask --app run.py seed-productive-sectors
 python -m flask --app run.py seed-admin
+python -m flask --app run.py db check
 ```
 
-`seed-admin` solamente crea el primer superadministrador. Cambiar después las variables terminadas en `_ADMINISTRADOR_INICIAL` no modifica una cuenta existente.
+`seed-admin` crea solamente el primer superadministrador. Si informa que ya existe, no necesita repetirlo. Las migraciones son la fuente oficial del esquema; no cree tablas manualmente.
 
-### 4. Configurar el frontend
+### 5. Configurar el frontend
 
-En otra terminal, desde la raíz:
+Abra otra terminal desde la raíz del repositorio:
 
 ```powershell
 Copy-Item frontend\.env.example frontend\.env
 cd frontend
-npm install
+npm ci
 ```
 
-Configuración de desarrollo:
+La configuración local predeterminada es:
 
 ```env
 VITE_DIRECCION_SERVICIO=http://localhost:5000/api
@@ -161,11 +124,9 @@ VITE_NOMBRE_APLICACION=Catálogo Digital de Ferias
 VITE_CODIGO_PAIS_PREDETERMINADO=591
 ```
 
-El prefijo `VITE_` es obligatorio para que Vite permita utilizar esas variables en el navegador.
+### 6. Iniciar el proyecto
 
-## Ejecución diaria
-
-### Terminal 1: backend
+Terminal 1 — backend:
 
 ```powershell
 cd backend
@@ -173,126 +134,193 @@ cd backend
 python -m flask --app run.py run --debug --host=0.0.0.0 --port=5000
 ```
 
-### Terminal 2: frontend
+Terminal 2 — frontend:
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-## Direcciones locales
+Compruebe:
 
-- Inicio de sesión: http://localhost:5173/gestion/login
-- Catálogo público: http://localhost:5173/catalogo
-- Estado del backend: http://localhost:5000/api/health
+- Gestión: <http://localhost:5173/gestion/login>
+- Catálogo público: <http://localhost:5173/catalogo>
+- Estado del backend: <http://localhost:5000/api/health>
 
-## Base de datos en español
+En el primer acceso, el administrador debe cambiar su contraseña temporal.
 
-El esquema físico de PostgreSQL utiliza tablas, columnas, índices y restricciones con nombres en español. La migración inicial crea, entre otras, las siguientes tablas:
+## Trabajo diario
 
-```text
-usuarios
-perfiles_administradores
-unidades_administrativas
-recuperaciones_contrasena
-codigos_acceso_revocados
-expositores
-tipos_expositor
-tipos_expositor_asignados
-ferias
-imagenes_feria
-expositores_feria
-categorias
-productos
-imagenes_producto
-auditorias
-estados_memoria_temporal
-version_migraciones
+No vuelva a crear la base, el entorno virtual ni los archivos `.env` cada día.
+
+### 1. Actualizar el código
+
+Antes de descargar cambios, confirme que no tiene trabajo sin guardar:
+
+```powershell
+git status
+git pull --ff-only
 ```
 
-Para aplicar cambios pendientes:
+Para una tarea nueva, trabaje en una rama propia:
+
+```powershell
+git switch -c feat/nombre-corto
+```
+
+Use prefijos como `feat/`, `fix/`, `docs/` o `test/`. Evite desarrollar directamente sobre `main`.
+
+### 2. Aplicar cambios recibidos
+
+Después de un `git pull`:
+
+```powershell
+# Backend
+cd backend
+.\.venv\Scripts\Activate.ps1
+# Solo si cambió backend/requirements.txt
+python -m pip install -r requirements.txt
+# Después de recibir cambios, aplique las migraciones pendientes
+python -m flask --app run.py db upgrade
+
+# Frontend: solo si cambió frontend/package-lock.json
+cd ..\frontend
+npm ci
+```
+
+`pip install` y `npm ci` no son necesarios en cada inicio si sus archivos de dependencias no cambiaron.
+
+### 3. Levantar los servidores
+
+Backend:
 
 ```powershell
 cd backend
-python -m flask --app run.py db upgrade
-python -m flask --app run.py db check
+.\.venv\Scripts\Activate.ps1
+python -m flask --app run.py run --debug --host=0.0.0.0 --port=5000
 ```
 
-## Recuperación de contraseña y Brevo
+Frontend, en otra terminal:
 
-El correo se utiliza únicamente para recuperar contraseñas. El flujo es:
-
-1. El usuario confirma su Gmail.
-2. El sistema envía un código de seis dígitos.
-3. El usuario verifica el código.
-4. El sistema permite establecer y confirmar una contraseña nueva.
-
-Para habilitar el envío real, configure un remitente verificado en Brevo y cambie:
-
-```env
-ENVIO_CORREO_HABILITADO=true
+```powershell
+cd frontend
+npm run dev
 ```
 
-Consulte [Configuración de Brevo](docs/CONFIGURACION_BREVO.md). Nunca publique `CLAVE_BREVO`.
+Detenga cada servidor con `Ctrl+C`. Para salir del entorno de Python use `deactivate`.
 
-## Pruebas
+### 4. Verificar antes de entregar
 
-### Backend sin PostgreSQL externo
+Backend:
 
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
 python -m pytest -q -m "not postgres"
+python -m flask --app run.py db check
 ```
 
-### Migración real de PostgreSQL
-
-Utilice una base separada cuyo nombre termine obligatoriamente en `_test`:
-
-```powershell
-$env:DIRECCION_BASE_DATOS_PRUEBAS="postgresql+psycopg://usuario:contrasena@localhost:5432/catalogo_ferias_test"
-$env:CORREO_ADMINISTRADOR_PRUEBAS="catalogo.test@gmail.com"
-$env:CONTRASENA_ADMINISTRADOR_PRUEBAS="Catalogo.Test123!"
-python -m pytest -q -m postgres
-```
-
-La prueba de integración elimina y reconstruye el esquema de esa base. Nunca apunte `DIRECCION_BASE_DATOS_PRUEBAS` a la base principal. Las credenciales anteriores pertenecen únicamente a los datos temporales de prueba.
-
-### Frontend
+Frontend:
 
 ```powershell
 cd frontend
-npm.cmd test -- --run
-npm.cmd run build
+npm run test
+npm run lint
+npm run build
 ```
 
-Las pruebas de navegador requieren revisar previamente la configuración de [Playwright](frontend/playwright.config.ts).
+Finalmente revise y guarde su trabajo:
 
-## Seguridad
+```powershell
+git status
+git diff --check
+git add RUTA_DE_LOS_ARCHIVOS
+git commit -m "tipo: descripción breve"
+git push -u origin NOMBRE_DE_LA_RAMA
+```
 
-- No suba `backend/.env` ni `frontend/.env` al repositorio.
-- Utilice secretos y contraseñas diferentes para desarrollo, pruebas y producción.
-- Revoque inmediatamente cualquier clave de Brevo que haya sido compartida o publicada.
-- Restrinja `ORIGENES_PERMITIDOS` al dominio real del frontend.
-- La contraseña inicial es temporal y debe cambiarse en el primer ingreso.
-- Cambiar `CLAVE_SECRETA_SESIONES` invalida las sesiones abiertas.
-- Mantenga una base independiente para las pruebas destructivas.
+No use `git add .` sin revisar antes qué archivos serán incluidos.
 
-## Documentación adicional
+## Cambios de base de datos
 
-- [Primera instalación](docs/INSTALACION_PRIMERA_VEZ.md)
+Cuando cambie un modelo SQLAlchemy:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m flask --app run.py db migrate -m "Descripción concreta"
+python -m flask --app run.py db upgrade
+python -m flask --app run.py db check
+```
+
+Revise siempre el archivo generado dentro de `backend/migrations/versions/`. No elimine ni reescriba migraciones que ya hayan sido compartidas o aplicadas sin coordinarlo con el equipo.
+
+### Pruebas PostgreSQL destructivas
+
+La integración desde cero requiere una base separada cuyo nombre termine en `_test`:
+
+```powershell
+$env:DIRECCION_BASE_DATOS_PRUEBAS="postgresql+psycopg://catalogo:CONTRASENA@localhost:5432/catalogo_ferias_test"
+cd backend
+python -m pytest -q -m postgres
+```
+
+Esta prueba elimina y reconstruye el esquema de la base indicada. Nunca configure `DIRECCION_BASE_DATOS_PRUEBAS` con `catalogo_ferias` ni con una base que contenga información real.
+
+## Estructura del repositorio
+
+```text
+CatalogoMinisterio/
+├── backend/
+│   ├── app/
+│   │   ├── controllers/   # Rutas y coordinación HTTP
+│   │   ├── models/        # Entidades y reglas de dominio
+│   │   └── views/         # Validación y serialización JSON
+│   ├── migrations/        # Versionado de PostgreSQL
+│   └── tests/             # Pruebas Pytest
+├── frontend/
+│   ├── src/               # Aplicación React
+│   └── e2e/               # Pruebas Playwright
+└── docs/                  # Manuales técnicos y funcionales
+```
+
+El backend sigue MVC explícito y no utiliza una carpeta `services`. La API canónica trabaja con `ProductiveUnit`, `ProductiveSector`, `Product`, `Fair` y `FairParticipation`. Algunas rutas anteriores siguen disponibles temporalmente por compatibilidad con el frontend.
+
+## Reglas importantes del catálogo
+
+- Una feria no puede superponerse con otra feria no terminal.
+- La participación pertenece a toda la Unidad Productiva; no se seleccionan productos individualmente.
+- Una Unidad Productiva necesita al menos tres productos publicables para aparecer.
+- Cada producto necesita exactamente tres imágenes y una sola portada.
+- Solo productos `AVAILABLE` u `OUT_OF_STOCK` aparecen públicamente.
+- Ferias `FINISHED` o `DISABLED` son terminales e inmutables.
+- Las eliminaciones principales son lógicas y conservan el historial.
+
+## Variables, archivos y seguridad
+
+- Nunca suba `backend/.env`, `frontend/.env`, claves de Brevo, contraseñas ni respaldos.
+- `backend/uploads/`, los entornos virtuales y `frontend/node_modules/` son locales y no deben versionarse.
+- Mantenga bases distintas para desarrollo, pruebas y producción.
+- Configure `ENVIO_CORREO_HABILITADO=false` hasta disponer de un remitente verificado en Brevo.
+- Cambiar `CLAVE_SECRETA_SESIONES` invalida todas las sesiones JWT.
+- Antes de actualizar o eliminar datos reales, realice un respaldo de PostgreSQL.
+
+## Problemas frecuentes
+
+- PowerShell bloquea la activación: ejecute `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+- `npm.ps1` está bloqueado: use `npm.cmd run dev` o habilite scripts para la sesión.
+- PostgreSQL rechaza la conexión: revise que el servicio esté iniciado, el puerto 5432 y `DIRECCION_BASE_DATOS`.
+- Faltan tablas o columnas: ejecute `python -m flask --app run.py db upgrade`.
+- El navegador muestra un error CORS: verifique `ORIGENES_PERMITIDOS` y `VITE_DIRECCION_SERVICIO`.
+- Un puerto está ocupado: detenga el proceso anterior o cambie el puerto y las URLs relacionadas.
+
+## Documentación
+
+- [Instalación detallada](docs/INSTALACION_PRIMERA_VEZ.md)
 - [Ejecución diaria](docs/EJECUCION_DIARIA.md)
-- [Configuración para compartir](docs/CONFIGURACION_PARA_COMPARTIR.md)
-- [PostgreSQL](docs/CONFIGURACION_POSTGRESQL.md)
-- [Brevo](docs/CONFIGURACION_BREVO.md)
-- [API](docs/API.md)
+- [Configuración de PostgreSQL](docs/CONFIGURACION_POSTGRESQL.md)
+- [Configuración de Brevo](docs/CONFIGURACION_BREVO.md)
+- [Contrato de la API](docs/API.md) y [OpenAPI](docs/openapi.yaml)
 - [Arquitectura MVC](docs/ARQUITECTURA_MVC.md)
 - [Seguridad](docs/SEGURIDAD.md)
-- [Manual del frontend](docs/MANUAL_FRONTEND.md)
-- [Matriz frontend/API](docs/MATRIZ_FRONTEND_API.md)
-
-## Observaciones
-
-- El backend conserva algunos identificadores internos exigidos por Flask, JWT y SQLAlchemy, como `SECRET_KEY` o `SQLALCHEMY_DATABASE_URI`. Las variables que configura el usuario están en español.
-- El prefijo `VITE_` es obligatorio y no puede traducirse ni eliminarse.
-- Las rutas JSON internas conservan compatibilidad con el frontend actual para evitar errores en formularios y ediciones.
+- [Configuración de producción](docs/CONFIGURACION_PRODUCCION.md)

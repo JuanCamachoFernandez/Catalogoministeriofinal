@@ -15,6 +15,8 @@ from ..models import (
     FeriaStatus,
     Product,
     ProductStatus,
+    ProductiveUnit,
+    ProductiveUnitStatus,
     Role,
     User,
     UserStatus,
@@ -28,6 +30,7 @@ from .common import (
     audit_description,
     current_user,
     delete_managed_upload,
+    invalidate_public_cache,
     require_managed_upload,
     roles,
     unique_username,
@@ -187,7 +190,7 @@ def admin_dashboard():
 
 
 @admin_bp.get("/admin/users")
-@roles(Role.SUPERADMIN)
+@roles(Role.SUPERADMIN, Role.ADMIN)
 def list_admin_users():
     term = request.args.get("q", "").strip()
     query = User.admin_query(term)
@@ -196,6 +199,8 @@ def list_admin_users():
     if request.args.get("role") in {
         Role.SUPERADMIN.value,
         Role.ADMIN_VICEMINISTERIO.value,
+        Role.ADMIN.value,
+        Role.PRODUCTIVE_UNIT_RESPONSIBLE.value,
     }:
         query = query.where(User.role == Role(request.args["role"]))
     if request.args.get("unit"):
@@ -204,7 +209,7 @@ def list_admin_users():
 
 
 @admin_bp.get("/admin/users/<uuid:user_id>")
-@roles(Role.SUPERADMIN)
+@roles(Role.SUPERADMIN, Role.ADMIN)
 def get_admin_user(user_id):
     user = db.session.get(User, user_id)
     if not user or user.deleted_at or user.role == Role.EXPOSITOR:
@@ -289,13 +294,38 @@ def create_admin_user():
 
 
 @admin_bp.patch("/admin/users/<uuid:user_id>")
-@roles(Role.SUPERADMIN)
+@roles(Role.SUPERADMIN, Role.ADMIN)
 @validate_json(AdminUpdateSchema())
 def update_admin_user(user_id):
     user = db.session.get(User, user_id)
     data = validated_json()
+    actor = current_user()
     if not user or user.deleted_at or user.role == Role.EXPOSITOR:
         return error("Administrador no encontrado", 404)
+    previous_role = user.role
+    if "role" in data and data["role"] != user.role:
+        new_role = data["role"]
+        if user.id == actor.id:
+            return error("No puede cambiar su propio rol", 409)
+        unit = db.session.scalar(
+            select(ProductiveUnit).where(ProductiveUnit.user_id == user.id)
+        )
+        if new_role == Role.PRODUCTIVE_UNIT_RESPONSIBLE and not unit:
+            return error("El rol responsable requiere una Unidad Productiva asociada", 409)
+        if user.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE and unit and new_role != user.role:
+            return error("Primero debe reasignar la Unidad Productiva", 409)
+        if user.role == Role.SUPERADMIN:
+            active_superadmins = db.session.scalar(
+                select(func.count()).select_from(User).where(
+                    User.role == Role.SUPERADMIN,
+                    User.status == UserStatus.ACTIVE,
+                    User.deleted_at.is_(None),
+                )
+            )
+            if active_superadmins <= 1:
+                return error("No puede cambiar el rol del último SUPERADMIN activo", 409)
+        user.role = new_role
+        user.token_version += 1
     if "email" in data:
         email = (data.get("email") or "").lower().strip()
         if not valid_gmail(email):
@@ -335,13 +365,20 @@ def update_admin_user(user_id):
             if field in data:
                 value = ensure_admin_unit(data.get(field)) if field == "unidad" else data.get(field)
                 setattr(user.admin_profile, field, value)
-    audit("EDITAR", "Usuario", user.id, f"Administrador actualizado: {user.username}")
+    audit(
+        "EDITAR",
+        "Usuario",
+        user.id,
+        f"Usuario actualizado: {user.username}",
+        before={"role": previous_role.value},
+        after={"role": user.role.value},
+    )
     db.session.commit()
     return admin_user_json(user)
 
 
 @admin_bp.patch("/admin/users/<uuid:user_id>/status")
-@roles(Role.SUPERADMIN)
+@roles(Role.SUPERADMIN, Role.ADMIN)
 @validate_json(UserStatusSchema())
 def change_admin_status(user_id):
     target = db.session.get(User, user_id)
@@ -365,8 +402,11 @@ def change_admin_status(user_id):
         if active <= 1:
             return error("No puede inhabilitar al último SUPERADMIN activo")
     target.status = new_status
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        target.token_version += 1
     if new_status == UserStatus.ACTIVE:
         target.failed_login_attempts = 0
+        target.blocked_until = None
     audit(
         "CAMBIAR_ESTADO",
         "Usuario",
@@ -378,7 +418,7 @@ def change_admin_status(user_id):
 
 
 @admin_bp.delete("/admin/users/<uuid:user_id>")
-@roles(Role.SUPERADMIN)
+@roles(Role.SUPERADMIN, Role.ADMIN)
 def delete_admin_user(user_id):
     target = db.session.get(User, user_id)
     actor = current_user()
@@ -398,8 +438,18 @@ def delete_admin_user(user_id):
             return error("No puede eliminar al último SUPERADMIN activo", 409)
     target.deleted_at = datetime.now(timezone.utc)
     target.status = UserStatus.INACTIVE
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        target.token_version += 1
+        unit = db.session.scalar(
+            select(ProductiveUnit).where(ProductiveUnit.user_id == target.id)
+        )
+        if unit:
+            unit.deleted_at = target.deleted_at
+            unit.estado = ProductiveUnitStatus.INACTIVE
     audit("ELIMINAR", "Usuario", target.id, f"Administrador eliminado: {target.username}")
     db.session.commit()
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        invalidate_public_cache()
     return "", 204
 
 
@@ -446,7 +496,8 @@ def admin_reset_password(user_id):
 
 
 @admin_bp.get("/audit")
-@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
+@admin_bp.get("/admin/audits")
+@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN)
 def list_audit():
     def serialize(item):
         actor = db.session.get(User, item.user_id) if item.user_id else None
@@ -479,3 +530,67 @@ def list_audit():
     if request.args.get("date_to"):
         query = query.where(func.date(Audit.created_at) <= request.args["date_to"])
     return paginate(query.order_by(Audit.created_at.desc()), serialize)
+
+
+@admin_bp.get("/admin/audits/<uuid:audit_id>")
+@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN)
+def get_audit(audit_id):
+    item = db.session.get(Audit, audit_id)
+    if not item:
+        return error("Auditoría no encontrada", 404)
+    actor = db.session.get(User, item.user_id) if item.user_id else None
+    return {
+        "id": str(item.id),
+        "user_id": str(item.user_id) if item.user_id else None,
+        "usuario": actor.username if actor else "Sistema",
+        "accion": item.accion,
+        "entidad": item.entidad,
+        "entidad_id": str(item.entidad_id) if item.entidad_id else None,
+        "valores_anteriores": item.datos_anteriores,
+        "valores_nuevos": item.datos_nuevos,
+        "direccion_ip": item.ip_address,
+        "user_agent": item.user_agent,
+        "fecha_hora": item.created_at.isoformat(),
+        "resultado": item.resultado,
+        "detalle": item.descripcion,
+    }
+
+
+@admin_bp.post("/admin/users/<uuid:user_id>/unlock")
+@roles(Role.SUPERADMIN, Role.ADMIN)
+def unlock_user(user_id):
+    target = db.session.get(User, user_id)
+    if not target or target.deleted_at:
+        return error("Usuario no encontrado", 404)
+    target.status = UserStatus.ACTIVE
+    target.failed_login_attempts = 0
+    target.blocked_until = None
+    target.token_version += 1
+    audit("DESBLOQUEAR", "Usuario", target.id)
+    db.session.commit()
+    return {"message": "Usuario desbloqueado", "data": admin_user_json(target)}
+
+
+@admin_bp.post("/admin/users/<uuid:user_id>/restore")
+@roles(Role.SUPERADMIN, Role.ADMIN)
+def restore_user(user_id):
+    target = db.session.get(User, user_id)
+    if not target or not target.deleted_at:
+        return error("Usuario eliminado no encontrado", 404)
+    target.deleted_at = None
+    target.status = UserStatus.INACTIVE
+    target.failed_login_attempts = 0
+    target.blocked_until = None
+    target.token_version += 1
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        unit = db.session.scalar(
+            select(ProductiveUnit).where(ProductiveUnit.user_id == target.id)
+        )
+        if unit:
+            unit.deleted_at = None
+            unit.estado = ProductiveUnitStatus.INACTIVE
+    audit("RESTAURAR", "Usuario", target.id)
+    db.session.commit()
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        invalidate_public_cache()
+    return {"message": "Usuario restaurado", "data": admin_user_json(target)}

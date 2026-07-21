@@ -13,12 +13,18 @@ from ..models import (
     ProductImage,
     ProductStatus,
     Role,
+    ProductiveUnitStatus,
 )
 from ..views import error, paginate, product_json, validate_json, validated_json
 from ..views.product_view import (
     ProductCreateSchema,
     ProductImageUpdateSchema,
     ProductUpdateSchema,
+    ProductImageOrderSchema,
+    ProductiveProductCreateSchema,
+    ProductiveProductStatusSchema,
+    ProductiveProductUpdateSchema,
+    productive_product_json,
 )
 from .common import (
     audit,
@@ -32,6 +38,55 @@ from .common import (
 )
 
 product_bp = Blueprint("products", __name__)
+
+
+def productive_product_or_404(product_id, unit_id=None):
+    product = db.session.get(Product, product_id)
+    if not product or product.deleted_at or not product.productive_unit_id:
+        return None
+    if unit_id and product.productive_unit_id != unit_id:
+        return None
+    return product
+
+
+def _productive_unit_for_write():
+    from .productive_unit_controller import current_productive_unit
+
+    unit = current_productive_unit()
+    return unit if unit and unit.estado == ProductiveUnitStatus.ACTIVE and not unit.deleted_at else None
+
+
+def _productive_product_count(unit_id, excluding_id=None):
+    query = select(func.count(Product.id)).where(
+        Product.productive_unit_id == unit_id,
+        Product.deleted_at.is_(None),
+        Product.estado.notin_([ProductStatus.RETIRED, ProductStatus.DELETED]),
+    )
+    if excluding_id:
+        query = query.where(Product.id != excluding_id)
+    return db.session.scalar(query) or 0
+
+
+def _set_productive_product_fields(product, data):
+    for field in (
+        "nombre_comercial", "descripcion_tecnica", "materia_prima", "dimensiones",
+        "colores_disponibles", "certificaciones", "presentacion_empaque",
+        "precio_referencia", "capacidad_produccion_stock",
+    ):
+        if field in data:
+            value = data[field].strip() if isinstance(data[field], str) else data[field]
+            setattr(product, field, value)
+    # Keep legacy columns populated during the compatibility window.
+    product.nombre = product.nombre_comercial
+    product.descripcion = product.descripcion_tecnica
+    product.materiales_o_ingredientes = product.materia_prima
+    product.presentacion = product.presentacion_empaque
+    product.precio = product.precio_referencia
+    product.slug = __import__("app.utils", fromlist=["slugify"]).slugify(product.nombre_comercial)
+
+
+def _image_count(product_id):
+    return db.session.scalar(select(func.count(ProductImage.id)).where(ProductImage.product_id == product_id)) or 0
 
 
 def product_or_404(product_id, exhibitor_id=None):
@@ -75,6 +130,8 @@ def add_product_image(product):
         if is_cover_value is not None
         else bool(payload.get("is_cover"))
     )
+    if not existing_images:
+        is_cover = True
     image = ProductImage(
         product_id=product.id,
         filename=os.path.basename(url),
@@ -318,3 +375,291 @@ def delete_product_image(image_id):
     delete_managed_upload(url, "productos")
     invalidate_public_cache()
     return "", 204
+
+
+# Canonical productive-unit API.  Legacy exhibitor routes above remain as aliases
+# until the frontend migration is completed.
+@product_bp.get("/productive-unit/products")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def own_productive_products():
+    from .productive_unit_controller import current_productive_unit
+
+    unit = current_productive_unit()
+    if not unit:
+        return error("Unidad Productiva no encontrada", 404)
+    query = select(Product).where(
+        Product.productive_unit_id == unit.id, Product.deleted_at.is_(None)
+    ).order_by(Product.created_at.desc())
+    return paginate(query, productive_product_json)
+
+
+@product_bp.get("/productive-unit/products/<uuid:product_id>")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def get_own_productive_product(product_id):
+    from .productive_unit_controller import current_productive_unit
+
+    unit = current_productive_unit()
+    product = productive_product_or_404(product_id, unit.id if unit else None)
+    return productive_product_json(product) if product else error("Producto no encontrado", 404)
+
+
+@product_bp.post("/productive-unit/products")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+@validate_json(ProductiveProductCreateSchema())
+def create_productive_product():
+    unit = _productive_unit_for_write()
+    if not unit:
+        return error("La Unidad Productiva no permite modificaciones", 403)
+    unit = db.session.scalar(select(type(unit)).where(type(unit).id == unit.id).with_for_update())
+    if _productive_product_count(unit.id) >= 5:
+        return error("La Unidad Productiva ya tiene cinco productos vigentes", 409)
+    product = Product(productive_unit_id=unit.id, estado=ProductStatus.DRAFT)
+    _set_productive_product_fields(product, validated_json())
+    db.session.add(product)
+    db.session.flush()
+    audit("CREAR", "Product", product.id)
+    db.session.commit()
+    invalidate_public_cache()
+    return productive_product_json(product), 201
+
+
+@product_bp.patch("/productive-unit/products/<uuid:product_id>")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+@validate_json(ProductiveProductUpdateSchema())
+def update_productive_product(product_id):
+    unit = _productive_unit_for_write()
+    product = productive_product_or_404(product_id, unit.id if unit else None)
+    if not product:
+        return error("Producto no encontrado", 404)
+    _set_productive_product_fields(product, validated_json())
+    audit("EDITAR", "Product", product.id)
+    db.session.commit()
+    invalidate_public_cache()
+    return productive_product_json(product)
+
+
+@product_bp.patch("/productive-unit/products/<uuid:product_id>/status")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+@validate_json(ProductiveProductStatusSchema())
+def update_productive_product_status(product_id):
+    unit = _productive_unit_for_write()
+    product = productive_product_or_404(product_id, unit.id if unit else None)
+    if not product:
+        return error("Producto no encontrado", 404)
+    status = ProductStatus(validated_json()["estado"])
+    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != 3:
+        return error("El producto necesita exactamente tres imágenes para publicarse", 409)
+    if status not in (ProductStatus.RETIRED,) and product.estado == ProductStatus.RETIRED and _productive_product_count(unit.id, product.id) >= 5:
+        return error("La Unidad Productiva ya tiene cinco productos vigentes", 409)
+    product.estado = status
+    audit("CAMBIAR_ESTADO", "Product", product.id)
+    db.session.commit()
+    invalidate_public_cache()
+    return productive_product_json(product)
+
+
+@product_bp.delete("/productive-unit/products/<uuid:product_id>")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def delete_productive_product(product_id):
+    unit = _productive_unit_for_write()
+    product = productive_product_or_404(product_id, unit.id if unit else None)
+    if not product:
+        return error("Producto no encontrado", 404)
+    # Product images are retained until after the DB commit and then removed safely.
+    urls = db.session.scalars(select(ProductImage.url).where(ProductImage.product_id == product.id)).all()
+    product.deleted_at = datetime.now(timezone.utc)
+    product.estado = ProductStatus.RETIRED
+    db.session.execute(db.delete(ProductImage).where(ProductImage.product_id == product.id))
+    audit("ELIMINAR", "Product", product.id)
+    db.session.commit()
+    for url in urls:
+        delete_managed_upload(url, "productos")
+    invalidate_public_cache()
+    return "", 204
+
+
+@product_bp.get("/admin/products")
+@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN)
+def list_admin_productive_products():
+    query = select(Product).where(Product.productive_unit_id.is_not(None))
+    if request.args.get("productive_unit_id"):
+        query = query.where(Product.productive_unit_id == request.args["productive_unit_id"])
+    if request.args.get("estado"):
+        try:
+            query = query.where(Product.estado == ProductStatus(request.args["estado"]))
+        except ValueError:
+            return error("Estado inválido")
+    return paginate(query.order_by(Product.created_at.desc()), productive_product_json)
+
+
+@product_bp.get("/admin/products/<uuid:product_id>")
+@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN)
+def get_admin_productive_product(product_id):
+    product = productive_product_or_404(product_id)
+    return productive_product_json(product) if product else error("Producto no encontrado", 404)
+
+
+@product_bp.patch("/admin/products/<uuid:product_id>/status")
+@roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN)
+@validate_json(ProductiveProductStatusSchema())
+def admin_productive_product_status(product_id):
+    product = productive_product_or_404(product_id)
+    if not product:
+        return error("Producto no encontrado", 404)
+    status = ProductStatus(validated_json()["estado"])
+    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != 3:
+        return error("El producto necesita exactamente tres imágenes para publicarse", 409)
+    product.estado = status
+    audit("CAMBIAR_ESTADO", "Product", product.id)
+    db.session.commit()
+    invalidate_public_cache()
+    return productive_product_json(product)
+
+
+def _own_product_image_context(product_id, image_id=None):
+    unit = _productive_unit_for_write()
+    product = productive_product_or_404(product_id, unit.id if unit else None)
+    image = db.session.get(ProductImage, image_id) if image_id else None
+    if image_id and (not image or not product or image.product_id != product.id):
+        image = None
+    return product, image
+
+
+@product_bp.get("/productive-unit/products/<uuid:product_id>/images")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def list_own_productive_product_images(product_id):
+    from .productive_unit_controller import current_productive_unit
+
+    unit = current_productive_unit()
+    product = productive_product_or_404(product_id, unit.id if unit else None)
+    return {"items": productive_product_json(product)["imagenes"]} if product else error("Producto no encontrado", 404)
+
+
+@product_bp.post("/productive-unit/products/<uuid:product_id>/images")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def add_own_productive_product_image(product_id):
+    product, _ = _own_product_image_context(product_id)
+    if not product:
+        return error("Producto no encontrado", 404)
+    product = db.session.scalar(select(Product).where(Product.id == product.id).with_for_update())
+    if _image_count(product.id) >= 3:
+        return error("Un producto admite como máximo tres imágenes", 409)
+    result = add_product_image(product)
+    return result
+
+
+@product_bp.patch("/productive-unit/products/<uuid:product_id>/images/<uuid:image_id>")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+@validate_json(ProductImageUpdateSchema())
+def update_own_productive_product_image(product_id, image_id):
+    product, image = _own_product_image_context(product_id, image_id)
+    if not image:
+        return error("Imagen no encontrada", 404)
+    data = validated_json()
+    previous_url = None
+    if request.files.get("file"):
+        try:
+            new_url = save_upload(request.files["file"], "productos")
+        except ValueError as exc:
+            return error(str(exc))
+        previous_url = image.url
+        image.url = new_url
+        image.filename = os.path.basename(new_url)
+    if "alt_text" in data:
+        image.alt_text = data["alt_text"]
+    if "display_order" in data:
+        if data["display_order"] >= _image_count(product.id):
+            return error("Orden inválido")
+        other = db.session.scalar(
+            select(ProductImage).where(
+                ProductImage.product_id == product.id,
+                ProductImage.display_order == data["display_order"],
+                ProductImage.id != image.id,
+            )
+        )
+        if other:
+            other.display_order = image.display_order
+        image.display_order = data["display_order"]
+    audit(
+        "EDITAR_IMAGEN",
+        "Product",
+        product.id,
+        after={"image_id": str(image.id), "display_order": image.display_order},
+    )
+    db.session.commit()
+    if previous_url:
+        delete_managed_upload(previous_url, "productos")
+    invalidate_public_cache()
+    return productive_product_json(product)
+
+
+@product_bp.delete("/productive-unit/products/<uuid:product_id>/images/<uuid:image_id>")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def delete_own_productive_product_image(product_id, image_id):
+    product, image = _own_product_image_context(product_id, image_id)
+    if not image:
+        return error("Imagen no encontrada", 404)
+    if product.estado in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK):
+        product.estado = ProductStatus.DRAFT
+    url = image.url
+    db.session.delete(image)
+    db.session.flush()
+    remaining = db.session.scalars(select(ProductImage).where(ProductImage.product_id == product.id).order_by(ProductImage.display_order)).all()
+    for order, item in enumerate(remaining):
+        item.display_order = order
+    if remaining and not any(item.is_cover for item in remaining):
+        remaining[0].is_cover = True
+    audit(
+        "ELIMINAR_IMAGEN",
+        "Product",
+        product.id,
+        before={"image_id": str(image.id), "url": url},
+    )
+    db.session.commit()
+    delete_managed_upload(url, "productos")
+    invalidate_public_cache()
+    return "", 204
+
+
+@product_bp.patch("/productive-unit/products/<uuid:product_id>/images/<uuid:image_id>/main")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+def set_own_productive_product_main_image(product_id, image_id):
+    product, image = _own_product_image_context(product_id, image_id)
+    if not image:
+        return error("Imagen no encontrada", 404)
+    for item in db.session.scalars(select(ProductImage).where(ProductImage.product_id == product.id)).all():
+        item.is_cover = item.id == image.id
+    audit(
+        "EDITAR_IMAGEN",
+        "Product",
+        product.id,
+        after={"main_image_id": str(image.id)},
+    )
+    db.session.commit()
+    invalidate_public_cache()
+    return productive_product_json(product)
+
+
+@product_bp.patch("/productive-unit/products/<uuid:product_id>/images/order")
+@roles(Role.PRODUCTIVE_UNIT_RESPONSIBLE, Role.EXPOSITOR)
+@validate_json(ProductImageOrderSchema())
+def reorder_own_productive_product_images(product_id):
+    product, _ = _own_product_image_context(product_id)
+    if not product:
+        return error("Producto no encontrado", 404)
+    image_ids = validated_json()["image_ids"]
+    images = db.session.scalars(select(ProductImage).where(ProductImage.product_id == product.id)).all()
+    if len(image_ids) != len(images) or set(image_ids) != {item.id for item in images}:
+        return error("Debe incluir todas las imágenes una sola vez")
+    mapping = {item.id: item for item in images}
+    for order, image_id in enumerate(image_ids):
+        mapping[image_id].display_order = order
+    audit(
+        "EDITAR_IMAGEN",
+        "Product",
+        product.id,
+        after={"image_ids": [str(image_id) for image_id in image_ids]},
+    )
+    db.session.commit()
+    invalidate_public_cache()
+    return productive_product_json(product)

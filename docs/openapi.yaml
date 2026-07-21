@@ -1,0 +1,639 @@
+openapi: 3.1.0
+info:
+  title: Catálogo de Ferias - API canónica
+  version: 1.0.0
+  description: Contrato HTTP estable del backend de Unidades Productivas y ferias.
+servers:
+  - url: http://localhost:5000/api
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Solicitudes
+  - name: Usuarios
+  - name: Unidades Productivas
+  - name: Sectores
+  - name: Productos
+  - name: Ferias
+  - name: Participaciones
+  - name: Público
+  - name: Auditoría
+paths:
+  /health:
+    get:
+      security: []
+      summary: Estado de la API
+      responses:
+        '200': {description: API disponible}
+  /auth/login:
+    post:
+      security: []
+      tags: [Auth]
+      summary: Iniciar sesión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login: {type: string}
+                password: {type: string, format: password}
+      responses:
+        '200':
+          description: Tokens emitidos
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenPair'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renovar token de acceso
+      responses:
+        '200': {description: Token de acceso renovado}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Consultar sesión
+      responses:
+        '200': {description: Usuario autenticado}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/reauthenticate:
+    post:
+      tags: [Auth]
+      summary: Confirmar contraseña actual
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses:
+        '200': {description: Sesión confirmada}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Cambiar contraseña
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses:
+        '200': {description: Contraseña actualizada y sesiones anteriores revocadas}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Cerrar y revocar la sesión
+      responses:
+        '200': {description: Sesión cerrada}
+  /auth/forgot-password:
+    post:
+      security: []
+      tags: [Auth]
+      summary: Solicitar código de recuperación
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses:
+        '200': {description: Respuesta uniforme}
+  /auth/verify-recovery-code:
+    post:
+      security: []
+      tags: [Auth]
+      summary: Verificar código de recuperación
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses:
+        '200': {description: Token de restablecimiento emitido}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/reset-password:
+    post:
+      security: []
+      tags: [Auth]
+      summary: Restablecer contraseña
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses:
+        '200': {description: Contraseña restablecida}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /registration-requests/logo:
+    post:
+      security: []
+      tags: [Solicitudes]
+      summary: Subir logo temporal
+      requestBody: {$ref: '#/components/requestBodies/ImageUpload'}
+      responses:
+        '201': {description: Logo almacenado}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /registration-requests:
+    post:
+      security: []
+      tags: [Solicitudes]
+      summary: Enviar solicitud de registro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegistrationRequestInput'}
+      responses:
+        '201': {description: Solicitud registrada}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/registration-requests:
+    get:
+      tags: [Solicitudes]
+      summary: Listar solicitudes
+      parameters: [{$ref: '#/components/parameters/Page'}]
+      responses:
+        '200': {description: Página de solicitudes}
+  /admin/registration-requests/{requestId}:
+    parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+    get:
+      tags: [Solicitudes]
+      summary: Consultar solicitud
+      responses:
+        '200': {description: Solicitud}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/registration-requests/{requestId}/approve:
+    post:
+      tags: [Solicitudes]
+      summary: Aprobar solicitud
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses:
+        '200': {description: Usuario y Unidad Productiva creados}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/registration-requests/{requestId}/reject:
+    post:
+      tags: [Solicitudes]
+      summary: Rechazar solicitud
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses:
+        '200': {description: Solicitud rechazada}
+  /admin/registration-requests/{requestId}/resend-credentials:
+    post:
+      tags: [Solicitudes]
+      summary: Regenerar y reenviar credenciales
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses:
+        '200': {description: Credenciales regeneradas; sesiones revocadas}
+  /admin/users:
+    get:
+      tags: [Usuarios]
+      summary: Listar usuarios
+      responses: {'200': {description: Página de usuarios}}
+  /admin/users/{userId}:
+    parameters: [{$ref: '#/components/parameters/UserId'}]
+    get:
+      tags: [Usuarios]
+      summary: Consultar usuario
+      responses: {'200': {description: Usuario}, '404': {$ref: '#/components/responses/NotFound'}}
+    patch:
+      tags: [Usuarios]
+      summary: Editar identidad o rol
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Usuario actualizado}, '409': {$ref: '#/components/responses/Conflict'}}
+    delete:
+      tags: [Usuarios]
+      summary: Eliminar usuario lógicamente
+      responses: {'204': {description: Eliminado}}
+  /admin/users/{userId}/status:
+    patch:
+      tags: [Usuarios]
+      summary: Cambiar estado
+      parameters: [{$ref: '#/components/parameters/UserId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Estado actualizado}}
+  /admin/users/{userId}/unlock:
+    post:
+      tags: [Usuarios]
+      summary: Desbloquear usuario
+      parameters: [{$ref: '#/components/parameters/UserId'}]
+      responses: {'200': {description: Usuario desbloqueado}}
+  /admin/users/{userId}/restore:
+    post:
+      tags: [Usuarios]
+      summary: Restaurar usuario
+      parameters: [{$ref: '#/components/parameters/UserId'}]
+      responses: {'200': {description: Usuario restaurado}}
+  /admin/productive-units:
+    get:
+      tags: [Unidades Productivas]
+      summary: Listar Unidades Productivas
+      responses: {'200': {description: Página de unidades}}
+  /admin/productive-units/{unitId}:
+    parameters: [{$ref: '#/components/parameters/UnitId'}]
+    get:
+      tags: [Unidades Productivas]
+      summary: Consultar Unidad Productiva
+      responses: {'200': {description: Unidad Productiva}}
+    patch:
+      tags: [Unidades Productivas]
+      summary: Editar Unidad Productiva
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Unidad actualizada}}
+    delete:
+      tags: [Unidades Productivas]
+      summary: Eliminar lógicamente
+      responses: {'204': {description: Eliminada}}
+  /admin/productive-units/{unitId}/status:
+    patch:
+      tags: [Unidades Productivas]
+      summary: Cambiar estado
+      parameters: [{$ref: '#/components/parameters/UnitId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Estado actualizado}}
+  /admin/productive-units/{unitId}/restore:
+    post:
+      tags: [Unidades Productivas]
+      summary: Restaurar unidad
+      parameters: [{$ref: '#/components/parameters/UnitId'}]
+      responses: {'200': {description: Unidad restaurada}}
+  /productive-unit/profile:
+    get:
+      tags: [Unidades Productivas]
+      summary: Consultar perfil propio
+      responses: {'200': {description: Perfil}}
+    patch:
+      tags: [Unidades Productivas]
+      summary: Editar perfil propio
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Perfil actualizado}}
+  /productive-unit/logo:
+    post:
+      tags: [Unidades Productivas]
+      summary: Reemplazar logo propio
+      requestBody: {$ref: '#/components/requestBodies/ImageUpload'}
+      responses: {'201': {description: Logo actualizado}}
+    delete:
+      tags: [Unidades Productivas]
+      summary: Eliminar logo propio
+      responses: {'204': {description: Logo eliminado}}
+  /productive-sectors:
+    get:
+      security: []
+      tags: [Sectores]
+      summary: Listar sectores activos
+      responses: {'200': {description: Sectores activos}}
+  /admin/productive-sectors:
+    post:
+      tags: [Sectores]
+      summary: Crear sector
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'201': {description: Sector creado}}
+  /admin/productive-sectors/{sectorId}:
+    parameters: [{$ref: '#/components/parameters/SectorId'}]
+    get:
+      tags: [Sectores]
+      summary: Consultar sector
+      responses: {'200': {description: Sector}}
+    patch:
+      tags: [Sectores]
+      summary: Editar sector
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Sector actualizado}}
+    delete:
+      tags: [Sectores]
+      summary: Retirar sector
+      responses: {'204': {description: Sector retirado}}
+  /admin/productive-sectors/{sectorId}/status:
+    patch:
+      tags: [Sectores]
+      summary: Activar o desactivar sector
+      parameters: [{$ref: '#/components/parameters/SectorId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Estado actualizado}}
+  /productive-unit/sectors:
+    get:
+      tags: [Sectores]
+      summary: Consultar sectores propios
+      responses: {'200': {description: Sectores}}
+    put:
+      tags: [Sectores]
+      summary: Reemplazar selección conservando historial
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Sectores actualizados}}
+  /productive-unit/products:
+    get:
+      tags: [Productos]
+      summary: Listar productos propios
+      responses: {'200': {description: Página de productos}}
+    post:
+      tags: [Productos]
+      summary: Crear producto
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'201': {description: Producto creado}, '409': {$ref: '#/components/responses/Conflict'}}
+  /productive-unit/products/{productId}:
+    parameters: [{$ref: '#/components/parameters/ProductId'}]
+    get:
+      tags: [Productos]
+      summary: Consultar producto propio
+      responses: {'200': {description: Producto}}
+    patch:
+      tags: [Productos]
+      summary: Editar producto propio
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Producto actualizado}}
+    delete:
+      tags: [Productos]
+      summary: Retirar producto lógicamente
+      responses: {'204': {description: Producto retirado}}
+  /productive-unit/products/{productId}/status:
+    patch:
+      tags: [Productos]
+      summary: Cambiar estado del producto
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Estado actualizado}, '409': {$ref: '#/components/responses/Conflict'}}
+  /admin/products:
+    get:
+      tags: [Productos]
+      summary: Listar productos administrativamente
+      responses: {'200': {description: Página de productos}}
+  /admin/products/{productId}:
+    get:
+      tags: [Productos]
+      summary: Consultar producto administrativamente
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      responses: {'200': {description: Producto}}
+  /admin/products/{productId}/status:
+    patch:
+      tags: [Productos]
+      summary: Moderar estado del producto
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Estado actualizado}}
+  /productive-unit/products/{productId}/images:
+    get:
+      tags: [Productos]
+      summary: Listar imágenes del producto
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      responses: {'200': {description: Imágenes ordenadas}}
+    post:
+      tags: [Productos]
+      summary: Subir imagen del producto
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      requestBody: {$ref: '#/components/requestBodies/ImageUpload'}
+      responses: {'201': {description: Imagen creada}, '409': {$ref: '#/components/responses/Conflict'}}
+  /productive-unit/products/{productId}/images/{imageId}:
+    parameters:
+      - {$ref: '#/components/parameters/ProductId'}
+      - {$ref: '#/components/parameters/ImageId'}
+    patch:
+      tags: [Productos]
+      summary: Editar metadatos de imagen
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Imagen actualizada}}
+    delete:
+      tags: [Productos]
+      summary: Eliminar imagen
+      responses: {'204': {description: Imagen eliminada}}
+  /productive-unit/products/{productId}/images/{imageId}/main:
+    patch:
+      tags: [Productos]
+      summary: Establecer portada única
+      parameters:
+        - {$ref: '#/components/parameters/ProductId'}
+        - {$ref: '#/components/parameters/ImageId'}
+      responses: {'200': {description: Portada establecida}}
+  /productive-unit/products/{productId}/images/order:
+    patch:
+      tags: [Productos]
+      summary: Reordenar imágenes
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Imágenes reordenadas}}
+  /admin/fairs:
+    get:
+      tags: [Ferias]
+      summary: Listar ferias
+      responses: {'200': {description: Página de ferias}}
+    post:
+      tags: [Ferias]
+      summary: Crear feria sin solapamiento
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'201': {description: Feria creada}, '409': {$ref: '#/components/responses/Conflict'}}
+  /admin/fairs/{fairId}:
+    parameters: [{$ref: '#/components/parameters/FairId'}]
+    get:
+      tags: [Ferias]
+      summary: Consultar feria
+      responses: {'200': {description: Feria}}
+    patch:
+      tags: [Ferias]
+      summary: Editar feria no terminal
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Feria actualizada}, '409': {$ref: '#/components/responses/Conflict'}}
+  /admin/fairs/{fairId}/publish:
+    post:
+      tags: [Ferias]
+      summary: Publicar feria vigente
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      responses: {'200': {description: Feria publicada}}
+  /admin/fairs/{fairId}/disable:
+    post:
+      tags: [Ferias]
+      summary: Desactivar definitivamente
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      responses: {'200': {description: Feria desactivada}}
+  /admin/fairs/{fairId}/finish:
+    post:
+      tags: [Ferias]
+      summary: Finalizar definitivamente
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      responses: {'200': {description: Feria finalizada}}
+  /admin/fairs/{fairId}/cover:
+    post:
+      tags: [Ferias]
+      summary: Subir portada gestionada
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      requestBody: {$ref: '#/components/requestBodies/ImageUpload'}
+      responses: {'201': {description: Portada actualizada}}
+    delete:
+      tags: [Ferias]
+      summary: Eliminar portada
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      responses: {'204': {description: Portada eliminada}}
+  /admin/fairs/{fairId}/participations:
+    get:
+      tags: [Participaciones]
+      summary: Listar participaciones
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      responses: {'200': {description: Página de participaciones}}
+    post:
+      tags: [Participaciones]
+      summary: Registrar Unidad Productiva completa
+      parameters: [{$ref: '#/components/parameters/FairId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'201': {description: Participación creada}, '409': {$ref: '#/components/responses/Conflict'}}
+  /admin/fairs/{fairId}/participations/{participationId}:
+    parameters:
+      - {$ref: '#/components/parameters/FairId'}
+      - {$ref: '#/components/parameters/ParticipationId'}
+    get:
+      tags: [Participaciones]
+      summary: Consultar participación
+      responses: {'200': {description: Participación}}
+    patch:
+      tags: [Participaciones]
+      summary: Editar observaciones
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: Participación actualizada}}
+    delete:
+      tags: [Participaciones]
+      summary: Retirar participación conservando historial
+      responses: {'204': {description: Participación retirada}}
+  /admin/fairs/{fairId}/participations/{participationId}/authorize:
+    post:
+      tags: [Participaciones]
+      summary: Autorizar participación
+      parameters:
+        - {$ref: '#/components/parameters/FairId'}
+        - {$ref: '#/components/parameters/ParticipationId'}
+      responses: {'200': {description: Participación autorizada}}
+  /admin/fairs/{fairId}/participations/{participationId}/revoke:
+    post:
+      tags: [Participaciones]
+      summary: Revocar participación
+      parameters:
+        - {$ref: '#/components/parameters/FairId'}
+        - {$ref: '#/components/parameters/ParticipationId'}
+      responses: {'200': {description: Participación revocada}}
+  /public/fairs/active:
+    get:
+      security: []
+      tags: [Público]
+      summary: Consultar feria activa
+      responses: {'200': {description: Feria activa o indicador vacío}}
+  /public/productive-units:
+    get:
+      security: []
+      tags: [Público]
+      summary: Catálogo de Unidades Productivas
+      responses: {'200': {description: Página filtrable por texto, departamento y sector}}
+  /public/productive-units/{unitId}:
+    get:
+      security: []
+      tags: [Público]
+      summary: Perfil público de unidad
+      parameters: [{$ref: '#/components/parameters/UnitId'}]
+      responses: {'200': {description: Unidad y productos publicables}, '404': {$ref: '#/components/responses/NotFound'}}
+  /public/products:
+    get:
+      security: []
+      tags: [Público]
+      summary: Catálogo de productos
+      responses: {'200': {description: Página filtrable y ordenable}}
+  /public/products/{productId}:
+    get:
+      security: []
+      tags: [Público]
+      summary: Detalle público de producto
+      parameters: [{$ref: '#/components/parameters/ProductId'}]
+      responses: {'200': {description: Producto}, '404': {$ref: '#/components/responses/NotFound'}}
+  /public/whatsapp:
+    post:
+      security: []
+      tags: [Público]
+      summary: Generar consulta de WhatsApp
+      requestBody: {$ref: '#/components/requestBodies/JsonBody'}
+      responses: {'200': {description: URL wa.me generada}, '400': {$ref: '#/components/responses/BadRequest'}}
+  /admin/audits:
+    get:
+      tags: [Auditoría]
+      summary: Listar auditorías
+      responses: {'200': {description: Página de eventos auditados}}
+  /admin/audits/{auditId}:
+    get:
+      tags: [Auditoría]
+      summary: Consultar auditoría
+      parameters: [{$ref: '#/components/parameters/AuditId'}]
+      responses: {'200': {description: Evento auditado}, '404': {$ref: '#/components/responses/NotFound'}}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
+    UserId: {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+    UnitId: {name: unitId, in: path, required: true, schema: {type: string, format: uuid}}
+    SectorId: {name: sectorId, in: path, required: true, schema: {type: string, format: uuid}}
+    ProductId: {name: productId, in: path, required: true, schema: {type: string, format: uuid}}
+    ImageId: {name: imageId, in: path, required: true, schema: {type: string, format: uuid}}
+    FairId: {name: fairId, in: path, required: true, schema: {type: string, format: uuid}}
+    ParticipationId: {name: participationId, in: path, required: true, schema: {type: string, format: uuid}}
+    AuditId: {name: auditId, in: path, required: true, schema: {type: string, format: uuid}}
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, default: 1}
+  requestBodies:
+    JsonBody:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: true}
+    ImageUpload:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: {type: string, format: binary}
+              alt_text: {type: string}
+              is_cover: {type: boolean}
+  responses:
+    BadRequest:
+      description: Datos inválidos
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized: {description: Token o credenciales inválidos}
+    Forbidden: {description: Operación no autorizada}
+    NotFound: {description: Recurso no encontrado}
+    Conflict: {description: Conflicto con el estado o una regla de negocio}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+        details: {type: object, additionalProperties: true}
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, user]
+      properties:
+        access_token: {type: string}
+        refresh_token: {type: string}
+        user: {type: object, additionalProperties: true}
+    RegistrationRequestInput:
+      type: object
+      required:
+        - nombre_comercial
+        - razon_social
+        - nombre_representante
+        - departamento
+        - direccion_fisica
+        - telefono_whatsapp
+        - correo_electronico
+        - resena_comercial
+        - sectores
+      properties:
+        nombre_comercial: {type: string, maxLength: 200}
+        razon_social: {type: string, maxLength: 200}
+        nit: {type: [string, 'null'], maxLength: 50}
+        nombre_representante: {type: string, maxLength: 200}
+        departamento: {type: string, maxLength: 80}
+        direccion_fisica: {type: string, maxLength: 255}
+        telefono_whatsapp: {type: string, maxLength: 30}
+        correo_electronico: {type: string, format: email}
+        resena_comercial: {type: string}
+        logo_url: {type: [string, 'null']}
+        sectores:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: object
+            required: [productive_sector_id]
+            properties:
+              productive_sector_id: {type: string, format: uuid}
+              detalle_otro: {type: [string, 'null']}
