@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import base64
 from io import BytesIO
+from pathlib import Path
 
 from flask_jwt_extended import create_access_token
 
@@ -11,6 +12,7 @@ from app.controllers.common import (
 )
 from app.extensions import db
 from app.models import (
+    Audit,
     CacheState,
     Category,
     DocumentType,
@@ -18,6 +20,8 @@ from app.models import (
     Product,
     ProductImage,
     ProductStatus,
+    RegistrationRequest,
+    RegistrationStatus,
     Role,
     User,
     UserStatus,
@@ -122,6 +126,14 @@ def test_cache_detecta_invalidacion_persistida(app):
         assert get_public_cache(("catalog",)) is None
 
 
+def test_cache_no_entrega_datos_si_no_puede_validar_version(app, monkeypatch):
+    with app.app_context():
+        set_public_cache(("catalog",), {"value": 1})
+        monkeypatch.setattr(
+            "app.controllers.common.public_cache_version", lambda: None
+        )
+        assert get_public_cache(("catalog",)) is None
+
 def test_upload_rechaza_archivo_que_no_es_imagen(app, client):
     with app.app_context():
         create_user("actor")
@@ -159,6 +171,41 @@ def test_sync_fairs_elimina_tokens_revocados_expirados(app):
     assert result.exit_code == 0
     with app.app_context():
         assert db.session.query(RevokedToken).count() == 0
+
+
+def test_cleanup_elimina_logo_de_solicitud_rechazada_vencida(app):
+    with app.app_context():
+        folder = Path(app.config["CARPETA_CARGAS"]) / "solicitudes"
+        folder.mkdir(parents=True, exist_ok=True)
+        logo = folder / "rechazada.png"
+        logo.write_bytes(b"logo vencido")
+        registration = RegistrationRequest(
+            nombre_comercial="Rechazada",
+            razon_social="Rechazada SRL",
+            nombre_representante="Persona",
+            departamento="La Paz",
+            direccion_fisica="Calle 1",
+            telefono_whatsapp="71234567",
+            correo_electronico="rechazada@example.com",
+            resena_comercial="Solicitud rechazada",
+            logo_url="/uploads/solicitudes/rechazada.png",
+            estado=RegistrationStatus.REJECTED,
+            updated_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        db.session.add(registration)
+        db.session.commit()
+        registration_id = registration.id
+
+    result = app.test_cli_runner().invoke(args=["cleanup-registration-uploads"])
+    assert result.exit_code == 0, result.output
+    with app.app_context():
+        assert db.session.get(RegistrationRequest, registration_id).logo_url is None
+        assert not logo.exists()
+        assert db.session.scalar(
+            db.select(Audit.id).where(
+                Audit.accion == "LIMPIAR_ARCHIVOS_SOLICITUDES"
+            )
+        )
 
 
 def test_expositor_no_puede_consultar_producto_ajeno(app, client):

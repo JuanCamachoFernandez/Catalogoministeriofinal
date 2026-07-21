@@ -33,6 +33,8 @@ class User(TimestampMixin, db.Model):
     failed_login_attempts = db.Column(
         "intentos_fallidos_acceso", db.Integer, nullable=False, default=0
     )
+    blocked_until = db.Column("bloqueado_hasta", db.DateTime(timezone=True))
+    token_version = db.Column("version_sesion", db.Integer, nullable=False, default=0)
     last_login_at = db.Column("fecha_ultimo_acceso", db.DateTime(timezone=True))
     password_changed_at = db.Column(
         "fecha_cambio_contrasena", db.DateTime(timezone=True)
@@ -51,7 +53,12 @@ class User(TimestampMixin, db.Model):
     @classmethod
     def admin_query(cls, term=None):
         query = select(cls).where(
-            cls.role.in_([Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO]),
+            cls.role.in_([
+                Role.SUPERADMIN,
+                Role.ADMIN_VICEMINISTERIO,
+                Role.ADMIN,
+                Role.PRODUCTIVE_UNIT_RESPONSIBLE,
+            ]),
             cls.deleted_at.is_(None),
         )
         if term:

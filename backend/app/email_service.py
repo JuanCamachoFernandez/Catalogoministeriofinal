@@ -77,3 +77,28 @@ class BrevoEmailService:
             "<p style=\"color:#697680;font-size:13px\">Este es un mensaje automático; no responda a este correo.</p>"
             "</div>",
         )
+
+    def send_temporary_credentials(self, email, name, username, temporary_password):
+        safe_name = escape(name)
+        return self.send(
+            email,
+            safe_name,
+            "Credenciales temporales del Catálogo Digital",
+            "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:auto\">"
+            f"<h2>Bienvenido/a, {safe_name}</h2>"
+            "<p>Su solicitud fue aprobada. Use estas credenciales una sola vez:</p>"
+            f"<p><strong>Usuario:</strong> {escape(username)}</p>"
+            f"<p><strong>Contraseña temporal:</strong> {escape(temporary_password)}</p>"
+            "<p>El sistema le pedirá establecer una contraseña definitiva al ingresar.</p></div>",
+        )
+
+    def send_registration_rejected(self, email, name, reason):
+        safe_name = escape(name)
+        return self.send(
+            email,
+            safe_name,
+            "Resultado de su solicitud de registro",
+            f"<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:auto\">"
+            f"<p>Hola {safe_name},</p><p>Su solicitud requiere correcciones y fue rechazada.</p>"
+            f"<p><strong>Motivo:</strong> {escape(reason)}</p></div>",
+        )

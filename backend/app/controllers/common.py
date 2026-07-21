@@ -10,6 +10,7 @@ from flask import current_app, has_request_context, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from ..extensions import db
@@ -23,24 +24,33 @@ PUBLIC_CACHE_KEY = "catalogo_publico"
 
 
 def public_cache_version():
-    state = db.session.scalar(
-        select(CacheState).where(CacheState.key == PUBLIC_CACHE_KEY)
-    )
-    return state.version if state else 0
+    try:
+        state = db.session.scalar(
+            select(CacheState).where(CacheState.key == PUBLIC_CACHE_KEY)
+        )
+        return state.version if state else 0
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("La caché pública no está disponible")
+        return None
 
 
 def invalidate_public_cache():
-    state = db.session.scalar(
-        select(CacheState)
-        .where(CacheState.key == PUBLIC_CACHE_KEY)
-        .with_for_update()
-    )
-    if state:
-        state.version += 1
-    else:
-        db.session.add(CacheState(key=PUBLIC_CACHE_KEY, version=1))
-    db.session.commit()
     PUBLIC_CACHE.clear()
+    try:
+        state = db.session.scalar(
+            select(CacheState)
+            .where(CacheState.key == PUBLIC_CACHE_KEY)
+            .with_for_update()
+        )
+        if state:
+            state.version += 1
+        else:
+            db.session.add(CacheState(key=PUBLIC_CACHE_KEY, version=1))
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("No se pudo invalidar la versión de caché pública")
 
 
 def get_public_cache(key):
@@ -48,7 +58,8 @@ def get_public_cache(key):
     if not cached:
         return None
     version, expires_at, value = cached
-    if version != public_cache_version() or expires_at <= monotonic():
+    current_version = public_cache_version()
+    if current_version is None or version != current_version or expires_at <= monotonic():
         PUBLIC_CACHE.pop(key, None)
         return None
     return value
@@ -56,7 +67,9 @@ def get_public_cache(key):
 
 def set_public_cache(key, value):
     ttl = current_app.config["SEGUNDOS_MEMORIA_TEMPORAL_PUBLICA"]
-    PUBLIC_CACHE[key] = (public_cache_version(), monotonic() + ttl, value)
+    version = public_cache_version()
+    if version is not None:
+        PUBLIC_CACHE[key] = (version, monotonic() + ttl, value)
     return value
 
 
@@ -78,7 +91,7 @@ def roles(*allowed):
         @jwt_required()
         def wrapped(*args, **kwargs):
             user = current_user()
-            if not user or user.status != UserStatus.ACTIVE:
+            if not user or user.deleted_at or user.status != UserStatus.ACTIVE:
                 return error("Cuenta no disponible", 403)
             if user.must_change_password:
                 return error("Debe cambiar su contraseña", 403)
@@ -113,19 +126,41 @@ def audit_description(action, entity):
     return f"{action_text} de {entity.lower()}"
 
 
-def audit(action, entity, entity_id=None, description=None, before=None, after=None):
+def _safe_audit_value(value):
+    sensitive = {"password", "contrasena", "contraseña", "token", "secret", "clave"}
+    if isinstance(value, dict):
+        return {
+            key: ("[REDACTED]" if any(term in key.lower() for term in sensitive) else _safe_audit_value(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_safe_audit_value(item) for item in value]
+    return value
+
+
+def audit(
+    action,
+    entity,
+    entity_id=None,
+    description=None,
+    before=None,
+    after=None,
+    actor_user_id=None,
+    result="SUCCESS",
+):
     user = current_user() if has_request_context() else None
     db.session.add(
         Audit(
-            user_id=user.id if user else None,
+            user_id=actor_user_id if actor_user_id is not None else (user.id if user else None),
             accion=action,
             entidad=entity,
             entidad_id=entity_id,
             descripcion=(description or "").strip() or audit_description(action, entity),
-            datos_anteriores=before,
-            datos_nuevos=after,
+            datos_anteriores=_safe_audit_value(before),
+            datos_nuevos=_safe_audit_value(after),
             ip_address=request.remote_addr if has_request_context() else None,
             user_agent=(request.user_agent.string[:500] if has_request_context() else None),
+            resultado=result,
         )
     )
 

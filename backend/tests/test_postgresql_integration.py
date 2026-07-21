@@ -45,6 +45,12 @@ def test_postgresql_migrations_run_from_zero():
             "imagenes_producto",
             "perfiles_administradores",
             "productos",
+            "sectores_productivos",
+            "solicitudes_registro",
+            "sectores_solicitud_registro",
+            "unidades_productivas",
+            "sectores_unidad",
+            "participaciones_feria",
             "recuperaciones_contrasena",
             "tipos_expositor",
             "tipos_expositor_asignados",
@@ -63,4 +69,12 @@ def test_postgresql_migrations_run_from_zero():
             revision = MigrationContext.configure(
                 connection, opts={"version_table": "version_migraciones"}
             ).get_current_revision()
-        assert revision == "20260718_0001"
+        assert revision == "20260721_0003"
+
+        image_indexes = {item["name"] for item in inspect(db.engine).get_indexes("imagenes_producto")}
+        assert "indice_imagenes_producto_producto_id" in image_indexes
+        assert "imagen_producto_portada_unica" in image_indexes
+        image_constraints = {
+            item["name"] for item in inspect(db.engine).get_unique_constraints("imagenes_producto")
+        }
+        assert "imagen_producto_orden_unico" in image_constraints

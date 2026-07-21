@@ -1,7 +1,7 @@
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import CheckConstraint, UniqueConstraint, select
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint, select
 
 from ..extensions import db
 from .base import TimestampMixin, now, uid
@@ -23,6 +23,7 @@ class Fair(TimestampMixin, db.Model):
     )
     descripcion = db.Column(db.Text)
     lugar = db.Column(db.String(200), nullable=False)
+    ubicacion = db.Column(db.String(255))
     direccion = db.Column(db.String(255))
     departamento = db.Column(db.String(80), nullable=False, index=True)
     municipio = db.Column(db.String(100), nullable=False)
@@ -43,8 +44,13 @@ class Fair(TimestampMixin, db.Model):
         "creado_por_usuario_id", db.Uuid, db.ForeignKey("usuarios.id"), nullable=False
     )
     deleted_at = db.Column("fecha_eliminacion", db.DateTime(timezone=True))
+    disabled_at = db.Column("fecha_desactivacion", db.DateTime(timezone=True))
+    finished_at = db.Column("fecha_finalizacion", db.DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint("fecha_fin >= fecha_inicio", name="fechas_validas"),
+        Index("indice_ferias_estado", "estado"),
+        Index("indice_ferias_fecha_inicio", "fecha_inicio"),
+        Index("indice_ferias_fecha_fin", "fecha_fin"),
     )
 
     @property

@@ -12,7 +12,7 @@ class FairCreateSchema(Schema):
     municipio = fields.String(required=True, validate=validate.Length(min=1, max=100))
     fecha_inicio = fields.Date(required=True)
     fecha_fin = fields.Date(required=True)
-    imagen_portada = fields.String(required=True, validate=validate.Length(min=1, max=500))
+    imagen_portada = fields.String(load_default=None, allow_none=True, validate=validate.Length(min=1, max=500))
     observaciones = fields.String(load_default=None, allow_none=True)
 
     @validates_schema
@@ -39,7 +39,7 @@ class FairUpdateSchema(Schema):
     municipio = fields.String(validate=validate.Length(min=1, max=100))
     fecha_inicio = fields.Date()
     fecha_fin = fields.Date()
-    imagen_portada = fields.String(validate=validate.Length(min=1, max=500))
+    imagen_portada = fields.String(allow_none=True, validate=validate.Length(min=1, max=500))
     observaciones = fields.String(allow_none=True)
 
 
@@ -67,3 +67,37 @@ class AssignmentUpdateSchema(Schema):
     numero_stand = fields.String(allow_none=True, validate=validate.Length(max=40))
     sector = fields.String(allow_none=True, validate=validate.Length(max=100))
     observaciones = fields.String(allow_none=True)
+
+
+class CanonicalFairCreateSchema(Schema):
+    nombre = fields.String(required=True, validate=validate.Length(min=1, max=200))
+    descripcion = fields.String(allow_none=True, validate=validate.Length(max=5000))
+    ubicacion = fields.String(required=True, validate=validate.Length(min=1, max=255))
+    departamento = fields.String(load_default="Bolivia", validate=validate.Length(min=1, max=80))
+    municipio = fields.String(load_default="No especificado", validate=validate.Length(min=1, max=100))
+    fecha_inicio = fields.Date(required=True)
+    fecha_fin = fields.Date(required=True)
+
+    @validates_schema
+    def validate_dates(self, data, **kwargs):
+        if data["fecha_fin"] < data["fecha_inicio"]:
+            raise ValidationError({"fecha_fin": ["La fecha final no puede ser anterior a la inicial"]})
+
+
+class CanonicalFairUpdateSchema(Schema):
+    nombre = fields.String(validate=validate.Length(min=1, max=200))
+    descripcion = fields.String(allow_none=True, validate=validate.Length(max=5000))
+    ubicacion = fields.String(validate=validate.Length(min=1, max=255))
+    departamento = fields.String(validate=validate.Length(min=1, max=80))
+    municipio = fields.String(validate=validate.Length(min=1, max=100))
+    fecha_inicio = fields.Date()
+    fecha_fin = fields.Date()
+
+
+class ParticipationCreateSchema(Schema):
+    productive_unit_id = fields.UUID(required=True)
+    observaciones = fields.String(allow_none=True, validate=validate.Length(max=2000))
+
+
+class ParticipationUpdateSchema(Schema):
+    observaciones = fields.String(allow_none=True, validate=validate.Length(max=2000))

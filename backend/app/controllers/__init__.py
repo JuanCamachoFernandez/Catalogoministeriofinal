@@ -7,6 +7,9 @@ from .product_controller import product_bp
 from .public_controller import public_bp
 from .report_controller import report_bp
 from .upload_controller import upload_bp
+from .productive_sector_controller import productive_sector_bp
+from .productive_unit_controller import productive_unit_bp
+from .registration_controller import registration_bp
 
 
 def register_controllers(app):
@@ -20,5 +23,8 @@ def register_controllers(app):
         exhibitor_bp,
         product_bp,
         report_bp,
+        registration_bp,
+        productive_sector_bp,
+        productive_unit_bp,
     ):
         app.register_blueprint(blueprint, url_prefix="/api")

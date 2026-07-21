@@ -19,15 +19,22 @@ def create_app(config=Config):
     CORS(app, origins=app.config["ORIGENES_PERMITIDOS"])
 
     from .controllers import register_controllers
-    from .models import RevokedToken
+    from .models import RevokedToken, User, UserStatus
 
     register_controllers(app)
 
     @jwt.token_in_blocklist_loader
     def token_revoked(_header, payload):
-        return db.session.scalar(
+        if db.session.scalar(
             db.select(RevokedToken.id).where(RevokedToken.jti == payload["jti"])
-        ) is not None
+        ) is not None:
+            return True
+        try:
+            import uuid
+            user = db.session.get(User, uuid.UUID(payload["sub"]))
+        except (ValueError, TypeError):
+            return True
+        return not user or payload.get("ver", 0) != user.token_version
 
     @app.get("/api/health")
     def health():

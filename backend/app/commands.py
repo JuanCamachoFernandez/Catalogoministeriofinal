@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os
 import re
 from pathlib import Path
@@ -14,6 +14,9 @@ from .models import (
     ExhibitorType,
     Fair,
     FairImage,
+    ProductiveSector,
+    RegistrationRequest,
+    RegistrationStatus,
     RevokedToken,
     Role,
     User,
@@ -26,7 +29,7 @@ def register_commands(app):
     @app.cli.command("sync-fairs")
     @with_appcontext
     def sync_fairs():
-        from .controllers.common import managed_upload_path
+        from .controllers.common import audit, managed_upload_path
         from .controllers.fair_controller import sync_fair_lifecycle
 
         changed = sync_fair_lifecycle()
@@ -54,6 +57,16 @@ def register_commands(app):
                 if path.is_file() and path.resolve() not in referenced:
                     path.unlink()
                     removed += 1
+        audit(
+            "SINCRONIZAR_FERIAS",
+            "Fair",
+            after={
+                "estados_actualizados": bool(changed),
+                "tokens_expirados_eliminados": expired_tokens,
+                "archivos_huerfanos_eliminados": removed,
+            },
+        )
+        db.session.commit()
         click.echo(
             f"Ferias: {'actualizadas' if changed else 'sin cambios'}; "
             f"archivos huérfanos eliminados: {removed}"
@@ -187,6 +200,78 @@ def register_commands(app):
         db.session.add(user)
         db.session.commit()
         click.echo(f"SUPERADMIN creado: {user.username} ({user.first_name} {user.last_name})")
+
+    @app.cli.command("cleanup-registration-uploads")
+    @with_appcontext
+    def cleanup_registration_uploads():
+        """Elimina solamente logotipos huérfanos del directorio de solicitudes."""
+        from .controllers.common import audit, delete_managed_upload, managed_upload_path
+
+        retention_days = app.config["DIAS_RETENCION_SOLICITUDES_RECHAZADAS"]
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        expired_requests = db.session.scalars(
+            select(RegistrationRequest).where(
+                RegistrationRequest.estado == RegistrationStatus.REJECTED,
+                RegistrationRequest.logo_url.is_not(None),
+                RegistrationRequest.updated_at <= cutoff,
+            )
+        ).all()
+        expired_removed = 0
+        for registration in expired_requests:
+            delete_managed_upload(registration.logo_url, "solicitudes")
+            registration.logo_url = None
+            expired_removed += 1
+
+        referenced = {
+            path.resolve()
+            for url in db.session.scalars(
+                select(RegistrationRequest.logo_url).where(
+                    RegistrationRequest.logo_url.is_not(None)
+                )
+            ).all()
+            if (path := managed_upload_path(url, "solicitudes"))
+        }
+        folder = (Path(app.config["CARPETA_CARGAS"]) / "solicitudes").resolve()
+        removed = 0
+        if folder.is_dir():
+            for path in folder.iterdir():
+                if path.is_file() and path.resolve() not in referenced:
+                    path.unlink()
+                    removed += 1
+        click.echo(f"Logotipos huérfanos eliminados: {removed}")
+
+        audit(
+            "LIMPIAR_ARCHIVOS_SOLICITUDES",
+            "RegistrationRequest",
+            after={
+                "dias_retencion": retention_days,
+                "logos_rechazados_eliminados": expired_removed,
+                "archivos_huerfanos_eliminados": removed,
+            },
+        )
+        db.session.commit()
+        click.echo(f"Logotipos rechazados vencidos eliminados: {expired_removed}")
+
+    @app.cli.command("seed-productive-sectors")
+    @with_appcontext
+    def seed_productive_sectors():
+        names = [
+            "Textiles y Confecciones",
+            "Cuero y Calzados",
+            "Alimentos y Bebidas Procesados",
+            "Madera y Carpintería",
+            "Orfebrería y Joyería",
+            "Cosmética Natural y Cuidado Personal",
+            "Artesanía Tradicional o Decorativa",
+            "Otros",
+        ]
+        for name in names:
+            if not db.session.scalar(
+                select(ProductiveSector.id).where(ProductiveSector.nombre == name)
+            ):
+                db.session.add(ProductiveSector(nombre=name, es_otro=name == "Otros"))
+        db.session.commit()
+        click.echo("Sectores productivos iniciales creados")
 
     @app.cli.command("seed-catalogs")
     @with_appcontext

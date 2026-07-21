@@ -10,6 +10,7 @@ class Audit(db.Model):
     entidad = db.Column(db.String(100), nullable=False)
     entidad_id = db.Column(db.Uuid)
     descripcion = db.Column(db.Text, nullable=False)
+    resultado = db.Column(db.String(30), nullable=False, default="SUCCESS")
     datos_anteriores = db.Column(db.JSON)
     datos_nuevos = db.Column(db.JSON)
     ip_address = db.Column("direccion_ip", db.String(45))
