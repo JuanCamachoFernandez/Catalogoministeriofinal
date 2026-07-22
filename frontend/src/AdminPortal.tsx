@@ -29,7 +29,6 @@ import {
   type Category,
   type Exhibitor,
   type Fair,
-  type FairImage,
   type FairStatus,
   type Paged,
   type UserRole,
@@ -1818,7 +1817,6 @@ function FairWorkspace({
   const queryClient = useQueryClient();
   const feedback = useFeedback();
   const terminal = fair.estado === "FINISHED" || fair.estado === "DISABLED";
-  const [tab, setTab] = useState<"participants" | "gallery">("participants");
   const [form, setForm] = useState({
     exhibitor_id: "",
     estado: "AUTHORIZED" as AssignmentStatus,
@@ -1826,23 +1824,11 @@ function FairWorkspace({
     sector: "",
     observaciones: "",
   });
-  const [image, setImage] = useState<File | null>(null);
-  const [alt, setAlt] = useState("");
-  const [uploadProgress, setUploadProgress] = useState(0);
   const assignments = useQuery({
     queryKey: ["fair-assignments", fair.id],
     queryFn: () =>
       api
         .get<Paged<Assignment>>(`/fairs/${fair.id}/exhibitors`, {
-          params: { per_page: 100 },
-        })
-        .then((r) => r.data.items),
-  });
-  const gallery = useQuery({
-    queryKey: ["fair-images", fair.id],
-    queryFn: () =>
-      api
-        .get<Paged<FairImage>>(`/fairs/${fair.id}/images`, {
           params: { per_page: 100 },
         })
         .then((r) => r.data.items),
@@ -1869,54 +1855,15 @@ function FairWorkspace({
       "El expositor fue asignado correctamente a la feria.",
     );
   };
-  const upload = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!image) return;
-    const data = new FormData();
-    data.append("file", image);
-    data.append("alt_text", alt);
-    void mutate(
-      () =>
-        api.post(`/fairs/${fair.id}/images`, data, {
-          onUploadProgress: (event) => {
-            if (event.total)
-              setUploadProgress(
-                Math.round((event.loaded * 100) / event.total),
-              );
-          },
-        }),
-      ["fair-images", fair.id],
-      "La imagen fue agregada correctamente a la feria.",
-    ).then(() => {
-      setImage(null);
-      setAlt("");
-      setUploadProgress(0);
-    });
-  };
   return (
     <Modal title={`Gestión de ${fair.nombre}`} onClose={onClose} wide>
-      <div className="tabs">
-        <button
-          className={tab === "participants" ? "active" : ""}
-          onClick={() => setTab("participants")}
-        >
-          Participantes
-        </button>
-        <button
-          className={tab === "gallery" ? "active" : ""}
-          onClick={() => setTab("gallery")}
-        >
-          Galería
-        </button>
-      </div>
+      <h3>Participantes</h3>
       {terminal && (
         <div className="alert-warning">
           Esta feria es terminal y ya no admite modificaciones.
         </div>
       )}
-      {tab === "participants" ? (
-        <>
-          <form className="inline-form" onSubmit={assign}>
+      <form className="inline-form" onSubmit={assign}>
             <select
               className="input"
               required
@@ -1979,60 +1926,6 @@ function FairWorkspace({
           ) : (
             <Empty title="No hay expositores asignados" />
           )}
-        </>
-      ) : (
-        <>
-          <form className="inline-form" onSubmit={upload}>
-            <input
-              required
-              disabled={terminal}
-              type="file"
-              accept="image/*"
-              onChange={(e) => setImage(e.target.files?.[0] ?? null)}
-            />
-            <input
-              className="input"
-              disabled={terminal}
-              placeholder="Texto alternativo"
-              value={alt}
-              onChange={(e) => setAlt(e.target.value)}
-            />
-            <button className="btn" disabled={terminal || !image}>
-              <ImagePlus /> Agregar
-            </button>
-          </form>
-          <UploadProgress value={uploadProgress} />
-          {gallery.isLoading ? (
-            <Loading />
-          ) : gallery.data?.length ? (
-            <div className="gallery-admin">
-              {gallery.data.map((item) => (
-                <article key={item.id}>
-                  <img
-                    src={assetUrl(item.url)}
-                    alt={item.alt_text || "Imagen de feria"}
-                  />
-                  <ConfirmButton
-                    disabled={terminal}
-                    question="¿Eliminar esta imagen?"
-                    onConfirm={() =>
-                      mutate(
-                        () => api.delete(`/fair-images/${item.id}`),
-                        ["fair-images", fair.id],
-                        "La imagen fue eliminada correctamente.",
-                      )
-                    }
-                  >
-                    <Trash2 />
-                  </ConfirmButton>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <Empty title="La feria no tiene imágenes adicionales" />
-          )}
-        </>
-      )}
     </Modal>
   );
 }
@@ -2159,7 +2052,7 @@ export function FairsPage() {
                         className="btn-outline"
                         onClick={() => setWorkspace(fair)}
                       >
-                        <Users size={17} /> Participantes e imágenes
+                        <Users size={17} /> Participantes
                       </button>
                       {!terminal && (
                         <>

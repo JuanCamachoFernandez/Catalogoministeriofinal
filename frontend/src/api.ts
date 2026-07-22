@@ -158,13 +158,6 @@ export interface Assignment {
   authorized_at: string | null;
 }
 
-export interface FairImage {
-  id: string;
-  url: string;
-  alt_text?: string | null;
-  display_order?: number;
-}
-
 export interface AuditItem {
   id: string;
   accion: string;
