@@ -92,7 +92,7 @@ export function LoginPage() {
       <Navigate
         to={
           user.must_change_password
-            ? "/gestion/cambiar-contrasena"
+            ? "/cambiar-contrasena"
             : dashboardFor(user.role)
         }
         replace
@@ -105,12 +105,13 @@ export function LoginPage() {
     try {
       const { data } = await api.post<{
         access_token: string;
+        refresh_token: string;
         user: SessionUser;
       }>("/auth/login", { login, password });
-      saveSession(data.access_token, data.user);
+      saveSession(data.access_token, data.user, data.refresh_token);
       navigate(
         data.user.must_change_password
-          ? "/gestion/cambiar-contrasena"
+          ? "/cambiar-contrasena"
           : dashboardFor(data.user.role),
         { replace: true },
       );
@@ -145,7 +146,7 @@ export function LoginPage() {
         <button disabled={pending} className="btn w-full">
           {pending ? "Ingresando…" : "Iniciar sesión"}
         </button>
-        <Link className="auth-link" to="/gestion/recuperar-contrasena">
+        <Link className="auth-link" to="/olvide-contrasena">
           ¿Olvidó su contraseña?
         </Link>
       </form>
@@ -177,7 +178,7 @@ export function ChangePasswordPage() {
         new_password: next,
       });
       const nextUser = await refresh();
-      navigate(nextUser ? dashboardFor(nextUser.role) : "/gestion/login", {
+      navigate(nextUser ? dashboardFor(nextUser.role) : "/login", {
         replace: true,
       });
     } catch (reason) {
@@ -186,7 +187,7 @@ export function ChangePasswordPage() {
       setPending(false);
     }
   };
-  if (!user) return <Navigate to="/gestion/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
   return (
     <AuthShell
       title="Cambie su contraseña"
@@ -223,7 +224,7 @@ export function ChangePasswordPage() {
           className="auth-link"
           onClick={async () => {
             await logout();
-            navigate("/gestion/login");
+            navigate("/login");
           }}
         >
           Cerrar sesión
@@ -310,7 +311,7 @@ export function ForgotPasswordPage() {
         <div className="success-panel">
           <strong>Contraseña actualizada correctamente</strong>
           <p>Ya puede ingresar a su cuenta utilizando la nueva contraseña.</p>
-          <Link to="/gestion/login" className="btn">
+          <Link to="/login" className="btn">
             Iniciar sesión
           </Link>
         </div>
@@ -332,7 +333,7 @@ export function ForgotPasswordPage() {
           <button className="btn w-full" disabled={pending}>
             {pending ? "Enviando…" : "Enviar código"}
           </button>
-          <Link className="auth-link" to="/gestion/login">
+          <Link className="auth-link" to="/login">
             Volver al ingreso
           </Link>
         </form>
@@ -404,7 +405,7 @@ export function ResetPasswordPage() {
       {message ? (
         <div className="success-panel">
           <strong>{message}</strong>
-          <Link to="/gestion/login" className="btn">
+          <Link to="/login" className="btn">
             Iniciar sesión
           </Link>
         </div>

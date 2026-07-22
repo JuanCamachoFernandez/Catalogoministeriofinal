@@ -522,8 +522,6 @@ def canonical_list_fairs():
 @validate_json(CanonicalFairCreateSchema())
 def canonical_create_fair():
     data = validated_json()
-    if _overlapping_fair(data["fecha_inicio"], data["fecha_fin"]):
-        return error("El rango de fechas se superpone con otra feria", 409)
     fair = Fair(
         nombre=data["nombre"].strip(),
         slug=unique_fair_slug(data["nombre"]),
@@ -571,8 +569,6 @@ def canonical_update_fair(fair_id):
         return error("La fecha final no puede ser anterior a la inicial")
     if fair.estado == FeriaStatus.PUBLISHED and start > bolivia_today():
         return error("Una feria publicada no puede regresar a preparación", 409)
-    if _overlapping_fair(start, end, fair.id):
-        return error("El rango de fechas se superpone con otra feria", 409)
     for key in ("nombre", "descripcion", "departamento", "municipio", "fecha_inicio", "fecha_fin"):
         if key in data:
             setattr(fair, key, data[key])

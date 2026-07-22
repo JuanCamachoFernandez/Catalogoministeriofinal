@@ -19,8 +19,13 @@ def create_app(config=Config):
     CORS(app, origins=app.config["ORIGENES_PERMITIDOS"])
 
     from .controllers import register_controllers
+    from .controllers.common import PUBLIC_CACHE
     from .models import RevokedToken, User, UserStatus
 
+    # La caché vive en memoria del proceso. Al crear otra instancia de Flask
+    # (pruebas, recarga del servidor o un worker nuevo) no debe reutilizar
+    # respuestas asociadas a una base o configuración anterior.
+    PUBLIC_CACHE.clear()
     register_controllers(app)
 
     @jwt.token_in_blocklist_loader

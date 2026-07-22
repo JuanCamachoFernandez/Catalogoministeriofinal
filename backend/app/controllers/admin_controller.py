@@ -12,11 +12,14 @@ from ..models import (
     Exhibitor,
     Fair,
     FairExhibitor,
+    FairParticipation,
     FeriaStatus,
     Product,
     ProductStatus,
     ProductiveUnit,
     ProductiveUnitStatus,
+    RegistrationRequest,
+    RegistrationStatus,
     Role,
     User,
     UserStatus,
@@ -149,6 +152,11 @@ def admin_dashboard():
         select(func.count()).select_from(model).where(*conditions)
     ) or 0
     audits = db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(8)).all()
+    audit_users = {
+        item.user_id: db.session.get(User, item.user_id)
+        for item in audits
+        if item.user_id
+    }
     return {
         "stats": {
             "ferias": count(Fair, Fair.deleted_at.is_(None)),
@@ -175,6 +183,22 @@ def admin_dashboard():
             "asignaciones_pendientes": count(
                 FairExhibitor, FairExhibitor.estado == AssignmentStatus.PENDING
             ),
+            "unidades_productivas": count(
+                ProductiveUnit, ProductiveUnit.deleted_at.is_(None)
+            ),
+            "unidades_productivas_activas": count(
+                ProductiveUnit,
+                ProductiveUnit.estado == ProductiveUnitStatus.ACTIVE,
+                ProductiveUnit.deleted_at.is_(None),
+            ),
+            "solicitudes_pendientes": count(
+                RegistrationRequest,
+                RegistrationRequest.estado == RegistrationStatus.PENDING,
+            ),
+            "participaciones_pendientes": count(
+                FairParticipation,
+                FairParticipation.estado == AssignmentStatus.PENDING,
+            ),
         },
         "recent_audits": [
             {
@@ -182,6 +206,11 @@ def admin_dashboard():
                 "accion": item.accion,
                 "entidad": item.entidad,
                 "descripcion": item.descripcion or audit_description(item.accion, item.entidad),
+                "usuario": (
+                    audit_users[item.user_id].username
+                    if item.user_id and audit_users.get(item.user_id)
+                    else "Sistema"
+                ),
                 "created_at": item.created_at.isoformat(),
             }
             for item in audits

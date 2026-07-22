@@ -103,7 +103,6 @@ export function CatalogPage() {
                     className="card-media"
                   />
                   <div className="card-body">
-                    <span className="eyebrow">Feria publicada</span>
                     <h2>{fair.nombre}</h2>
                     <div className="fair-card-meta">
                       <span><MapPin /> {fair.municipio}, {fair.departamento}</span>
@@ -154,7 +153,6 @@ export function FairDetailPage() {
             <section className="fair-hero fair-detail-hero">
               <Media src={fair.data.imagen_portada} alt={`Portada de ${fair.data.nombre}`} className="fair-cover" />
               <div className="fair-overlay">
-                <span className="eyebrow">Feria publicada</span>
                 <h1>{fair.data.nombre}</h1>
                 {fair.data.descripcion && <p>{fair.data.descripcion}</p>}
                 <div className="hero-meta">

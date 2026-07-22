@@ -201,6 +201,26 @@ def _active_canonical_fair():
     return db.session.scalar(Fair.active_query().order_by(Fair.fecha_inicio.desc()))
 
 
+def _active_canonical_fairs():
+    from ..models import Fair
+
+    sync_fair_lifecycle()
+    return db.session.scalars(
+        Fair.active_query().order_by(Fair.fecha_inicio.asc(), Fair.nombre.asc())
+    ).all()
+
+
+def _requested_canonical_fair():
+    fair_id = request.args.get("fair_id")
+    if not fair_id:
+        return _active_canonical_fair()
+    try:
+        identifier = uuid.UUID(fair_id)
+    except (TypeError, ValueError):
+        return None
+    return db.session.scalar(Fair.active_query().where(Fair.id == identifier))
+
+
 def _canonical_fair_payload(fair):
     return {
         "id": str(fair.id), "nombre": fair.nombre, "descripcion": fair.descripcion,
@@ -277,19 +297,27 @@ def _canonical_cache_key(resource):
 
 @public_bp.get("/public/fairs/active")
 def canonical_active_fair():
-    fair = _active_canonical_fair()
+    fairs = _active_canonical_fairs()
+    fair = fairs[0] if fairs else None
     key = _canonical_cache_key("active-fair")
     cached = get_public_cache(key)
     if cached is not None:
         return cached
-    return set_public_cache(key, {"active": bool(fair), "fair": _canonical_fair_payload(fair) if fair else None})
+    return set_public_cache(
+        key,
+        {
+            "active": bool(fair),
+            "fair": _canonical_fair_payload(fair) if fair else None,
+            "items": [_canonical_fair_payload(item) for item in fairs],
+        },
+    )
 
 
 @public_bp.get("/public/productive-units")
 def canonical_public_units():
     from ..models import SectorStatus, UnitSector
 
-    fair = _active_canonical_fair()
+    fair = _requested_canonical_fair()
     key = _canonical_cache_key("productive-units")
     cached = get_public_cache(key)
     if cached is not None:
@@ -317,7 +345,7 @@ def canonical_public_units():
 
 @public_bp.get("/public/productive-units/<uuid:unit_id>")
 def canonical_public_unit(unit_id):
-    fair = _active_canonical_fair()
+    fair = _requested_canonical_fair()
     key = _canonical_cache_key(f"productive-unit:{unit_id}")
     cached = get_public_cache(key)
     if cached is not None:
@@ -334,7 +362,7 @@ def canonical_public_unit(unit_id):
 def canonical_public_products():
     from ..models import SectorStatus, UnitSector
 
-    fair = _active_canonical_fair()
+    fair = _requested_canonical_fair()
     key = _canonical_cache_key("products")
     cached = get_public_cache(key)
     if cached is not None:
@@ -369,7 +397,7 @@ def canonical_public_products():
 
 @public_bp.get("/public/products/<uuid:product_id>")
 def canonical_public_product(product_id):
-    fair = _active_canonical_fair()
+    fair = _requested_canonical_fair()
     key = _canonical_cache_key(f"product:{product_id}")
     cached = get_public_cache(key)
     if cached is not None:
@@ -392,7 +420,12 @@ def canonical_whatsapp():
         data = PublicWhatsAppSchema().load(request.get_json(silent=True) or {})
     except ValidationError as exc:
         return error("Datos inválidos", 400, exc.messages)
-    fair = _active_canonical_fair()
+    fair_id = data.get("fair_id")
+    fair = (
+        db.session.scalar(Fair.active_query().where(Fair.id == fair_id))
+        if fair_id
+        else _active_canonical_fair()
+    )
     if not fair:
         return error("No existe un catálogo activo", 409)
     visible_products, product_units = {}, {}
@@ -407,10 +440,23 @@ def canonical_whatsapp():
     if len({product_units[product_id].id for product_id in quantities}) != 1:
         return error("Todos los productos deben pertenecer a la misma Unidad Productiva", 409)
     unit = product_units[next(iter(quantities))]
-    lines = [f"Hola, consulto desde {fair.nombre} por:"] + [f"- {quantity} x {visible_products[product_id].nombre_comercial}" for product_id, quantity in quantities.items()]
+    product_lines = [
+        f"• {visible_products[product_id].nombre_comercial} — Cantidad: {quantity}"
+        for product_id, quantity in quantities.items()
+    ]
+    message = "\n".join(
+        [
+            f"Hola, vi sus productos en el Catálogo Digital de Ferias ({fair.nombre}).",
+            "",
+            "Quisiera más información sobre los siguientes productos:",
+            *product_lines,
+            "",
+            "Gracias.",
+        ]
+    )
     digits = "".join(character for character in unit.telefono_whatsapp if character.isdigit())
     if digits.startswith("0"):
         digits = "591" + digits.lstrip("0")
     elif len(digits) == 8:
         digits = "591" + digits
-    return {"url": f"https://wa.me/{digits}?text={quote(chr(10).join(lines))}"}
+    return {"url": f"https://wa.me/{digits}?text={quote(message)}"}
