@@ -7,13 +7,14 @@ import { dashboardFor } from "./authUtils";
 type AuthValue = {
   user: SessionUser | null;
   loading: boolean;
-  login: (accessToken: string, user: SessionUser) => void;
+  login: (accessToken: string, user: SessionUser, refreshToken?: string) => void;
   logout: () => Promise<void>;
   refresh: () => Promise<SessionUser | null>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
 const TOKEN_KEY = "catalog_token";
+const REFRESH_KEY = "catalog_refresh_token";
 const USER_KEY = "catalog_user";
 
 function storedUser() {
@@ -33,14 +34,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const currentUser = storedUser();
     if (currentUser?.id) localStorage.removeItem(`catalog_last_activity:${currentUser.id}`);
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
     queryClient.clear();
     setUser(null);
   }, [queryClient]);
 
-  const login = useCallback((accessToken: string, nextUser: SessionUser) => {
+  const login = useCallback((accessToken: string, nextUser: SessionUser, refreshToken?: string) => {
     queryClient.clear();
     localStorage.setItem(TOKEN_KEY, accessToken);
+    if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
     localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
     localStorage.setItem(`catalog_last_activity:${nextUser.id}`, String(Date.now()));
     setUser(nextUser);
@@ -101,9 +104,9 @@ export function ProtectedRoute({ roles, children }: { roles?: UserRole[]; childr
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <main className="page-state">Verificando sesión…</main>;
-  if (!user) return <Navigate to="/gestion/login" state={{ from: location.pathname }} replace />;
-  if (user.must_change_password && location.pathname !== "/gestion/cambiar-contrasena") {
-    return <Navigate to="/gestion/cambiar-contrasena" replace />;
+  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (user.must_change_password && location.pathname !== "/cambiar-contrasena") {
+    return <Navigate to="/cambiar-contrasena" replace />;
   }
   if (roles && !roles.includes(user.role)) return <Navigate to={dashboardFor(user.role)} replace />;
   return <>{children}</>;

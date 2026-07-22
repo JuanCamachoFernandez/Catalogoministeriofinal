@@ -1,4 +1,4 @@
-from flask import Blueprint
+from flask import Blueprint, request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -12,6 +12,7 @@ from ..models import (
 )
 from ..views import error, validate_json, validated_json
 from ..views.domain_serializers import sector_json
+from ..views.pagination import paginate
 from ..views.productive_sector_view import (
     ProductiveSectorSchema,
     ProductiveSectorStatusSchema,
@@ -31,6 +32,21 @@ def list_productive_sectors():
         return cached
     items = db.session.scalars(ProductiveSector.active_query()).all()
     return set_public_cache(key, {"items": [sector_json(item) for item in items]})
+
+
+@productive_sector_bp.get("/admin/productive-sectors")
+@roles(*ADMIN_ROLES)
+def list_admin_productive_sectors():
+    query = select(ProductiveSector).where(ProductiveSector.deleted_at.is_(None))
+    term = (request.args.get("q") or "").strip()
+    if term:
+        query = query.where(ProductiveSector.nombre.ilike(f"%{term}%"))
+    if request.args.get("estado"):
+        try:
+            query = query.where(ProductiveSector.estado == SectorStatus(request.args["estado"]))
+        except ValueError:
+            return error("Estado de sector inválido")
+    return paginate(query.order_by(ProductiveSector.nombre), sector_json)
 
 
 @productive_sector_bp.post("/admin/productive-sectors")

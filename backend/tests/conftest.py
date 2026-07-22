@@ -18,6 +18,9 @@ def app(tmp_path):
     with app.app_context():
         db.create_all()
         yield app
+        # PostgreSQL cannot drop tables while the scoped session still owns an
+        # idle transaction (for example after reading the public cache version).
+        db.session.remove()
         db.drop_all()
 
 @pytest.fixture

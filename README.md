@@ -143,8 +143,11 @@ npm run dev
 
 Compruebe:
 
-- Gestión: <http://localhost:5173/gestion/login>
+- Inicio de sesión: <http://localhost:5173/login>
+- Solicitud pública: <http://localhost:5173/solicitud-registro>
 - Catálogo público: <http://localhost:5173/catalogo>
+- Administración: <http://localhost:5173/admin>
+- Portal de la Unidad Productiva: <http://localhost:5173/unidad-productiva>
 - Estado del backend: <http://localhost:5000/api/health>
 
 En el primer acceso, el administrador debe cambiar su contraseña temporal.
@@ -152,6 +155,29 @@ En el primer acceso, el administrador debe cambiar su contraseña temporal.
 ## Trabajo diario
 
 No vuelva a crear la base, el entorno virtual ni los archivos `.env` cada día.
+
+### Inicio rápido después de la primera instalación
+
+Abra dos terminales en la raíz del repositorio.
+
+Terminal 1 — API Flask:
+
+```powershell
+cd backend
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+python -m flask --app run.py db upgrade
+python -m flask --app run.py run --debug --host=0.0.0.0 --port=5000
+```
+
+Terminal 2 — interfaz React:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+No ejecute `npm ci`, los comandos `seed-*` ni vuelva a crear `.venv` en cada inicio. Úselos solamente durante la primera instalación o cuando cambien las dependencias o datos iniciales.
 
 ### 1. Actualizar el código
 

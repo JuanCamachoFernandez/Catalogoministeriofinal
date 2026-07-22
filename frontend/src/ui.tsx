@@ -110,10 +110,13 @@ export function StatusBadge({ value }: { value: string | boolean }) {
 export function PaginationBar({
   pagination,
   onPage,
+  onPageChange,
 }: {
   pagination: Pagination;
-  onPage: (page: number) => void;
+  onPage?: (page: number) => void;
+  onPageChange?: (page: number) => void;
 }) {
+  const changePage = onPage ?? onPageChange ?? (() => undefined);
   if (!pagination.total) return null;
   return (
     <div className="pagination" aria-label="Paginación">
@@ -125,7 +128,7 @@ export function PaginationBar({
         <button
           className="btn-outline"
           disabled={!pagination.has_prev}
-          onClick={() => onPage(pagination.page - 1)}
+          onClick={() => changePage(pagination.page - 1)}
           aria-label="Página anterior"
         >
           <ChevronLeft size={18} />
@@ -133,7 +136,7 @@ export function PaginationBar({
         <button
           className="btn-outline"
           disabled={!pagination.has_next}
-          onClick={() => onPage(pagination.page + 1)}
+          onClick={() => changePage(pagination.page + 1)}
           aria-label="Página siguiente"
         >
           <ChevronRight size={18} />

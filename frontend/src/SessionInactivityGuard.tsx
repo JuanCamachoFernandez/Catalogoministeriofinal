@@ -44,7 +44,7 @@ export function SessionInactivityGuard() {
     if (closingRef.current) return;
     closingRef.current = true;
     await logout();
-    navigate("/gestion/login?motivo=inactividad", { replace: true });
+    navigate("/login?motivo=inactividad", { replace: true });
   }, [logout, navigate]);
 
   useEffect(() => {

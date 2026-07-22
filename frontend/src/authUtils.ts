@@ -1,7 +1,7 @@
-export type UserRole='SUPERADMIN'|'ADMIN_VICEMINISTERIO'|'EXPOSITOR';
+export type UserRole='ADMIN'|'PRODUCTIVE_UNIT_RESPONSIBLE'|'SUPERADMIN'|'ADMIN_VICEMINISTERIO'|'EXPOSITOR';
 
 export function dashboardFor(role:UserRole){
-  return role==='EXPOSITOR'?'/gestion/expositor/dashboard':'/gestion/admin/dashboard';
+  return role==='PRODUCTIVE_UNIT_RESPONSIBLE'||role==='EXPOSITOR'?'/unidad-productiva/productos':'/admin';
 }
 
 export function isStrongPassword(value:string){

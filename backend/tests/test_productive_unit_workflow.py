@@ -1,5 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from urllib.parse import unquote
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 from PIL import Image
 
@@ -47,6 +49,56 @@ def _registration_payload(sector_id):
         "resena_comercial": "Artesanía boliviana",
         "sectores": [{"productive_sector_id": str(sector_id)}],
     }
+
+
+def test_administracion_lista_sectores_activos_e_inactivos(app, client):
+    with app.app_context():
+        headers = _admin(client)
+        active = ProductiveSector(nombre="Alimentos", es_otro=False)
+        inactive = ProductiveSector(
+            nombre="Textiles", es_otro=False, estado=SectorStatus.INACTIVE
+        )
+        db.session.add_all([active, inactive])
+        db.session.commit()
+
+    response = client.get("/api/admin/productive-sectors", headers=headers)
+    assert response.status_code == 200
+    assert {item["nombre"] for item in response.json["items"]} == {
+        "Alimentos",
+        "Textiles",
+    }
+    filtered = client.get(
+        "/api/admin/productive-sectors?estado=INACTIVE", headers=headers
+    )
+    assert [item["nombre"] for item in filtered.json["items"]] == ["Textiles"]
+
+
+def test_catalogo_lista_varias_ferias_simultaneas(app, client):
+    with app.app_context():
+        admin_headers = _admin(client)
+    today = datetime.now(ZoneInfo("America/La_Paz")).date().isoformat()
+    created_ids = []
+    for name, location in (
+        ("Feria Productiva Central", "La Paz"),
+        ("Feria Productiva Regional", "El Alto"),
+    ):
+        response = client.post(
+            "/api/admin/fairs",
+            headers=admin_headers,
+            json={
+                "nombre": name,
+                "ubicacion": location,
+                "fecha_inicio": today,
+                "fecha_fin": today,
+            },
+        )
+        assert response.status_code == 201
+        created_ids.append(response.json["id"])
+
+    public = client.get("/api/public/fairs/active")
+    assert public.status_code == 200
+    assert public.json["active"] is True
+    assert {item["id"] for item in public.json["items"]} == set(created_ids)
 
 
 def test_solicitud_aprobacion_y_credenciales_temporales(app, client, monkeypatch):
@@ -196,7 +248,7 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
         )
         assert published.status_code == 200
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(ZoneInfo("America/La_Paz")).date().isoformat()
     fair = client.post(
         "/api/admin/fairs",
         headers=admin_headers,
@@ -218,12 +270,33 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
     public_products = client.get("/api/public/products")
     assert public_products.status_code == 200
     assert public_products.json["pagination"]["total"] == 3
+    active_fairs = client.get("/api/public/fairs/active")
+    assert active_fairs.status_code == 200
+    assert active_fairs.json["active"] is True
+    assert [item["id"] for item in active_fairs.json["items"]] == [fair.json["id"]]
+    public_units = client.get(
+        "/api/public/productive-units", query_string={"fair_id": fair.json["id"]}
+    )
+    assert public_units.status_code == 200
+    assert public_units.json["pagination"]["total"] == 1
+    public_unit = client.get(
+        f"/api/public/productive-units/{unit_id}",
+        query_string={"fair_id": fair.json["id"]},
+    )
+    assert public_unit.status_code == 200
+    assert len(public_unit.json["productos"]) == 3
     whatsapp = client.post(
         "/api/public/whatsapp",
-        json={"items": [{"product_id": product_ids[0], "quantity": 2}]},
+        json={
+            "fair_id": fair.json["id"],
+            "items": [{"product_id": product_ids[0], "quantity": 2}],
+        },
     )
     assert whatsapp.status_code == 200
     assert whatsapp.json["url"].startswith("https://wa.me/591")
+    whatsapp_message = unquote(whatsapp.json["url"].split("?text=", 1)[1])
+    assert "Feria vigente" in whatsapp_message
+    assert "Producto 0 — Cantidad: 2" in whatsapp_message
 
     base_product = {
         "descripcion_tecnica": "Descripción",

@@ -7,6 +7,7 @@ class PublicWhatsAppItemSchema(Schema):
 
 
 class PublicWhatsAppSchema(Schema):
+    fair_id = fields.UUID(load_default=None)
     items = fields.List(
         fields.Nested(PublicWhatsAppItemSchema),
         required=True,
