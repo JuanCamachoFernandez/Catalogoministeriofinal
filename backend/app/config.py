@@ -13,6 +13,12 @@ class Config:
     SECRET_KEY = os.getenv("CLAVE_SECRETA_APLICACION", "solo-desarrollo")
     JWT_SECRET_KEY = os.getenv("CLAVE_SECRETA_SESIONES", "solo-desarrollo-jwt")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    LIMITE_INTENTOS_FALLIDOS = int(os.getenv("LIMITE_INTENTOS_FALLIDOS", 5))
+    MINUTOS_BLOQUEO = int(os.getenv("MINUTOS_BLOQUEO", 15))
+    DIAS_RETENCION_SOLICITUDES_RECHAZADAS = int(
+        os.getenv("DIAS_RETENCION_SOLICITUDES_RECHAZADAS", 30)
+    )
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DIRECCION_BASE_DATOS",
         "postgresql+psycopg://catalogo:catalogo@localhost:5432/catalogo_ferias",

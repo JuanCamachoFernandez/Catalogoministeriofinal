@@ -272,6 +272,42 @@ def test_editar_admin_ignora_role_enviado_por_formulario_anterior(app, client):
     assert response.json["role"] == "SUPERADMIN"
 
 
+def test_superadmin_cambia_rol_y_revoca_la_sesion_del_usuario(app, client):
+    with app.app_context():
+        _, token = admin_token(client)
+        target = User(
+            username="administrador.objetivo",
+            email="administrador.objetivo@gmail.com",
+            role=Role.ADMIN_VICEMINISTERIO,
+            first_name="Administrador",
+            last_name="Objetivo",
+            status=UserStatus.ACTIVE,
+            must_change_password=False,
+        )
+        target.set_password("TemporalObjetivo2026!")
+        db.session.add(target)
+        db.session.commit()
+        target_id = target.id
+    target_login = client.post(
+        "/api/auth/login",
+        json={
+            "login": "administrador.objetivo",
+            "password": "TemporalObjetivo2026!",
+        },
+    )
+    response = client.patch(
+        f"/api/admin/users/{target_id}",
+        headers=auth(token),
+        json={"role": "ADMIN"},
+    )
+    assert response.status_code == 200
+    assert response.json["role"] == "ADMIN"
+    assert client.get(
+        "/api/auth/me",
+        headers=auth(target_login.json["access_token"]),
+    ).status_code == 401
+
+
 def test_expositor_usa_documento_e_iniciales_como_contrasena(app, client):
     with app.app_context():
         _, token = admin_token(client)
@@ -372,7 +408,7 @@ def test_expositor_exige_un_tipo_y_nombre_de_organizacion(app, client):
     assert created.json["data"]["nombre_tipo_expositor"] == "Asociación Mujeres Productoras"
 
 
-def test_admin_crea_feria_con_portada_url_y_auditoria_muestra_usuario(app, client):
+def test_admin_crea_feria_sin_portada_y_auditoria_muestra_usuario(app, client):
     with app.app_context():
         _, token = admin_token(client)
         start = bolivia_today() + timedelta(days=30)
@@ -387,12 +423,11 @@ def test_admin_crea_feria_con_portada_url_y_auditoria_muestra_usuario(app, clien
             "municipio": "Sacaba",
             "fecha_inicio": start.isoformat(),
             "fecha_fin": (start + timedelta(days=2)).isoformat(),
-            "imagen_portada": "https://imagenes.example/feria.jpg",
         },
     )
 
     assert response.status_code == 201
-    assert response.json["imagen_portada"] == "https://imagenes.example/feria.jpg"
+    assert response.json["imagen_portada"] is None
     unchanged_fair = client.patch(
         f"/api/fairs/{response.json['id']}",
         headers=auth(token),

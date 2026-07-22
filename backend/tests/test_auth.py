@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import Role, User, UserStatus
+from app.models import Audit, Role, User, UserStatus
 
 
 def create_user():
@@ -79,6 +79,32 @@ def test_login_rechaza_password_incorrecta(app, client):
     assert response.status_code == 401
 
 
+def test_login_bloquea_y_audita_al_alcanzar_el_limite(app, client):
+    with app.app_context():
+        user = create_user()
+        user.must_change_password = False
+        db.session.commit()
+        user_id = user.id
+
+    for _ in range(app.config["LIMITE_INTENTOS_FALLIDOS"]):
+        response = client.post(
+            "/api/auth/login",
+            json={"login": "admin.prueba", "password": "Incorrecta2026!"},
+        )
+        assert response.status_code == 401
+
+    with app.app_context():
+        saved = db.session.get(User, user_id)
+        assert saved.status == UserStatus.LOCKED
+        assert saved.blocked_until is not None
+        assert db.session.scalar(
+            db.select(Audit.id).where(
+                Audit.user_id == user_id,
+                Audit.accion == "BLOQUEAR",
+            )
+        )
+
+
 def test_reautenticacion_exige_password_actual(app, client):
     with app.app_context():
         user = create_user()
@@ -125,9 +151,14 @@ def test_logout_revoca_token(app, client):
         json={"login": "admin.prueba", "password": "Temporal2026!"},
     )
     token = login.json["access_token"]
+    refresh_token = login.json["refresh_token"]
     headers = {"Authorization": f"Bearer {token}"}
     assert client.post("/api/auth/logout", headers=headers).status_code == 200
     assert client.get("/api/auth/me", headers=headers).status_code == 401
+    assert client.post(
+        "/api/auth/refresh",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    ).status_code == 401
 
 
 def test_recuperacion_verifica_codigo_y_usa_token_una_sola_vez(app, client):

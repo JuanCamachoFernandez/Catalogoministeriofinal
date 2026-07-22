@@ -1,6 +1,49 @@
 # API REST
 
-Base local: `http://localhost:5000/api`. Las rutas privadas requieren JWT y respetan los roles `SUPERADMIN`, `ADMIN_VICEMINISTERIO` y `EXPOSITOR`.
+El contrato legible por herramientas se encuentra en [openapi.yaml](openapi.yaml).
+
+Base local: `http://localhost:5000/api`. El contrato canónico usa los roles `ADMIN` y `PRODUCTIVE_UNIT_RESPONSIBLE`; durante la migración continúan disponibles `SUPERADMIN`, `ADMIN_VICEMINISTERIO`, `EXPOSITOR` y sus rutas anteriores.
+
+## Contrato canónico de Unidades Productivas
+
+| Recurso | Rutas principales |
+|---|---|
+| Solicitudes públicas | `POST /registration-requests` |
+| Revisión de solicitudes | `GET /admin/registration-requests`, `GET /admin/registration-requests/:id`, `POST .../:id/approve`, `POST .../:id/reject`, `POST .../:id/resend-credentials` |
+| Unidades Productivas | `GET/PATCH/DELETE /admin/productive-units[/:id]`, `POST .../:id/restore`, `GET/PATCH /productive-unit/profile` |
+| Sectores | `GET /productive-sectors`, `POST/GET/PATCH/DELETE /admin/productive-sectors[/:id]`, `GET/PUT /productive-unit/sectors` |
+| Productos | `GET/POST /productive-unit/products`, `GET/PATCH/DELETE .../:id`, `PATCH .../:id/status`, `GET /admin/products[/:id]` |
+| Imágenes | `GET/POST .../products/:id/images`, `PATCH/DELETE .../images/:imageId`, `PATCH .../:imageId/main`, `PATCH .../images/order` |
+| Ferias | `GET/POST /admin/fairs`, `GET/PATCH .../:id`, `POST .../:id/publish|disable|finish|cover`, `DELETE .../:id/cover` |
+| Participaciones | `GET/POST .../fairs/:id/participations`, `GET/PATCH/DELETE .../:participationId`, `POST .../:participationId/authorize|revoke` |
+| Catálogo | `GET /public/fairs/active`, `GET /public/productive-units[/:id]`, `GET /public/products[/:id]`, `POST /public/whatsapp` |
+| Auditoría | `GET /admin/audits[/:id]` |
+
+La aprobación crea `User` y `ProductiveUnit` en una sola transacción. La contraseña temporal nunca se devuelve en JSON; se entrega por Brevo y obliga a cambiarla en el primer ingreso. El inicio de sesión devuelve `access_token` y `refresh_token`.
+
+Una participación autoriza a la Unidad Productiva completa. No existe `FairProduct`: el catálogo deriva todos los productos `AVAILABLE` u `OUT_OF_STOCK` que tengan exactamente tres imágenes. La unidad se oculta dinámicamente si deja de tener al menos tres productos publicables.
+
+Ejemplo de solicitud pública:
+
+```json
+{
+  "nombre_comercial": "Manos Andinas",
+  "razon_social": "Manos Andinas SRL",
+  "nombre_representante": "Ana Quispe",
+  "departamento": "La Paz",
+  "direccion_fisica": "Calle 1",
+  "telefono_whatsapp": "76543210",
+  "correo_electronico": "ana@manos.bo",
+  "resena_comercial": "Artesanía boliviana",
+  "sectores": [{"productive_sector_id": "UUID", "detalle_otro": null}]
+}
+```
+
+Ejemplo de WhatsApp canónico:
+
+```json
+{"items": [{"product_id": "UUID", "quantity": 2}]}
+```
 
 ## Autenticación
 

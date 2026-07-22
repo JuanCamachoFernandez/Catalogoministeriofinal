@@ -136,7 +136,7 @@ def test_finalizar_elimina_imagenes_y_conserva_registro(app):
         assert not gallery.exists()
 
 
-def test_permite_varias_ferias_en_las_mismas_fechas(app, client):
+def test_rechaza_ferias_superpuestas(app, client):
     with app.app_context():
         today = bolivia_today()
         create_catalog(today)
@@ -155,14 +155,13 @@ def test_permite_varias_ferias_en_las_mismas_fechas(app, client):
             "municipio": "La Paz",
             "fecha_inicio": today.isoformat(),
             "fecha_fin": (today + timedelta(days=1)).isoformat(),
-            "imagen_portada": "https://example.com/feria-simultanea.jpg",
         },
     )
-    assert response.status_code == 201
+    assert response.status_code == 409
 
     public = client.get("/api/public/fairs")
     assert public.status_code == 200
-    assert public.json["pagination"]["total"] == 2
+    assert public.json["pagination"]["total"] == 1
 
 
 def test_productos_se_derivan_y_revocacion_los_retira(app, client):

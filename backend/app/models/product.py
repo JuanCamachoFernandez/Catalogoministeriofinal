@@ -1,7 +1,7 @@
-from sqlalchemy import UniqueConstraint, select
+from sqlalchemy import Index, UniqueConstraint, select
 
 from ..extensions import db
-from .base import TimestampMixin, now, uid
+from .base import TimestampMixin, uid
 from .enums import ProductStatus
 
 
@@ -19,10 +19,17 @@ class Product(TimestampMixin, db.Model):
     __tablename__ = "productos"
     id = db.Column(db.Uuid, primary_key=True, default=uid)
     exhibitor_id = db.Column(
-        "expositor_id", db.Uuid, db.ForeignKey("expositores.id"), nullable=False, index=True
+        "expositor_id", db.Uuid, db.ForeignKey("expositores.id"), nullable=True, index=True
+    )
+    productive_unit_id = db.Column(
+        "unidad_productiva_id",
+        db.Uuid,
+        db.ForeignKey("unidades_productivas.id"),
+        nullable=True,
+        index=True,
     )
     category_id = db.Column(
-        "categoria_id", db.Uuid, db.ForeignKey("categorias.id"), nullable=False, index=True
+        "categoria_id", db.Uuid, db.ForeignKey("categorias.id"), nullable=True, index=True
     )
     nombre = db.Column(db.String(200), nullable=False)
     slug = db.Column("identificador_url", db.String(220), nullable=False)
@@ -31,6 +38,15 @@ class Product(TimestampMixin, db.Model):
     lugar_origen = db.Column(db.String(150))
     presentacion = db.Column(db.String(150))
     informacion_adicional = db.Column(db.Text)
+    nombre_comercial = db.Column(db.String(200))
+    descripcion_tecnica = db.Column(db.Text)
+    materia_prima = db.Column(db.Text)
+    dimensiones = db.Column(db.String(255))
+    colores_disponibles = db.Column(db.String(255))
+    certificaciones = db.Column(db.Text)
+    presentacion_empaque = db.Column(db.String(255))
+    precio_referencia = db.Column(db.Numeric(10, 2))
+    capacidad_produccion_stock = db.Column(db.String(255))
     precio = db.Column(db.Numeric(10, 2))
     estado = db.Column(
         db.Enum(ProductStatus, name="estado_producto"),
@@ -40,6 +56,7 @@ class Product(TimestampMixin, db.Model):
     destacado = db.Column(db.Boolean, default=False, nullable=False)
     deleted_at = db.Column("fecha_eliminacion", db.DateTime(timezone=True))
     __table_args__ = (
+        Index("indice_productos_estado", "estado"),
         UniqueConstraint(
             "expositor_id",
             "identificador_url",
@@ -85,21 +102,25 @@ class Product(TimestampMixin, db.Model):
             cls.deleted_at.is_(None),
         )
 
+    @classmethod
+    def publicable_query(cls, productive_unit_id=None):
+        from .product_image import ProductImage
 
-class ProductImage(db.Model):
-    __tablename__ = "imagenes_producto"
-    id = db.Column(db.Uuid, primary_key=True, default=uid)
-    product_id = db.Column(
-        "producto_id",
-        db.Uuid,
-        db.ForeignKey("productos.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    filename = db.Column("nombre_archivo", db.String(255), nullable=False)
-    url = db.Column("direccion_url", db.String(500), nullable=False)
-    alt_text = db.Column("texto_alternativo", db.String(255))
-    is_cover = db.Column("es_portada", db.Boolean, default=False)
-    display_order = db.Column("orden_visualizacion", db.Integer, default=0)
-    created_at = db.Column(
-        "fecha_creacion", db.DateTime(timezone=True), default=now, nullable=False
-    )
+        image_counts = (
+            select(ProductImage.product_id, db.func.count(ProductImage.id).label("image_count"))
+            .group_by(ProductImage.product_id)
+            .subquery()
+        )
+        query = (
+            select(cls)
+            .join(image_counts, image_counts.c.product_id == cls.id)
+            .where(
+                cls.productive_unit_id.is_not(None),
+                cls.estado.in_([ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK]),
+                cls.deleted_at.is_(None),
+                image_counts.c.image_count == 3,
+            )
+        )
+        if productive_unit_id:
+            query = query.where(cls.productive_unit_id == productive_unit_id)
+        return query

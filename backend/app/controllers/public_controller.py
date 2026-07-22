@@ -190,3 +190,227 @@ def whatsapp_query():
         f"{lines}\n\nGracias."
     )
     return {"url": f"https://wa.me/{phone}?text={quote(message)}"}
+
+
+# Canonical public catalogue based on FairParticipation -> ProductiveUnit -> Product.
+def _active_canonical_fair():
+    from .fair_controller import sync_fair_lifecycle
+    from ..models import Fair
+
+    sync_fair_lifecycle()
+    return db.session.scalar(Fair.active_query().order_by(Fair.fecha_inicio.desc()))
+
+
+def _canonical_fair_payload(fair):
+    return {
+        "id": str(fair.id), "nombre": fair.nombre, "descripcion": fair.descripcion,
+        "ubicacion": fair.ubicacion or fair.lugar,
+        "fecha_inicio": fair.fecha_inicio.isoformat(), "fecha_fin": fair.fecha_fin.isoformat(),
+        "imagen_portada": fair.imagen_portada, "estado": fair.estado.value,
+    }
+
+
+def _visible_canonical_units(fair):
+    from ..models import AssignmentStatus, FairParticipation, Product, ProductiveUnit, ProductiveUnitStatus
+
+    rows = db.session.execute(
+        select(ProductiveUnit, FairParticipation)
+        .join(FairParticipation, FairParticipation.productive_unit_id == ProductiveUnit.id)
+        .where(
+            FairParticipation.fair_id == fair.id,
+            FairParticipation.estado == AssignmentStatus.AUTHORIZED,
+            ProductiveUnit.estado == ProductiveUnitStatus.ACTIVE,
+            ProductiveUnit.deleted_at.is_(None),
+        )
+    ).all()
+    visible = []
+    for unit, _participation in rows:
+        products = db.session.scalars(Product.publicable_query(unit.id)).all()
+        if 3 <= len(products) <= 5:
+            visible.append((unit, products))
+    return visible
+
+
+def _public_product_payload(product, unit=None):
+    from ..views.product_view import productive_product_json
+
+    payload = productive_product_json(product)
+    if unit:
+        payload["unidad_productiva"] = {
+            "id": str(unit.id), "nombre_comercial": unit.nombre_comercial,
+            "telefono_whatsapp": unit.telefono_whatsapp,
+        }
+    return payload
+
+
+def _public_unit_payload(unit, products, include_products=False):
+    from ..views.domain_serializers import productive_unit_json
+
+    payload = productive_unit_json(unit)
+    for key in ("user_id", "registration_request_id", "nit"):
+        payload.pop(key, None)
+    if include_products:
+        payload["productos"] = [_public_product_payload(product) for product in products]
+    payload["cantidad_productos_publicables"] = len(products)
+    return payload
+
+
+def _slice_items(items):
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = max(1, min(100, int(request.args.get("per_page", 20))))
+    except (TypeError, ValueError):
+        page, per_page = 1, 20
+    total = len(items)
+    pages = (total + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    return {
+        "items": items[start:start + per_page],
+        "pagination": {"page": page, "per_page": per_page, "pages": pages, "total": total,
+                       "has_next": page < pages, "has_prev": page > 1},
+    }
+
+
+def _canonical_cache_key(resource):
+    return ("canonical", resource, tuple(sorted(request.args.items())))
+
+
+@public_bp.get("/public/fairs/active")
+def canonical_active_fair():
+    fair = _active_canonical_fair()
+    key = _canonical_cache_key("active-fair")
+    cached = get_public_cache(key)
+    if cached is not None:
+        return cached
+    return set_public_cache(key, {"active": bool(fair), "fair": _canonical_fair_payload(fair) if fair else None})
+
+
+@public_bp.get("/public/productive-units")
+def canonical_public_units():
+    from ..models import SectorStatus, UnitSector
+
+    fair = _active_canonical_fair()
+    key = _canonical_cache_key("productive-units")
+    cached = get_public_cache(key)
+    if cached is not None:
+        return cached
+    if not fair:
+        return set_public_cache(key, {"active_catalog": False, **_slice_items([])})
+    term = (request.args.get("q") or "").strip().lower()
+    department, sector_id = request.args.get("departamento"), request.args.get("sector_id")
+    output = []
+    for unit, products in _visible_canonical_units(fair):
+        if term and term not in unit.nombre_comercial.lower() and not any(term in product.nombre_comercial.lower() for product in products):
+            continue
+        if department and unit.departamento != department:
+            continue
+        if sector_id and not db.session.scalar(select(UnitSector.id).where(
+            UnitSector.productive_unit_id == unit.id,
+            UnitSector.productive_sector_id == sector_id,
+            UnitSector.estado == SectorStatus.ACTIVE,
+        )):
+            continue
+        output.append(_public_unit_payload(unit, products))
+    output.sort(key=lambda item: item["nombre_comercial"].lower(), reverse=request.args.get("order") == "name_desc")
+    return set_public_cache(key, {"active_catalog": True, "fair": _canonical_fair_payload(fair), **_slice_items(output)})
+
+
+@public_bp.get("/public/productive-units/<uuid:unit_id>")
+def canonical_public_unit(unit_id):
+    fair = _active_canonical_fair()
+    key = _canonical_cache_key(f"productive-unit:{unit_id}")
+    cached = get_public_cache(key)
+    if cached is not None:
+        return cached
+    if not fair:
+        return error("No existe un catálogo activo", 404)
+    for unit, products in _visible_canonical_units(fair):
+        if unit.id == unit_id:
+            return set_public_cache(key, _public_unit_payload(unit, products, include_products=True))
+    return error("Unidad Productiva no encontrada", 404)
+
+
+@public_bp.get("/public/products")
+def canonical_public_products():
+    from ..models import SectorStatus, UnitSector
+
+    fair = _active_canonical_fair()
+    key = _canonical_cache_key("products")
+    cached = get_public_cache(key)
+    if cached is not None:
+        return cached
+    if not fair:
+        return set_public_cache(key, {"active_catalog": False, **_slice_items([])})
+    term, status = (request.args.get("q") or "").strip().lower(), request.args.get("estado")
+    department, sector_id = request.args.get("departamento"), request.args.get("sector_id")
+    output = []
+    for unit, products in _visible_canonical_units(fair):
+        if department and unit.departamento != department:
+            continue
+        if sector_id and not db.session.scalar(
+            select(UnitSector.id).where(
+                UnitSector.productive_unit_id == unit.id,
+                UnitSector.productive_sector_id == sector_id,
+                UnitSector.estado == SectorStatus.ACTIVE,
+            )
+        ):
+            continue
+        for product in products:
+            if term and term not in product.nombre_comercial.lower() and term not in unit.nombre_comercial.lower():
+                continue
+            if status and product.estado.value != status:
+                continue
+            output.append(_public_product_payload(product, unit))
+    order = request.args.get("order", "name")
+    sort_key = (lambda item: item["precio_referencia"]) if order in {"price", "price_desc"} else (lambda item: item["nombre_comercial"].lower())
+    output.sort(key=sort_key, reverse=order in {"price_desc", "name_desc"})
+    return set_public_cache(key, {"active_catalog": True, "fair": _canonical_fair_payload(fair), **_slice_items(output)})
+
+
+@public_bp.get("/public/products/<uuid:product_id>")
+def canonical_public_product(product_id):
+    fair = _active_canonical_fair()
+    key = _canonical_cache_key(f"product:{product_id}")
+    cached = get_public_cache(key)
+    if cached is not None:
+        return cached
+    if not fair:
+        return error("No existe un catálogo activo", 404)
+    for unit, products in _visible_canonical_units(fair):
+        for product in products:
+            if product.id == product_id:
+                return set_public_cache(key, _public_product_payload(product, unit))
+    return error("Producto no encontrado", 404)
+
+
+@public_bp.post("/public/whatsapp")
+def canonical_whatsapp():
+    from marshmallow import ValidationError
+    from ..views.public_view import PublicWhatsAppSchema
+
+    try:
+        data = PublicWhatsAppSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as exc:
+        return error("Datos inválidos", 400, exc.messages)
+    fair = _active_canonical_fair()
+    if not fair:
+        return error("No existe un catálogo activo", 409)
+    visible_products, product_units = {}, {}
+    for unit, products in _visible_canonical_units(fair):
+        for product in products:
+            visible_products[product.id], product_units[product.id] = product, unit
+    quantities = {}
+    for item in data["items"]:
+        quantities[item["product_id"]] = quantities.get(item["product_id"], 0) + item["quantity"]
+    if any(product_id not in visible_products for product_id in quantities):
+        return error("Uno o más productos no están disponibles en el catálogo", 409)
+    if len({product_units[product_id].id for product_id in quantities}) != 1:
+        return error("Todos los productos deben pertenecer a la misma Unidad Productiva", 409)
+    unit = product_units[next(iter(quantities))]
+    lines = [f"Hola, consulto desde {fair.nombre} por:"] + [f"- {quantity} x {visible_products[product_id].nombre_comercial}" for product_id, quantity in quantities.items()]
+    digits = "".join(character for character in unit.telefono_whatsapp if character.isdigit())
+    if digits.startswith("0"):
+        digits = "591" + digits.lstrip("0")
+    elif len(digits) == 8:
+        digits = "591" + digits
+    return {"url": f"https://wa.me/{digits}?text={quote(chr(10).join(lines))}"}

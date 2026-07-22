@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, validate
+from marshmallow import Schema, fields, pre_load, validate
 
 from ..models import Role, UserStatus
 
@@ -39,14 +39,24 @@ class AdminUpdateSchema(Schema):
     unidad = fields.String(allow_none=True, validate=validate.Length(max=150))
     observaciones = fields.String(allow_none=True)
     foto_perfil = fields.String(allow_none=True, validate=validate.Length(max=500))
-    # Compatibilidad con formularios anteriores; el rol no se modifica aquí.
     role = fields.Enum(
         Role,
         by_value=True,
-        load_only=True,
-        validate=validate.OneOf([Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO]),
+        validate=validate.OneOf([
+            Role.SUPERADMIN,
+            Role.ADMIN_VICEMINISTERIO,
+            Role.ADMIN,
+            Role.PRODUCTIVE_UNIT_RESPONSIBLE,
+        ]),
     )
 
 
 class UserStatusSchema(Schema):
     status = fields.Enum(UserStatus, by_value=True, required=True)
+
+    @pre_load
+    def accept_spanish_name(self, data, **kwargs):
+        data = dict(data)
+        if "status" not in data and "estado" in data:
+            data["status"] = data.pop("estado")
+        return data
