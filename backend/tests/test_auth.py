@@ -174,6 +174,60 @@ def test_logout_revoca_token(app, client):
     ).status_code == 401
 
 
+def test_logout_con_refresh_token_invalida_toda_la_sesion(app, client):
+    with app.app_context():
+        user = create_user()
+        user.must_change_password = False
+        db.session.commit()
+    login = client.post(
+        "/api/auth/login",
+        json={"login": "admin.prueba", "password": "Temporal2026!"},
+    )
+    access_token = login.json["access_token"]
+    refresh_token = login.json["refresh_token"]
+
+    response = client.post(
+        "/api/auth/logout",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    )
+
+    assert response.status_code == 200
+    assert client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ).status_code == 401
+    assert client.post(
+        "/api/auth/refresh",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    ).status_code == 401
+
+
+def test_token_de_cuenta_inactiva_o_eliminada_se_rechaza_inmediatamente(app, client):
+    with app.app_context():
+        user = create_user()
+        user.must_change_password = False
+        db.session.commit()
+        user_id = user.id
+    login = client.post(
+        "/api/auth/login",
+        json={"login": "admin.prueba", "password": "Temporal2026!"},
+    )
+    headers = {"Authorization": f"Bearer {login.json['access_token']}"}
+
+    with app.app_context():
+        user = db.session.get(User, user_id)
+        user.status = UserStatus.INACTIVE
+        db.session.commit()
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    with app.app_context():
+        user = db.session.get(User, user_id)
+        user.status = UserStatus.ACTIVE
+        user.deleted_at = datetime.now(timezone.utc)
+        db.session.commit()
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
 def test_recuperacion_verifica_codigo_y_usa_token_una_sola_vez(app, client):
     with app.app_context():
         create_user()

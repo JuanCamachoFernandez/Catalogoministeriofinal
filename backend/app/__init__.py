@@ -39,7 +39,12 @@ def create_app(config=Config):
             user = db.session.get(User, uuid.UUID(payload["sub"]))
         except (ValueError, TypeError):
             return True
-        return not user or payload.get("ver", 0) != user.token_version
+        return (
+            not user
+            or user.deleted_at is not None
+            or user.status != UserStatus.ACTIVE
+            or payload.get("ver", 0) != user.token_version
+        )
 
     @app.get("/api/health")
     def health():

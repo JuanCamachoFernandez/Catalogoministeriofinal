@@ -23,6 +23,11 @@ api.interceptors.response.use(
       try {
         refreshRequest ??= axios.post<{access_token:string}>(`${API_URL}/auth/refresh`, {}, { headers: { Authorization: `Bearer ${refreshToken}` } }).then(response => response.data.access_token).finally(() => { refreshRequest = null; });
         const accessToken = await refreshRequest;
+        // Si la sesión se cerró mientras se renovaba el token, no vuelva a
+        // guardar credenciales ni repita la petición con una sesión obsoleta.
+        if (localStorage.getItem("catalog_refresh_token") !== refreshToken) {
+          return Promise.reject(error);
+        }
         localStorage.setItem("catalog_token", accessToken);
         config.headers.Authorization = `Bearer ${accessToken}`;
         return api(config);
