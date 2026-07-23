@@ -251,13 +251,16 @@ def approve_registration_request(request_id):
     if item.nit and db.session.scalar(select(ProductiveUnit.id).where(ProductiveUnit.nit == item.nit)):
         return error("El NIT ya está registrado", 409)
     password = _temporary_password()
-    words = item.nombre_representante.split(maxsplit=1)
     user = User(
-        username=unique_username(words[0], words[1] if len(words) > 1 else "unidad"),
+        username=unique_username(
+            item.nombres_representante, item.apellido_paterno_representante
+        ),
         email=email,
         role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
-        first_name=words[0],
-        last_name=words[1] if len(words) > 1 else "",
+        first_name=item.nombres_representante,
+        last_name=item.apellido_paterno_representante,
+        apellido_paterno=item.apellido_paterno_representante,
+        apellido_materno=item.apellido_materno_representante,
         phone=item.telefono_whatsapp,
         status=UserStatus.ACTIVE,
         must_change_password=True,
@@ -276,7 +279,9 @@ def approve_registration_request(request_id):
             nit=item.nit,
             registro_seprec=item.registro_seprec,
             registro_pro_bolivia=item.registro_pro_bolivia,
-            nombre_representante=item.nombre_representante,
+            nombres_representante=item.nombres_representante,
+            apellido_paterno_representante=item.apellido_paterno_representante,
+            apellido_materno_representante=item.apellido_materno_representante,
             departamento=item.departamento,
             direccion_fisica=item.direccion_fisica,
             telefono_whatsapp=item.telefono_whatsapp,

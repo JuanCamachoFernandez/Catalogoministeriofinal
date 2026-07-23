@@ -403,6 +403,7 @@ type FeedbackNotice = {
   message?: string;
   tone: FeedbackTone;
   autoClose: boolean;
+  onClose?: () => void;
 };
 
 type FeedbackConfirmation = {
@@ -422,6 +423,7 @@ type FeedbackContextValue = {
     message?: string;
     tone?: FeedbackTone;
     autoClose?: boolean;
+    onClose?: () => void;
   }) => void;
   success: (title: string, message?: string) => void;
   error: (title: string, message?: string) => void;
@@ -448,6 +450,9 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const close = useCallback((confirmed = false) => {
     setFeedback((current) => {
       if (current?.kind === "confirm") current.resolve(confirmed);
+      if (current?.kind === "notice" && current.onClose) {
+        window.setTimeout(current.onClose, 0);
+      }
       return null;
     });
   }, []);
@@ -461,6 +466,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
         message: options.message,
         tone: options.tone ?? "info",
         autoClose: options.autoClose ?? true,
+        onClose: options.onClose,
       };
     });
   }, []);
@@ -503,39 +509,48 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      {feedback && (
+      {feedback?.kind === "notice" && createPortal(
+        <aside
+          className={`feedback-toast feedback-${tone}`}
+          role={tone === "error" || tone === "warning" ? "alert" : "status"}
+          aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}
+        >
+          <div className="feedback-toast-icon" aria-hidden="true"><Icon/></div>
+          <div className="feedback-toast-copy">
+            <strong>{feedback.title}</strong>
+            {feedback.message && <p>{feedback.message}</p>}
+          </div>
+          <button type="button" className="feedback-toast-close" onClick={() => close(false)} aria-label="Cerrar notificación">
+            <X/>
+          </button>
+          {feedback.autoClose && <div className="feedback-timeout" aria-hidden="true"/>}
+        </aside>,
+        document.body,
+      )}
+      {feedback?.kind === "confirm" && (
         <Modal title={feedback.title} onClose={() => close(false)}>
           <div className={`feedback-dialog feedback-${tone}`}>
             <div className="feedback-icon" aria-hidden="true">
               <Icon />
             </div>
-            {feedback.message && <p>{feedback.message}</p>}
+            <p>{feedback.message}</p>
             <div className="modal-actions feedback-actions">
-              {feedback.kind === "confirm" && (
-                <button
-                  type="button"
-                  className="btn-outline"
-                  onClick={() => close(false)}
-                >
-                  Cancelar
-                </button>
-              )}
               <button
                 type="button"
-                className={
-                  feedback.kind === "confirm" && feedback.danger
-                    ? "btn-danger"
-                    : "btn"
-                }
+                className="btn-outline"
+                onClick={() => close(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className={feedback.danger ? "btn-danger" : "btn"}
                 onClick={() => close(true)}
                 autoFocus
               >
-                {feedback.kind === "confirm" ? feedback.confirmLabel : "OK"}
+                {feedback.confirmLabel}
               </button>
             </div>
-            {feedback.kind === "notice" && feedback.autoClose && (
-              <div className="feedback-timeout" aria-hidden="true" />
-            )}
           </div>
         </Modal>
       )}
@@ -588,14 +603,18 @@ export function Field({
   label,
   children,
   hint,
+  required = false,
+  optional = false,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  required?: boolean;
+  optional?: boolean;
 }) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span>{label}{required && <><b className="field-required" aria-hidden="true">*</b><span className="sr-only"> (obligatorio)</span></>}{optional && <small className="field-optional">Dejar vacío si no se tiene</small>}</span>
       {children}
       {hint && <small>{hint}</small>}
     </label>

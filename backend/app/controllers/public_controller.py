@@ -185,7 +185,7 @@ def whatsapp_query():
         for product in products
     )
     message = (
-        "Hola, vi sus productos en el Catálogo Digital de Ferias.\n\n"
+        "Hola, vi sus productos en Ferias Productivas Bolivia.\n\n"
         "Quisiera más información sobre los siguientes productos:\n"
         f"{lines}\n\nGracias."
     )
@@ -446,7 +446,7 @@ def canonical_whatsapp():
     ]
     message = "\n".join(
         [
-            f"Hola, vi sus productos en el Catálogo Digital de Ferias ({fair.nombre}).",
+            f"Hola, vi sus productos en Ferias Productivas Bolivia ({fair.nombre}).",
             "",
             "Quisiera más información sobre los siguientes productos:",
             *product_lines,

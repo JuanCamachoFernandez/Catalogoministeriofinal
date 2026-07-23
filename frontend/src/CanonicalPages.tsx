@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, Clock3, KeyRound, Link2, Mail, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, apiError, assetUrl, emptyPagination, type CanonicalFair, type CanonicalProduct, type FairParticipation, type Paged, type ProductiveSector, type ProductiveSectorLink, type ProductiveUnit, type RegistrationRequest } from "./api";
 import { BOLIVIA_DEPARTMENTS } from "./boliviaLocations";
-import { ConfirmButton, Empty, ErrorBox, Field, Loading, Modal, PaginationBar, SearchField, StatusBadge, useFeedback } from "./ui";
+import { ConfirmButton, Empty, ErrorBox, FeedbackProvider, Field, Loading, Modal, PaginationBar, SearchField, StatusBadge, useFeedback } from "./ui";
 import { PublicHeader } from "./Layouts";
 
 const pageData = <T,>(value?: Paged<T>) => value ?? { items: [], pagination: emptyPagination };
@@ -16,35 +17,201 @@ export function AdminHomePage() {
 
 type RegistrationDraft = {
   nombre_comercial: string; razon_social: string; nit: string; registro_seprec: string; registro_pro_bolivia: string;
-  nombre_representante: string; departamento: string; direccion_fisica: string; telefono_whatsapp: string; correo_electronico: string;
+  nombres_representante: string; apellido_paterno_representante: string; apellido_materno_representante: string;
+  departamento: string; direccion_fisica: string; telefono_whatsapp: string; correo_electronico: string;
   facebook_url: string; instagram_url: string; tiktok_url: string; resena_comercial: string;
 };
-const emptyRegistration: RegistrationDraft = { nombre_comercial: "", razon_social: "", nit: "", registro_seprec: "", registro_pro_bolivia: "", nombre_representante: "", departamento: "", direccion_fisica: "", telefono_whatsapp: "", correo_electronico: "", facebook_url: "", instagram_url: "", tiktok_url: "", resena_comercial: "" };
+const emptyRegistration: RegistrationDraft = { nombre_comercial: "", razon_social: "", nit: "", registro_seprec: "", registro_pro_bolivia: "", nombres_representante: "", apellido_paterno_representante: "", apellido_materno_representante: "", departamento: "", direccion_fisica: "", telefono_whatsapp: "", correo_electronico: "", facebook_url: "", instagram_url: "", tiktok_url: "", resena_comercial: "" };
+const REPRESENTATIVE_NAME_PATTERN = "[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:[ '’\\-][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*";
+const EMAIL_PATTERN = String.raw`[^@\s]+@[^@\s]+\.[^@\s]+`;
+const sanitizeRepresentativeName = (value: string) => value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ '’-]/g, "");
+const SOCIAL_URL_PATTERNS = {
+  facebook: String.raw`https://((www|m|web)\.)?(facebook\.com|fb\.com)/.+`,
+  instagram: String.raw`https://(www\.)?instagram\.com/.+`,
+  tiktok: String.raw`https://(www\.)?tiktok\.com/@[^/?#]+.*`,
+};
+const REGISTRATION_FIELD_LABELS: Record<string, string> = {
+  nombre_comercial: "Nombre comercial",
+  razon_social: "Razón social",
+  nit: "NIT",
+  registro_seprec: "Registro SEPREC",
+  registro_pro_bolivia: "Registro PRO-BOLIVIA",
+  nombres_representante: "Nombres del representante",
+  apellido_paterno_representante: "Apellido paterno",
+  apellido_materno_representante: "Apellido materno",
+  departamento: "Departamento",
+  direccion_fisica: "Dirección física",
+  telefono_whatsapp: "Teléfono o WhatsApp",
+  correo_electronico: "Correo electrónico",
+  facebook_url: "Facebook",
+  instagram_url: "Instagram",
+  tiktok_url: "TikTok",
+  logo: "Logotipo",
+  sectores: "Sectores Productivos",
+  detalle_otro: "Detalle de Otros",
+  resena_comercial: "Reseña comercial",
+};
+
+function SocialUrlField({ name, label, value, example, pattern, error, onChange }: {
+  name: "facebook_url" | "instagram_url" | "tiktok_url";
+  label: string;
+  value: string;
+  example: string;
+  pattern: string;
+  error: string;
+  onChange: (value: string) => void;
+}) {
+  return <Field label={label} optional>
+    <div className="social-url-input">
+      <Link2 aria-hidden="true"/>
+      <input
+        className="input"
+        name={name}
+        type="url"
+        inputMode="url"
+        maxLength={500}
+        pattern={pattern}
+        placeholder={example}
+        title={error}
+        value={value}
+        onInvalid={event=>event.currentTarget.setCustomValidity(error)}
+        onInput={event=>event.currentTarget.setCustomValidity("")}
+        onBlur={event=>onChange(event.currentTarget.value.trim())}
+        onChange={event=>onChange(event.target.value)}
+      />
+    </div>
+  </Field>;
+}
 
 export function RegistrationPage() {
+  return <FeedbackProvider><RegistrationPageContent/></FeedbackProvider>;
+}
+
+function RegistrationPageContent() {
+  const feedback = useFeedback();
+  const formRef = useRef<HTMLFormElement>(null);
   const [draft, setDraft] = useState(emptyRegistration);
   const [sectorIds, setSectorIds] = useState<string[]>([]);
   const [otherDetail, setOtherDetail] = useState("");
   const [logo, setLogo] = useState<File | null>(null);
   const [created, setCreated] = useState<RegistrationRequest | null>(null);
   const sectors = useQuery({ queryKey: ["productive-sectors", "active"], queryFn: () => api.get<Paged<ProductiveSector>>("/productive-sectors", { params: { per_page: 100 } }).then(r => r.data.items) });
+  const focusInvalidControl = (control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, popupMessage: string) => {
+    formRef.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"]').forEach(item=>item.removeAttribute("aria-invalid"));
+    control.setAttribute("aria-invalid", "true");
+    control.scrollIntoView({ behavior: "smooth", block: "center" });
+    control.focus({ preventScroll: true });
+    feedback.notify({
+      title: "Revise el campo marcado",
+      message: popupMessage,
+      tone: "error",
+      onClose: () => {
+        control.scrollIntoView({ behavior: "smooth", block: "center" });
+        control.focus({ preventScroll: true });
+      },
+    });
+  };
+  const fieldFromServerError = (error: unknown) => {
+    const response = (error as { response?: { data?: { details?: Record<string, unknown>; error?: string } } })?.response;
+    const details = response?.data?.details;
+    const detailedField = details ? Object.keys(details)[0] : "";
+    if (detailedField) return detailedField;
+    const errorMessage = (response?.data?.error ?? "").toLowerCase();
+    if (errorMessage.includes("correo")) return "correo_electronico";
+    if (errorMessage.includes("nit")) return "nit";
+    if (errorMessage.includes("imagen") || errorMessage.includes("archivo") || errorMessage.includes("logotipo")) return "logo";
+    return "";
+  };
   const mutation = useMutation({ mutationFn: async () => {
     let logo_url: string | null = null;
     if (logo) { const form = new FormData(); form.append("file", logo); logo_url = (await api.post<{url:string}>("/registration-requests/logo", form)).data.url; }
     const selected = sectorIds.map(id => { const sector = sectors.data?.find(item => item.id === id); return { productive_sector_id: id, detalle_otro: sector?.es_otro ? clean(otherDetail) : null }; });
     return (await api.post<RegistrationRequest>("/registration-requests", { ...draft, nit: clean(draft.nit), registro_seprec: clean(draft.registro_seprec), registro_pro_bolivia: clean(draft.registro_pro_bolivia), facebook_url: clean(draft.facebook_url), instagram_url: clean(draft.instagram_url), tiktok_url: clean(draft.tiktok_url), logo_url, sectores: selected })).data;
-  }, onSuccess: setCreated });
-  if (created) return <><PublicHeader/><main className="container public-main"><div className="auth-card"><span className="eyebrow">Solicitud enviada</span><h1>Recibimos su solicitud</h1><p>Su registro está en estado <strong>Pendiente</strong>. El envío no crea una cuenta inmediatamente; recibirá credenciales cuando la solicitud sea aprobada.</p><dl><dt>Identificador</dt><dd>{created.id}</dd><dt>Fecha</dt><dd>{new Date(created.fecha_solicitud).toLocaleString("es-BO")}</dd></dl><Link className="btn" to="/catalogo">Volver al catálogo</Link></div></main></>;
+  }, onSuccess: setCreated, onError: error => {
+    const fieldName = fieldFromServerError(error);
+    const control = fieldName ? formRef.current?.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`[name="${fieldName}"]`) : null;
+    if (control) {
+      focusInvalidControl(control, message(error));
+      return;
+    }
+    feedback.error("No se pudo enviar la solicitud", message(error));
+  } });
+  if (created) return <><PublicHeader/><main className="container public-main registration-page"><section className="registration-success">
+    <div className="registration-success-icon"><CheckCircle2 aria-hidden="true"/></div>
+    <span className="registration-success-eyebrow">Solicitud enviada correctamente</span>
+    <h1>Recibimos su solicitud</h1>
+    <p>La administración revisará la información de su Unidad Productiva. Por ahora no necesita realizar otro registro.</p>
+    <div className="registration-next-steps">
+      <h2>¿Qué sucederá ahora?</h2>
+      <div>
+        <article><span><Clock3 aria-hidden="true"/></span><div><strong>1. Revisión de la solicitud</strong><p>La administración verificará los datos y documentos enviados.</p></div></article>
+        <article><span><Mail aria-hidden="true"/></span><div><strong>2. Aviso por correo electrónico</strong><p>Le comunicaremos si la solicitud fue aprobada o rechazada al correo <b>{created.correo_electronico}</b>.</p></div></article>
+        <article><span><KeyRound aria-hidden="true"/></span><div><strong>3. Credenciales de acceso</strong><p>Si es aprobada, el correo incluirá su <b>nombre de usuario</b> y una <b>contraseña temporal</b>. Deberá cambiarla cuando ingrese por primera vez.</p></div></article>
+      </div>
+    </div>
+    <div className="registration-email-note"><Mail aria-hidden="true"/><span>Revise también las carpetas de correo no deseado o spam.</span></div>
+    <p className="registration-sent-at">Enviada el {new Date(created.fecha_solicitud).toLocaleString("es-BO")}</p>
+    <Link className="registration-back-link" to="/catalogo">Volver a las ferias</Link>
+  </section></main></>;
   const change = (key: keyof RegistrationDraft, value: string) => setDraft(current => ({ ...current, [key]: value }));
   const otherSelected = sectors.data?.some(item => item.es_otro && sectorIds.includes(item.id));
-  return <><PublicHeader/><main className="container public-main"><form className="panel form-panel" onSubmit={e => { e.preventDefault(); mutation.mutate(); }}><div className="page-heading"><div><span className="eyebrow">Registro público</span><h1>Solicitud de Unidad Productiva</h1><p>Envíe sus datos institucionales. Los productos se registran después de la aprobación.</p></div></div>{mutation.error && <ErrorBox message={message(mutation.error)}/>}<div className="form-grid">
-    <Field label="Nombre comercial"><input className="input" required value={draft.nombre_comercial} onChange={e=>change("nombre_comercial",e.target.value)}/></Field><Field label="Razón social"><input className="input" required value={draft.razon_social} onChange={e=>change("razon_social",e.target.value)}/></Field>
-    <Field label="NIT (opcional)"><input className="input" value={draft.nit} onChange={e=>change("nit",e.target.value)}/></Field><Field label="Representante"><input className="input" required value={draft.nombre_representante} onChange={e=>change("nombre_representante",e.target.value)}/></Field>
-    <Field label="Registro SEPREC (opcional)"><input className="input" value={draft.registro_seprec} onChange={e=>change("registro_seprec",e.target.value)}/></Field><Field label="Registro PRO-BOLIVIA (opcional)"><input className="input" value={draft.registro_pro_bolivia} onChange={e=>change("registro_pro_bolivia",e.target.value)}/></Field>
-    <Field label="Departamento"><select className="input" required value={draft.departamento} onChange={e=>change("departamento",e.target.value)}><option value="">Seleccione</option>{BOLIVIA_DEPARTMENTS.map(item=><option key={item}>{item}</option>)}</select></Field><Field label="Dirección física"><input className="input" required value={draft.direccion_fisica} onChange={e=>change("direccion_fisica",e.target.value)}/></Field>
-    <Field label="Teléfono o WhatsApp"><input className="input" required value={draft.telefono_whatsapp} onChange={e=>change("telefono_whatsapp",e.target.value)}/></Field><Field label="Correo electrónico"><input className="input" type="email" required value={draft.correo_electronico} onChange={e=>change("correo_electronico",e.target.value)}/></Field>
-    <Field label="Facebook (opcional)"><input className="input" type="url" value={draft.facebook_url} onChange={e=>change("facebook_url",e.target.value)}/></Field><Field label="Instagram (opcional)"><input className="input" type="url" value={draft.instagram_url} onChange={e=>change("instagram_url",e.target.value)}/></Field><Field label="TikTok (opcional)"><input className="input" type="url" value={draft.tiktok_url} onChange={e=>change("tiktok_url",e.target.value)}/></Field><Field label="Logotipo (opcional)"><input className="input" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setLogo(e.target.files?.[0]??null)}/></Field>
-  </div><Field label="Sectores Productivos"><div className="check-grid">{sectors.data?.map(item=><label key={item.id}><input type="checkbox" checked={sectorIds.includes(item.id)} onChange={()=>setSectorIds(ids=>ids.includes(item.id)?ids.filter(id=>id!==item.id):[...ids,item.id])}/>{item.nombre}</label>)}</div></Field>{otherSelected&&<Field label="Detalle de Otros"><input className="input" required value={otherDetail} onChange={e=>setOtherDetail(e.target.value)}/></Field>}<Field label="Reseña comercial"><textarea className="input" required rows={5} value={draft.resena_comercial} onChange={e=>change("resena_comercial",e.target.value)}/></Field><button className="btn" disabled={mutation.isPending||sectorIds.length===0}>{mutation.isPending?"Enviando…":"Enviar solicitud"}</button></form></main></>;
+  const submitRegistration = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const controls = Array.from(event.currentTarget.elements).filter(
+      (element): element is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+        element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement,
+    );
+    const invalidControl = controls.find(control=>!control.validity.valid);
+    if (invalidControl) {
+      const label = REGISTRATION_FIELD_LABELS[invalidControl.name] ?? "indicado";
+      const popupMessage = invalidControl.validity.valueMissing
+        ? `Complete el campo “${label}”. Al cerrar este mensaje quedará marcado para que pueda corregirlo.`
+        : `Revise el formato del campo “${label}”. Al cerrar este mensaje quedará marcado para que pueda corregirlo.`;
+      focusInvalidControl(invalidControl, popupMessage);
+      return;
+    }
+    if (sectorIds.length === 0) {
+      const firstSector = event.currentTarget.querySelector<HTMLInputElement>('input[name="sectores"]');
+      if (firstSector) focusInvalidControl(firstSector, "Seleccione al menos un Sector Productivo. Al cerrar este mensaje podrá elegirlo.");
+      return;
+    }
+    mutation.mutate();
+  };
+  return <><PublicHeader/><main className="container public-main registration-page">
+    <header className="registration-intro"><h1>Solicitud de Unidad Productiva</h1><p>Complete la información para solicitar su incorporación. Cuando la administración apruebe la solicitud, recibirá las credenciales de acceso.</p><small><b className="field-required" aria-hidden="true">*</b> Los campos marcados con asterisco son obligatorios.</small></header>
+    <form ref={formRef} className="registration-form" noValidate onSubmit={submitRegistration} onInput={event=>(event.target as HTMLElement).removeAttribute("aria-invalid")}>
+      <section className="registration-section"><div className="registration-section-heading"><span>01</span><div><h2>Datos de la unidad</h2><p>Información comercial y registros institucionales.</p></div></div><div className="registration-grid">
+        <Field label="Nombre comercial" required><input className="input" name="nombre_comercial" required autoComplete="organization" placeholder="Nombre con el que se presenta al público" value={draft.nombre_comercial} onChange={e=>change("nombre_comercial",e.target.value)}/></Field>
+        <Field label="Razón social" required><input className="input" name="razon_social" required placeholder="Nombre legal de la organización" value={draft.razon_social} onChange={e=>change("razon_social",e.target.value)}/></Field>
+        <Field label="NIT" optional><input className="input" name="nit" inputMode="numeric" pattern="[0-9]{5,12}" maxLength={12} placeholder="Número de identificación tributaria" value={draft.nit} onInvalid={e=>e.currentTarget.setCustomValidity("Solo números, de 5 a 12 dígitos.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("nit",e.target.value.replace(/\D/g, "").slice(0, 12))}/></Field>
+        <Field label="Registro SEPREC" optional><input className="input" name="registro_seprec" inputMode="numeric" pattern="[0-9]{5,12}" maxLength={12} placeholder="Número de Matrícula de Comercio" value={draft.registro_seprec} onInvalid={e=>e.currentTarget.setCustomValidity("Solo números, de 5 a 12 dígitos.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("registro_seprec",e.target.value.replace(/\D/g, "").slice(0, 12))}/></Field>
+        <Field label="Registro PRO-BOLIVIA" optional><input className="input" name="registro_pro_bolivia" inputMode="numeric" pattern="[0-9]{5,12}" maxLength={12} placeholder="Número de registro PRO-BOLIVIA" value={draft.registro_pro_bolivia} onInvalid={e=>e.currentTarget.setCustomValidity("Solo números, de 5 a 12 dígitos.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("registro_pro_bolivia",e.target.value.replace(/\D/g, "").slice(0, 12))}/></Field>
+      </div></section>
+      <section className="registration-section"><div className="registration-section-heading"><span>02</span><div><h2>Contacto y ubicación</h2><p>Datos de la persona responsable y medios de contacto.</p></div></div><div className="registration-grid">
+        <Field label="Nombres del representante" required><input className="input" name="nombres_representante" required autoComplete="given-name" maxLength={100} pattern={REPRESENTATIVE_NAME_PATTERN} placeholder="Nombres" value={draft.nombres_representante} onInvalid={e=>e.currentTarget.setCustomValidity("Ingrese únicamente letras, espacios, apóstrofes o guiones.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("nombres_representante",sanitizeRepresentativeName(e.target.value))}/></Field>
+        <Field label="Apellido paterno" required><input className="input" name="apellido_paterno_representante" required autoComplete="family-name" maxLength={100} pattern={REPRESENTATIVE_NAME_PATTERN} placeholder="Apellido paterno" value={draft.apellido_paterno_representante} onInvalid={e=>e.currentTarget.setCustomValidity("Ingrese únicamente letras, espacios, apóstrofes o guiones.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("apellido_paterno_representante",sanitizeRepresentativeName(e.target.value))}/></Field>
+        <Field label="Apellido materno" required><input className="input" name="apellido_materno_representante" required maxLength={100} pattern={REPRESENTATIVE_NAME_PATTERN} placeholder="Apellido materno" value={draft.apellido_materno_representante} onInvalid={e=>e.currentTarget.setCustomValidity("Ingrese únicamente letras, espacios, apóstrofes o guiones.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("apellido_materno_representante",sanitizeRepresentativeName(e.target.value))}/></Field>
+        <Field label="Departamento" required><select className="input" name="departamento" required value={draft.departamento} onChange={e=>change("departamento",e.target.value)}><option value="">Seleccione un departamento</option>{BOLIVIA_DEPARTMENTS.map(item=><option key={item}>{item}</option>)}</select></Field>
+        <Field label="Dirección física de la Planta de Producción o Taller" required><input className="input" name="direccion_fisica" required autoComplete="street-address" placeholder="Zona, avenida o calle" value={draft.direccion_fisica} onChange={e=>change("direccion_fisica",e.target.value)}/></Field>
+        <Field label="Teléfono o WhatsApp" required><input className="input" name="telefono_whatsapp" type="tel" required autoComplete="tel" inputMode="numeric" pattern="[67][0-9]{7}" maxLength={8} placeholder="Ej. 70000000" value={draft.telefono_whatsapp} onInvalid={e=>e.currentTarget.setCustomValidity("Ingrese 8 dígitos de un celular boliviano que comience con 6 o 7.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("telefono_whatsapp",e.target.value.replace(/\D/g, "").slice(0, 8))}/></Field>
+        <Field label="Correo electrónico" required><input className="input" name="correo_electronico" type="email" required autoComplete="email" inputMode="email" maxLength={255} pattern={EMAIL_PATTERN} placeholder="correo@dominio.com" value={draft.correo_electronico} onInvalid={e=>e.currentTarget.setCustomValidity("Ingrese un correo electrónico válido, por ejemplo: nombre@dominio.com.")} onInput={e=>e.currentTarget.setCustomValidity("")} onChange={e=>change("correo_electronico",e.target.value)}/></Field>
+      </div></section>
+      <section className="registration-section"><div className="registration-section-heading"><span>03</span><div><h2>Presencia digital</h2><p>Redes sociales y logotipo de la unidad.</p></div></div>
+        <div className="social-url-guide"><Link2 aria-hidden="true"/><div><strong>Ingrese el enlace completo de cada perfil</strong><span>Abra su perfil en la red social, copie el enlace y péguelo aquí. Debe comenzar con <b>https://</b>.</span></div></div>
+        <div className="registration-grid">
+        <SocialUrlField name="facebook_url" label="Facebook" value={draft.facebook_url} example="https://facebook.com/mi.unidad" pattern={SOCIAL_URL_PATTERNS.facebook} error="Ingrese una URL válida de Facebook que comience con https://, por ejemplo: https://facebook.com/mi.unidad" onChange={value=>change("facebook_url",value)}/>
+        <SocialUrlField name="instagram_url" label="Instagram" value={draft.instagram_url} example="https://instagram.com/mi.unidad" pattern={SOCIAL_URL_PATTERNS.instagram} error="Ingrese una URL válida de Instagram que comience con https://, por ejemplo: https://instagram.com/mi.unidad" onChange={value=>change("instagram_url",value)}/>
+        <SocialUrlField name="tiktok_url" label="TikTok" value={draft.tiktok_url} example="https://tiktok.com/@mi.unidad" pattern={SOCIAL_URL_PATTERNS.tiktok} error="Ingrese una URL válida de TikTok que comience con https://, por ejemplo: https://tiktok.com/@mi.unidad" onChange={value=>change("tiktok_url",value)}/>
+        <Field label="Logotipo" optional hint="Formatos permitidos: PNG, JPG, JPEG y WebP."><input className="input registration-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setLogo(e.target.files?.[0]??null)}/></Field>
+      </div></section>
+      <section className="registration-section"><div className="registration-section-heading"><span>04</span><div><h2>Actividad productiva</h2><p>Seleccione al menos un sector y describa brevemente su oferta.</p></div></div>
+        <Field label="Sectores Productivos" required>{sectors.isLoading?<Loading label="Cargando sectores…"/>:sectors.error?<ErrorBox message={message(sectors.error)}/>:<div className="registration-sectors">{sectors.data?.map(item=><label key={item.id}><input name="sectores" type="checkbox" checked={sectorIds.includes(item.id)} onChange={()=>setSectorIds(ids=>ids.includes(item.id)?ids.filter(id=>id!==item.id):[...ids,item.id])}/><span>{item.nombre}</span></label>)}</div>}</Field>
+        {otherSelected&&<Field label="Detalle de Otros" required><input className="input" name="detalle_otro" required placeholder="Describa su actividad productiva" value={otherDetail} onChange={e=>setOtherDetail(e.target.value)}/></Field>}
+        <div className="registration-review-field"><Field label="Reseña comercial" required><textarea className="input" name="resena_comercial" required rows={5} placeholder="Cuéntenos qué produce, cómo trabaja y qué distingue a su unidad" value={draft.resena_comercial} onChange={e=>change("resena_comercial",e.target.value)}/></Field></div>
+      </section>
+      <footer className="registration-actions"><span>{sectorIds.length===0?"Seleccione al menos un sector productivo.":"Revise sus datos antes de enviar la solicitud."}</span><button className="registration-submit" disabled={mutation.isPending}><Send aria-hidden="true"/>{mutation.isPending?"Enviando…":"Enviar solicitud"}</button></footer>
+    </form>
+  </main></>;
 }
 
 export function RegistrationRequestsPage() {
@@ -104,11 +271,11 @@ export function ProductiveUnitProfilePage() {
   const [editing,setEditing]=useState(false),[draft,setDraft]=useState<Partial<ProductiveUnit>>({});
   if(profile.isLoading)return <Loading/>;if(profile.error||!profile.data)return <ErrorBox message={message(profile.error)}/>;
   const unit=profile.data, start=()=>{setDraft(unit);setEditing(true)};
-  const save=async()=>{try{const {nombre_comercial,razon_social,nit,registro_seprec,registro_pro_bolivia,nombre_representante,departamento,direccion_fisica,telefono_whatsapp,correo_electronico,facebook_url,instagram_url,tiktok_url,resena_comercial}=draft;await api.patch("/productive-unit/profile",{nombre_comercial,razon_social,nit,registro_seprec,registro_pro_bolivia,nombre_representante,departamento,direccion_fisica,telefono_whatsapp,correo_electronico,facebook_url,instagram_url,tiktok_url,resena_comercial});await qc.invalidateQueries({queryKey:["productive-unit-profile"]});setEditing(false);feedback.success("Perfil actualizado",unit.nombre_comercial)}catch(e){feedback.error("No se pudo actualizar",message(e))}};
+  const save=async()=>{try{const {nombre_comercial,razon_social,nit,registro_seprec,registro_pro_bolivia,nombres_representante,apellido_paterno_representante,apellido_materno_representante,departamento,direccion_fisica,telefono_whatsapp,correo_electronico,facebook_url,instagram_url,tiktok_url,resena_comercial}=draft;await api.patch("/productive-unit/profile",{nombre_comercial,razon_social,nit,registro_seprec,registro_pro_bolivia,nombres_representante,apellido_paterno_representante,apellido_materno_representante,departamento,direccion_fisica,telefono_whatsapp,correo_electronico,facebook_url,instagram_url,tiktok_url,resena_comercial});await qc.invalidateQueries({queryKey:["productive-unit-profile"]});setEditing(false);feedback.success("Perfil actualizado",unit.nombre_comercial)}catch(e){feedback.error("No se pudo actualizar",message(e))}};
   return <section>
     <div className="page-heading"><div><span className="eyebrow">Mi Unidad Productiva</span><h1>{unit.nombre_comercial}</h1><StatusBadge value={unit.estado}/></div><button className="btn" onClick={start}>Editar perfil</button></div>
     <div className="profile-grid"><article className="panel">{unit.logo_url?<img className="profile-logo" src={assetUrl(unit.logo_url)} alt={`Logo de ${unit.nombre_comercial}`}/>:<Empty title="Sin logotipo"/>}<Field label="Actualizar logotipo"><input className="input" type="file" accept="image/*" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;const form=new FormData();form.append("file",file);await api.post("/productive-unit/logo",form);await qc.invalidateQueries({queryKey:["productive-unit-profile"]})}}/></Field></article><article className="panel"><p><strong>Razón social:</strong> {unit.razon_social}</p><p><strong>Representante:</strong> {unit.nombre_representante}</p><p><strong>Contacto:</strong> {unit.telefono_whatsapp} · {unit.correo_electronico}</p><p><strong>Dirección:</strong> {unit.departamento}, {unit.direccion_fisica}</p><p>{unit.resena_comercial}</p><p><strong>Sectores:</strong> {unit.sectores.map(s=>s.nombre).join(", ")}</p></article></div>
-    {editing&&<Modal title="Editar perfil" onClose={()=>setEditing(false)}><div className="form-grid">{([['nombre_comercial','Nombre comercial'],['razon_social','Razón social'],['nombre_representante','Representante'],['departamento','Departamento'],['direccion_fisica','Dirección'],['telefono_whatsapp','WhatsApp'],['correo_electronico','Correo'],['facebook_url','Facebook'],['instagram_url','Instagram'],['tiktok_url','TikTok']] as [keyof ProductiveUnit,string][]).map(([key,label])=><Field key={key} label={label}><input className="input" value={String(draft[key]??"")} onChange={e=>setDraft(d=>({...d,[key]:e.target.value}))}/></Field>)}</div><Field label="Reseña"><textarea className="input" value={draft.resena_comercial??""} onChange={e=>setDraft(d=>({...d,resena_comercial:e.target.value}))}/></Field><Field label="Sectores"><div className="check-grid">{sectors.data?.map(s=><label key={s.id}><input type="checkbox" checked={unit.sectores.some(x=>x.id===s.id)} readOnly/>{s.nombre}</label>)}</div><small>La gestión detallada de sectores usa el contrato específico de perfil.</small></Field><button className="btn" onClick={()=>void save()}>Guardar</button></Modal>}
+    {editing&&<Modal title="Editar perfil" onClose={()=>setEditing(false)}><div className="form-grid">{([['nombre_comercial','Nombre comercial'],['razon_social','Razón social'],['nombres_representante','Nombres del representante'],['apellido_paterno_representante','Apellido paterno'],['apellido_materno_representante','Apellido materno'],['departamento','Departamento'],['direccion_fisica','Dirección'],['telefono_whatsapp','WhatsApp'],['correo_electronico','Correo'],['facebook_url','Facebook'],['instagram_url','Instagram'],['tiktok_url','TikTok']] as [keyof ProductiveUnit,string][]).map(([key,label])=><Field key={key} label={label}><input className="input" value={String(draft[key]??"")} onChange={e=>setDraft(d=>({...d,[key]:e.target.value}))}/></Field>)}</div><Field label="Reseña"><textarea className="input" value={draft.resena_comercial??""} onChange={e=>setDraft(d=>({...d,resena_comercial:e.target.value}))}/></Field><Field label="Sectores"><div className="check-grid">{sectors.data?.map(s=><label key={s.id}><input type="checkbox" checked={unit.sectores.some(x=>x.id===s.id)} readOnly/>{s.nombre}</label>)}</div><small>La gestión detallada de sectores usa el contrato específico de perfil.</small></Field><button className="btn" onClick={()=>void save()}>Guardar</button></Modal>}
   </section>;
 }
 

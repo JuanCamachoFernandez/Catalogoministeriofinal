@@ -13,7 +13,7 @@ const LoginPage=pick(()=>import("./AuthPages"),"LoginPage"),ForgotPasswordPage=p
 
 function AdminRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["ADMIN","SUPERADMIN","ADMIN_VICEMINISTERIO"]}><ManagementLayout area="admin">{children}</ManagementLayout></ProtectedRoute>}
 function UnitRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["PRODUCTIVE_UNIT_RESPONSIBLE","EXPOSITOR"]}><ManagementLayout area="productive-unit">{children}</ManagementLayout></ProtectedRoute>}
-function RouteMetadata(){const {pathname}=useLocation();useEffect(()=>{const title=pathname.startsWith("/admin")?"Administración":pathname.startsWith("/unidad-productiva")?"Unidad Productiva":pathname==="/solicitud-registro"?"Solicitud de registro":"Catálogo de Ferias";document.title=`${title} | Catálogo Digital`;},[pathname]);return null}
+function RouteMetadata(){const {pathname}=useLocation();useEffect(()=>{const title=pathname.startsWith("/admin")?"Administración":pathname.startsWith("/unidad-productiva")?"Unidad Productiva":pathname==="/solicitud-registro"?"Solicitud de registro":"Ferias activas";document.title=`${title} | Ferias Productivas Bolivia`;},[pathname]);return null}
 
 export default function App(){return <><RouteMetadata/><Suspense fallback={<Loading label="Cargando página…"/>}><Routes>
   <Route path="/" element={<Navigate to="/catalogo" replace/>}/><Route path="/catalogo" element={<PublicCatalogPage/>}/><Route path="/catalogo/ferias/:fairId" element={<PublicFairPage/>}/><Route path="/catalogo/ferias/:fairId/unidades/:unitId" element={<PublicUnitPage/>}/><Route path="/solicitud-registro" element={<RegistrationPage/>}/>

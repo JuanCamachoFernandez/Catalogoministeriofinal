@@ -14,7 +14,9 @@ class RegistrationRequest(TimestampMixin, db.Model):
     nit = db.Column(db.String(50))
     registro_seprec = db.Column(db.String(100))
     registro_pro_bolivia = db.Column(db.String(100))
-    nombre_representante = db.Column(db.String(200), nullable=False)
+    nombres_representante = db.Column(db.String(100), nullable=False)
+    apellido_paterno_representante = db.Column(db.String(100), nullable=False)
+    apellido_materno_representante = db.Column(db.String(100), nullable=False)
     departamento = db.Column(db.String(80), nullable=False)
     direccion_fisica = db.Column(db.String(255), nullable=False)
     telefono_whatsapp = db.Column(db.String(30), nullable=False)
@@ -54,6 +56,19 @@ class RegistrationRequest(TimestampMixin, db.Model):
             sqlite_where=((estado == RegistrationStatus.PENDING) & (nit.is_not(None))),
         ),
     )
+
+    @property
+    def nombre_representante(self):
+        return " ".join(
+            filter(
+                None,
+                (
+                    self.nombres_representante,
+                    self.apellido_paterno_representante,
+                    self.apellido_materno_representante,
+                ),
+            )
+        )
 
 
 class RegistrationRequestSector(db.Model):

@@ -41,7 +41,9 @@ def _registration_payload(sector_id):
         "nombre_comercial": "Manos Andinas",
         "razon_social": "Manos Andinas SRL",
         "nit": "123456789",
-        "nombre_representante": "Ana Quispe",
+        "nombres_representante": "Ana María",
+        "apellido_paterno_representante": "Quispe",
+        "apellido_materno_representante": "Mamani",
         "departamento": "La Paz",
         "direccion_fisica": "Calle 1",
         "telefono_whatsapp": "76543210",
@@ -49,6 +51,146 @@ def _registration_payload(sector_id):
         "resena_comercial": "Artesanía boliviana",
         "sectores": [{"productive_sector_id": str(sector_id)}],
     }
+
+
+def test_solicitud_valida_formato_numerico_del_nit(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Manufactura", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    for invalid_nit in ("1234", "1234567890123", "123-456789", "ABC123456"):
+        payload = _registration_payload(sector_id)
+        payload["nit"] = invalid_nit
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+    for invalid_seprec in ("1234", "1234567890123", "123-456789", "SEPREC123"):
+        payload = _registration_payload(sector_id)
+        payload["registro_seprec"] = invalid_seprec
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+    for invalid_pro_bolivia in ("1234", "1234567890123", "123-456789", "PROBOL123"):
+        payload = _registration_payload(sector_id)
+        payload["registro_pro_bolivia"] = invalid_pro_bolivia
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+    valid_payload = _registration_payload(sector_id)
+    valid_payload["nit"] = "12345"
+    valid_payload["registro_seprec"] = "12345"
+    valid_payload["registro_pro_bolivia"] = "12345"
+    response = client.post("/api/registration-requests", json=valid_payload)
+    assert response.status_code == 201
+
+
+def test_solicitud_requiere_nombres_y_ambos_apellidos_del_representante(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Madera", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    representative_fields = (
+        "nombres_representante",
+        "apellido_paterno_representante",
+        "apellido_materno_representante",
+    )
+    for field in representative_fields:
+        payload = _registration_payload(sector_id)
+        payload.pop(field)
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+        payload = _registration_payload(sector_id)
+        payload[field] = ""
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+        payload = _registration_payload(sector_id)
+        payload[field] = "   "
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+
+def test_solicitud_valida_nombres_telefono_boliviano_y_correo(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Cerámica", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    representative_fields = (
+        "nombres_representante",
+        "apellido_paterno_representante",
+        "apellido_materno_representante",
+    )
+    for field in representative_fields:
+        for invalid_name in ("Ana2", "Quispe!", "123456"):
+            payload = _registration_payload(sector_id)
+            payload[field] = invalid_name
+            response = client.post("/api/registration-requests", json=payload)
+            assert response.status_code == 400
+
+    for invalid_phone in (
+        "7123456",
+        "712345678",
+        "51234567",
+        "71-234567",
+        "+59171234567",
+    ):
+        payload = _registration_payload(sector_id)
+        payload["telefono_whatsapp"] = invalid_phone
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+    for invalid_email in ("ana", "ana@", "@manos.bo", "ana@manos", "ana manos@manos.bo"):
+        payload = _registration_payload(sector_id)
+        payload["correo_electronico"] = invalid_email
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+    valid_payload = _registration_payload(sector_id)
+    valid_payload["nombres_representante"] = "Ana María"
+    valid_payload["apellido_paterno_representante"] = "D'Angelo"
+    valid_payload["apellido_materno_representante"] = "Pérez-López"
+    response = client.post("/api/registration-requests", json=valid_payload)
+    assert response.status_code == 201
+
+
+def test_solicitud_valida_urls_de_redes_sociales(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Joyería", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    invalid_social_urls = (
+        ("facebook_url", "facebook.com/mi.unidad"),
+        ("facebook_url", "https://instagram.com/mi.unidad"),
+        ("instagram_url", "http://instagram.com/mi.unidad"),
+        ("instagram_url", "https://facebook.com/mi.unidad"),
+        ("tiktok_url", "https://tiktok.com/mi.unidad"),
+        ("tiktok_url", "https://example.com/@mi.unidad"),
+    )
+    for field, invalid_url in invalid_social_urls:
+        payload = _registration_payload(sector_id)
+        payload[field] = invalid_url
+        response = client.post("/api/registration-requests", json=payload)
+        assert response.status_code == 400
+
+    valid_payload = _registration_payload(sector_id)
+    valid_payload.update(
+        {
+            "facebook_url": "https://facebook.com/mi.unidad",
+            "instagram_url": "https://instagram.com/mi.unidad",
+            "tiktok_url": "https://tiktok.com/@mi.unidad",
+        }
+    )
+    response = client.post("/api/registration-requests", json=valid_payload)
+    assert response.status_code == 201
 
 
 def test_administracion_lista_sectores_activos_e_inactivos(app, client):
@@ -130,7 +272,16 @@ def test_solicitud_aprobacion_y_credenciales_temporales(app, client, monkeypatch
     )
     assert approved.status_code == 200
     assert approved.json["estado"] == "APPROVED"
+    assert approved.json["nombre_representante"] == "Ana María Quispe Mamani"
     assert "temporary_password" not in approved.json
+
+    with app.app_context():
+        responsible = db.session.scalar(
+            db.select(User).where(User.email == "ana@manos.bo")
+        )
+        assert responsible.first_name == "Ana María"
+        assert responsible.apellido_paterno == "Quispe"
+        assert responsible.apellido_materno == "Mamani"
 
     login = client.post(
         "/api/auth/login",

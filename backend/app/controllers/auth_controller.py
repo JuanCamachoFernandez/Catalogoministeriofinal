@@ -13,7 +13,17 @@ from sqlalchemy import select
 
 from ..email_service import BrevoEmailService, EmailDeliveryError
 from ..extensions import db
-from ..models import PasswordRecovery, RevokedToken, Role, User, UserStatus
+from ..models import (
+    PasswordRecovery,
+    ProductiveUnit,
+    ProductiveUnitStatus,
+    RegistrationRequest,
+    RegistrationStatus,
+    RevokedToken,
+    Role,
+    User,
+    UserStatus,
+)
 from ..views import error, user_json, validate_json, validated_json
 from ..views.auth_view import (
     ChangePasswordSchema,
@@ -26,6 +36,25 @@ from ..views.auth_view import (
 from .common import audit, current_user
 
 auth_bp = Blueprint("auth", __name__)
+RECOVERY_ACCOUNT_ERROR = "Este correo no está registrado en ninguna cuenta activa"
+
+
+def _can_recover_password(user):
+    if not user or user.deleted_at or user.status != UserStatus.ACTIVE:
+        return False
+    if user.role != Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        return True
+    unit = db.session.scalar(
+        select(ProductiveUnit).where(
+            ProductiveUnit.user_id == user.id,
+            ProductiveUnit.estado == ProductiveUnitStatus.ACTIVE,
+            ProductiveUnit.deleted_at.is_(None),
+        )
+    )
+    if not unit:
+        return False
+    registration = db.session.get(RegistrationRequest, unit.registration_request_id)
+    return bool(registration and registration.estado == RegistrationStatus.APPROVED)
 
 
 def strong_password(value):
@@ -187,9 +216,9 @@ def forgot_password():
     data = validated_json()
     value = (data.get("email") or "").lower().strip()
     user = db.session.scalar(select(User).where(User.email == value))
-    response = {"message": "Si el correo está registrado, recibirá un código de 6 dígitos"}
-    if not user or user.status == UserStatus.INACTIVE:
-        return response
+    if not _can_recover_password(user):
+        return error(RECOVERY_ACCOUNT_ERROR, 404)
+    response = {"message": "Enviamos un código de 6 dígitos al correo de la cuenta"}
     now = datetime.now(timezone.utc)
     for previous in db.session.scalars(
         select(PasswordRecovery).where(
@@ -238,17 +267,17 @@ def verify_recovery_code():
     data = validated_json()
     email = (data.get("email") or "").lower().strip()
     user = db.session.scalar(select(User).where(User.email == email))
-    recovery = None
-    if user:
-        recovery = db.session.scalar(
-            select(PasswordRecovery)
-            .where(
-                PasswordRecovery.user_id == user.id,
-                PasswordRecovery.used_at.is_(None),
-                PasswordRecovery.verified_at.is_(None),
-            )
-            .order_by(PasswordRecovery.created_at.desc())
+    if not _can_recover_password(user):
+        return error(RECOVERY_ACCOUNT_ERROR, 404)
+    recovery = db.session.scalar(
+        select(PasswordRecovery)
+        .where(
+            PasswordRecovery.user_id == user.id,
+            PasswordRecovery.used_at.is_(None),
+            PasswordRecovery.verified_at.is_(None),
         )
+        .order_by(PasswordRecovery.created_at.desc())
+    )
     now = datetime.now(timezone.utc)
     expires_at = recovery.expires_at if recovery else None
     if expires_at and expires_at.tzinfo is None:
@@ -304,10 +333,13 @@ def reset_password():
     if not recovery or expires_at <= now:
         return error("El token es inválido o expiró", 400)
     user = db.session.get(User, recovery.user_id)
+    if not _can_recover_password(user):
+        recovery.used_at = now
+        db.session.commit()
+        return error(RECOVERY_ACCOUNT_ERROR, 404)
     user.set_password(password)
     user.must_change_password = False
     user.failed_login_attempts = 0
-    user.status = UserStatus.ACTIVE
     user.password_changed_at = now
     user.token_version += 1
     recovery.used_at = now

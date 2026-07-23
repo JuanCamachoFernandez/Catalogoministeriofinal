@@ -525,7 +525,7 @@ function PublicFooter() {
       <div className="container public-footer-content">
         <InstitutionalSeal className="footer-seal" />
         <div>
-          <strong>Catálogo Digital de Ferias</strong>
+          <strong>Ferias Productivas Bolivia</strong>
           <p>Promoviendo la producción y el emprendimiento boliviano.</p>
         </div>
       </div>

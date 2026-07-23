@@ -429,7 +429,7 @@ def build_pdf(sections, generated_at):
     document = SimpleDocTemplate(
         output, pagesize=landscape(A4), rightMargin=10 * mm, leftMargin=10 * mm,
         topMargin=12 * mm, bottomMargin=12 * mm,
-        title="Reporte del Catálogo Digital de Ferias",
+        title="Reporte de Ferias Productivas Bolivia",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], alignment=TA_CENTER, textColor=colors.HexColor("#17324D"), fontSize=18)

@@ -7,7 +7,7 @@ Variables privadas en `backend/.env`:
 ```env
 CLAVE_BREVO=
 CORREO_REMITENTE_BREVO=
-NOMBRE_REMITENTE_BREVO=Catálogo Digital de Ferias
+NOMBRE_REMITENTE_BREVO=Ferias Productivas Bolivia
 ENVIO_CORREO_HABILITADO=false
 ```
 
