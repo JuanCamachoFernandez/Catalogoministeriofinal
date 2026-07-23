@@ -24,12 +24,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Pagination } from "./api";
-import {
-  auditActionLabel,
-  negativeAuditActions,
-  positiveAuditActions,
-  warningAuditActions,
-} from "./auditLabels";
 
 const openModalStack: HTMLElement[] = [];
 
@@ -84,18 +78,8 @@ export function StatusBadge({ value }: { value: string | boolean }) {
     "AVAILABLE",
     "AUTHORIZED",
     "PUBLISHED",
-  ].includes(normalized) || positiveAuditActions.has(normalized);
-  const warning = ["PENDING", "DRAFT", "OUT_OF_STOCK"].includes(normalized)
-    || warningAuditActions.has(normalized);
-  const negative = [
-    "INACTIVE",
-    "LOCKED",
-    "BLOCKED",
-    "DELETED",
-    "REJECTED",
-    "REVOKED",
-    "DISABLED",
-  ].includes(normalized) || negativeAuditActions.has(normalized);
+  ].includes(normalized);
+  const warning = ["PENDING", "DRAFT", "OUT_OF_STOCK"].includes(normalized);
   const labels: Record<string, string> = {
     ACTIVE: "Activo",
     INACTIVE: "Inactivo",
@@ -116,9 +100,9 @@ export function StatusBadge({ value }: { value: string | boolean }) {
   };
   return (
     <span
-      className={`status ${positive ? "status-positive" : warning ? "status-warning" : negative ? "status-negative" : "status-neutral"}`}
+      className={`status ${positive ? "status-positive" : warning ? "status-warning" : "status-negative"}`}
     >
-      {labels[normalized] ?? auditActionLabel(normalized)}
+      {labels[normalized] ?? normalized}
     </span>
   );
 }
