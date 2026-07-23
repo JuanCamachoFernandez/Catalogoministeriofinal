@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     localStorage.setItem(TOKEN_KEY, accessToken);
     if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
+    else localStorage.removeItem(REFRESH_KEY);
     localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
     localStorage.setItem(`catalog_last_activity:${nextUser.id}`, String(Date.now()));
     setUser(nextUser);
@@ -71,8 +72,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [clear, queryClient]);
 
   const logout = useCallback(async () => {
+    const sessionToken = localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(REFRESH_KEY);
     try {
-      if (localStorage.getItem(TOKEN_KEY)) await api.post("/auth/logout");
+      if (sessionToken) {
+        await api.post("/auth/logout", {}, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+      }
     } finally {
       clear();
     }
@@ -88,6 +94,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unauthorized = () => clear();
     window.addEventListener("catalog:unauthorized", unauthorized);
     return () => window.removeEventListener("catalog:unauthorized", unauthorized);
+  }, [clear]);
+
+  useEffect(() => {
+    const syncLogout = (event: StorageEvent) => {
+      if (
+        (event.key === TOKEN_KEY || event.key === REFRESH_KEY || event.key === USER_KEY)
+        && event.newValue === null
+      ) {
+        clear();
+        setLoading(false);
+      }
+    };
+    window.addEventListener("storage", syncLogout);
+    return () => window.removeEventListener("storage", syncLogout);
   }, [clear]);
 
   const value = useMemo(() => ({ user, loading, login, logout, refresh }), [user, loading, login, logout, refresh]);

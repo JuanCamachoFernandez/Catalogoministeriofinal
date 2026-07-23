@@ -193,7 +193,7 @@ def change_password():
 
 
 @auth_bp.post("/auth/logout")
-@jwt_required()
+@jwt_required(verify_type=False)
 def logout():
     token = get_jwt()
     user = current_user()

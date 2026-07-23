@@ -1,4 +1,4 @@
-import { Eye, EyeOff, LockKeyhole, LogOut, ShieldCheck } from "lucide-react";
+import { Clock3, Eye, EyeOff, LockKeyhole, LogOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, apiError } from "./api";
@@ -104,10 +104,14 @@ export function SessionInactivityGuard() {
   if (!locked) return null;
   return <div className="session-lock-backdrop" role="dialog" aria-modal="true" aria-labelledby="session-lock-title">
     <section className="session-lock-card">
-      <div className="session-lock-icon"><LockKeyhole/></div>
-      <span className="eyebrow">Sesión protegida</span>
-      <h2 id="session-lock-title">Vuelva a ingresar su contraseña</h2>
-      <p>Por seguridad, la sesión de <strong>{user?.username}</strong> se bloqueó después de 2 minutos sin actividad.</p>
+      <header className="session-lock-heading">
+        <span className="session-lock-icon" aria-hidden="true"><LockKeyhole/></span>
+        <div>
+          <small>Sesión bloqueada</small>
+          <h2 id="session-lock-title">Confirme su contraseña</h2>
+        </div>
+      </header>
+      <p>La sesión de <strong>{user?.username}</strong> se pausó después de 2 minutos sin actividad.</p>
       <form onSubmit={unlock}>
         <label>Contraseña actual</label>
         <span className="password-input">
@@ -115,10 +119,10 @@ export function SessionInactivityGuard() {
           <button type="button" onClick={() => setVisible((current) => !current)} aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}>{visible ? <EyeOff/> : <Eye/>}</button>
         </span>
         {error && <div className="alert-danger">{error}</div>}
-        <button className="btn w-full" disabled={pending}><ShieldCheck/>{pending ? "Verificando…" : "Desbloquear sesión"}</button>
+        <button className="btn w-full" disabled={pending}>{pending ? "Verificando…" : "Continuar"}</button>
       </form>
       <button className="session-lock-logout" onClick={() => void closeForInactivity()}><LogOut size={18}/>Cerrar sesión</button>
-      <small>Si no realiza ninguna acción, la sesión se cerrará al cumplir 5 minutos de inactividad.</small>
+      <small className="session-lock-timeout"><Clock3/>La sesión se cerrará al cumplir 5 minutos de inactividad.</small>
     </section>
   </div>;
 }

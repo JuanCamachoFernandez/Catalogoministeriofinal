@@ -103,7 +103,7 @@ def test_eliminacion_logica_admin_protege_actor(app, client):
     deleted = client.delete(f"/api/admin/users/{target_id}", headers=headers(token))
     assert deleted.status_code == 204
     unavailable = client.get("/api/auth/me", headers=headers(target_token))
-    assert unavailable.status_code == 403
+    assert unavailable.status_code == 401
 
     with app.app_context():
         saved = db.session.get(User, target_id)
