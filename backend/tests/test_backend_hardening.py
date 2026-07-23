@@ -182,7 +182,9 @@ def test_cleanup_elimina_logo_de_solicitud_rechazada_vencida(app):
         registration = RegistrationRequest(
             nombre_comercial="Rechazada",
             razon_social="Rechazada SRL",
-            nombre_representante="Persona",
+            nombres_representante="Persona",
+            apellido_paterno_representante="Prueba",
+            apellido_materno_representante="Control",
             departamento="La Paz",
             direccion_fisica="Calle 1",
             telefono_whatsapp="71234567",

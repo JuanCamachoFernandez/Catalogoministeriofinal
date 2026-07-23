@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarDays, Factory, MapPin, MessageCircle, PackageSearch, Plus, Minus, Store } from "lucide-react";
+import { ArrowLeft, CalendarDays, Factory, MapPin, MessageCircle, PackageSearch, Plus, Minus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, apiError, assetUrl, emptyPagination, type CanonicalFair, type CanonicalProduct, type Paged, type ProductiveSector, type ProductiveUnit } from "./api";
@@ -10,9 +10,13 @@ import { Empty, ErrorBox, Loading, Modal, PaginationBar, SearchField } from "./u
 type ActiveFairsResponse = { active: boolean; fair: CanonicalFair | null; items: CanonicalFair[] };
 
 const displayDate = (value: string) => new Intl.DateTimeFormat("es-BO", { dateStyle: "long" }).format(new Date(`${value}T12:00:00`));
+const truncateDescription = (value: string, maximum = 110) => {
+  const description = value.trim();
+  return description.length <= maximum ? description : `${description.slice(0, maximum).trimEnd()}…`;
+};
 
 function PublicFooter() {
-  return <footer className="public-footer"><div className="container public-footer-content"><InstitutionalSeal className="footer-seal" /><div><strong>Catálogo Digital de Ferias</strong><p>Promoviendo la producción boliviana y el contacto directo con sus productores.</p></div></div></footer>;
+  return <footer className="public-footer"><div className="container public-footer-content"><InstitutionalSeal className="footer-seal" /><div><strong>Ferias Productivas Bolivia</strong><p>Promoviendo la producción boliviana y el contacto directo con sus productores.</p></div></div></footer>;
 }
 
 function PublicShell({ children }: { children: React.ReactNode }) {
@@ -29,12 +33,8 @@ export function PublicCatalogPage() {
   const filtered = (fairs.data?.items ?? []).filter((fair) => `${fair.nombre} ${fair.ubicacion} ${fair.descripcion ?? ""}`.toLocaleLowerCase("es").includes(q.trim().toLocaleLowerCase("es")));
 
   return <PublicShell>
-    <section className="catalog-welcome">
-      <div><span className="eyebrow">Hecho en Bolivia</span><h1>Ferias productivas en curso</h1><p>Explore las ferias activas, conozca a sus Unidades Productivas expositoras y consulte sus productos directamente por WhatsApp.</p></div>
-      <div className="catalog-welcome-mark"><Store /><span>Compra directa<br /><strong>Producción nacional</strong></span></div>
-    </section>
-    <div className="public-catalog-heading"><div><span className="eyebrow">Agenda vigente</span><h2>Seleccione una feria</h2><p>Cada feria muestra únicamente las unidades autorizadas por la administración.</p></div><SearchField value={q} onChange={setQ} placeholder="Buscar feria o ubicación…" /></div>
-    {fairs.isLoading ? <Loading label="Buscando ferias activas…" /> : fairs.error ? <ErrorBox message={apiError(fairs.error)} /> : filtered.length ? <div className="fair-public-grid">{filtered.map((fair) => <article className="public-card fair-public-card" key={fair.id}><FairImage fair={fair} /><div className="card-body"><span className="live-pill"><i /> En curso</span><h2>{fair.nombre}</h2><p className="line-clamp">{fair.descripcion || "Encuentro de productores y emprendimientos bolivianos."}</p><div className="fair-card-meta"><span><CalendarDays />{displayDate(fair.fecha_inicio)} al {displayDate(fair.fecha_fin)}</span><span><MapPin />{fair.ubicacion}</span></div><Link className="btn" to={`/catalogo/ferias/${fair.id}`}>Entrar a la feria <span aria-hidden="true">→</span></Link></div></article>)}</div> : <Empty title="No hay ferias activas en este momento" description="Vuelva pronto para conocer las próximas ferias productivas." />}
+    <div className="public-catalog-heading"><div><h1>Ferias productivas en curso</h1><p>Ingrese a una feria y descubra productos hechos en Bolivia por productores nacionales.</p></div><SearchField value={q} onChange={setQ} placeholder="Buscar feria o ubicación…" /></div>
+    {fairs.isLoading ? <Loading label="Buscando ferias activas…" /> : fairs.error ? <ErrorBox message={apiError(fairs.error)} /> : filtered.length ? <div className="fair-public-grid">{filtered.map((fair) => { const description = fair.descripcion || "Encuentro de productores y emprendimientos bolivianos."; return <article className="public-card fair-public-card" key={fair.id}><FairImage fair={fair} /><div className="card-body"><h2>{fair.nombre}</h2><p className="fair-description" title={description}>{truncateDescription(description)}</p><div className="fair-card-meta"><span><CalendarDays />{displayDate(fair.fecha_inicio)} al {displayDate(fair.fecha_fin)}</span><span><MapPin />{fair.ubicacion}</span></div><Link className="btn" to={`/catalogo/ferias/${fair.id}`}>Entrar a la feria <span aria-hidden="true">→</span></Link></div></article>; })}</div> : <Empty title="No hay ferias activas en este momento" description="Vuelva pronto para conocer las próximas ferias productivas." />}
   </PublicShell>;
 }
 

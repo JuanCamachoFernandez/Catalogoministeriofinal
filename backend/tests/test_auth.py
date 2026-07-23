@@ -1,5 +1,18 @@
+from datetime import datetime, timezone
+from unittest.mock import patch
+
 from app.extensions import db
-from app.models import Audit, Role, User, UserStatus
+from app.models import (
+    Audit,
+    PasswordRecovery,
+    ProductiveUnit,
+    ProductiveUnitStatus,
+    RegistrationRequest,
+    RegistrationStatus,
+    Role,
+    User,
+    UserStatus,
+)
 
 
 def create_user():
@@ -190,6 +203,186 @@ def test_recuperacion_verifica_codigo_y_usa_token_una_sola_vez(app, client):
     payload = {"token": token, "new_password": "Recuperada2026!"}
     assert client.post("/api/auth/reset-password", json=payload).status_code == 200
     assert client.post("/api/auth/reset-password", json=payload).status_code == 400
+
+
+def test_recuperacion_rechaza_correos_sin_cuenta_activa_y_no_envia_mensajes(app, client):
+    error_message = "Este correo no está registrado en ninguna cuenta activa"
+    with patch(
+        "app.controllers.auth_controller.BrevoEmailService.send_password_code"
+    ) as send_password_code:
+        missing = client.post(
+            "/api/auth/forgot-password", json={"email": "inexistente@gmail.com"}
+        )
+        assert missing.status_code == 404
+        assert missing.json["error"] == error_message
+
+        with app.app_context():
+            user = create_user()
+            user_id = user.id
+
+        for status in (UserStatus.INACTIVE, UserStatus.LOCKED, UserStatus.BLOCKED):
+            with app.app_context():
+                user = db.session.get(User, user_id)
+                user.status = status
+                user.deleted_at = None
+                db.session.commit()
+            response = client.post(
+                "/api/auth/forgot-password",
+                json={"email": "admin.prueba@gmail.com"},
+            )
+            assert response.status_code == 404
+            assert response.json["error"] == error_message
+
+        with app.app_context():
+            user = db.session.get(User, user_id)
+            user.status = UserStatus.ACTIVE
+            user.deleted_at = datetime.now(timezone.utc)
+            db.session.commit()
+        deleted = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "admin.prueba@gmail.com"},
+        )
+        assert deleted.status_code == 404
+        assert deleted.json["error"] == error_message
+
+        send_password_code.assert_not_called()
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count(PasswordRecovery.id))) == 0
+
+
+def test_recuperacion_de_unidad_productiva_exige_solicitud_aprobada_y_unidad_activa(app, client):
+    with app.app_context():
+        user = User(
+            username="unidad.pendiente",
+            email="unidad.pendiente@gmail.com",
+            role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
+            first_name="Ana",
+            last_name="Quispe",
+            status=UserStatus.ACTIVE,
+        )
+        user.set_password("Temporal2026!")
+        registration = RegistrationRequest(
+            nombre_comercial="Manos Andinas",
+            razon_social="Manos Andinas SRL",
+            nombres_representante="Ana",
+            apellido_paterno_representante="Quispe",
+            apellido_materno_representante="Mamani",
+            departamento="La Paz",
+            direccion_fisica="Calle 1",
+            telefono_whatsapp="71234567",
+            correo_electronico=user.email,
+            resena_comercial="Artesanía boliviana",
+            estado=RegistrationStatus.PENDING,
+        )
+        db.session.add_all([user, registration])
+        db.session.flush()
+        unit = ProductiveUnit(
+            user_id=user.id,
+            registration_request_id=registration.id,
+            nombre_comercial=registration.nombre_comercial,
+            razon_social=registration.razon_social,
+            nombres_representante=registration.nombres_representante,
+            apellido_paterno_representante=registration.apellido_paterno_representante,
+            apellido_materno_representante=registration.apellido_materno_representante,
+            departamento=registration.departamento,
+            direccion_fisica=registration.direccion_fisica,
+            telefono_whatsapp=registration.telefono_whatsapp,
+            correo_electronico=registration.correo_electronico,
+            resena_comercial=registration.resena_comercial,
+            estado=ProductiveUnitStatus.ACTIVE,
+            fecha_aprobacion=datetime.now(timezone.utc),
+        )
+        db.session.add(unit)
+        db.session.commit()
+        registration_id = registration.id
+        unit_id = unit.id
+
+    with patch(
+        "app.controllers.auth_controller.BrevoEmailService.send_password_code",
+        return_value={"sent": True},
+    ) as send_password_code:
+        pending = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "unidad.pendiente@gmail.com"},
+        )
+        assert pending.status_code == 404
+        send_password_code.assert_not_called()
+
+        with app.app_context():
+            registration = db.session.get(RegistrationRequest, registration_id)
+            registration.estado = RegistrationStatus.APPROVED
+            db.session.commit()
+        approved = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "unidad.pendiente@gmail.com"},
+        )
+        assert approved.status_code == 200
+        assert "recovery_code" in approved.json
+        send_password_code.assert_called_once()
+
+        with app.app_context():
+            unit = db.session.get(ProductiveUnit, unit_id)
+            unit.estado = ProductiveUnitStatus.INACTIVE
+            db.session.commit()
+        inactive = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "unidad.pendiente@gmail.com"},
+        )
+        assert inactive.status_code == 404
+        assert send_password_code.call_count == 1
+
+
+def test_recuperacion_se_detiene_si_la_cuenta_deja_de_estar_activa(app, client):
+    with app.app_context():
+        user = create_user()
+        user_id = user.id
+
+    requested = client.post(
+        "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
+    )
+    code = requested.json["recovery_code"]
+    with app.app_context():
+        user = db.session.get(User, user_id)
+        user.status = UserStatus.INACTIVE
+        db.session.commit()
+
+    verified = client.post(
+        "/api/auth/verify-recovery-code",
+        json={"email": "admin.prueba@gmail.com", "code": code},
+    )
+    assert verified.status_code == 404
+    assert verified.json["error"] == "Este correo no está registrado en ninguna cuenta activa"
+
+    with app.app_context():
+        user = db.session.get(User, user_id)
+        user.status = UserStatus.ACTIVE
+        db.session.commit()
+    requested = client.post(
+        "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
+    )
+    verified = client.post(
+        "/api/auth/verify-recovery-code",
+        json={
+            "email": "admin.prueba@gmail.com",
+            "code": requested.json["recovery_code"],
+        },
+    )
+    with app.app_context():
+        user = db.session.get(User, user_id)
+        user.status = UserStatus.INACTIVE
+        db.session.commit()
+    reset = client.post(
+        "/api/auth/reset-password",
+        json={
+            "token": verified.json["reset_token"],
+            "new_password": "Recuperada2026!",
+        },
+    )
+    assert reset.status_code == 404
+    with app.app_context():
+        user = db.session.get(User, user_id)
+        assert user.status == UserStatus.INACTIVE
+        assert user.check_password("Temporal2026!") is True
 
 
 def test_codigo_recuperacion_se_bloquea_tras_cinco_intentos(app, client):

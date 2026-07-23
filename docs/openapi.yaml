@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Catálogo de Ferias - API canónica
+  title: Ferias Productivas Bolivia - API canónica
   version: 1.0.0
   description: Contrato HTTP estable del backend de Unidades Productivas y ferias.
 servers:
@@ -609,7 +609,9 @@ components:
       required:
         - nombre_comercial
         - razon_social
-        - nombre_representante
+        - nombres_representante
+        - apellido_paterno_representante
+        - apellido_materno_representante
         - departamento
         - direccion_fisica
         - telefono_whatsapp
@@ -619,8 +621,12 @@ components:
       properties:
         nombre_comercial: {type: string, maxLength: 200}
         razon_social: {type: string, maxLength: 200}
-        nit: {type: [string, 'null'], maxLength: 50}
-        nombre_representante: {type: string, maxLength: 200}
+        nit: {type: [string, 'null'], minLength: 5, maxLength: 12, pattern: '^[0-9]{5,12}$'}
+        registro_seprec: {type: [string, 'null'], minLength: 5, maxLength: 12, pattern: '^[0-9]{5,12}$'}
+        registro_pro_bolivia: {type: [string, 'null'], minLength: 5, maxLength: 12, pattern: '^[0-9]{5,12}$'}
+        nombres_representante: {type: string, minLength: 1, maxLength: 100}
+        apellido_paterno_representante: {type: string, minLength: 1, maxLength: 100}
+        apellido_materno_representante: {type: string, minLength: 1, maxLength: 100}
         departamento: {type: string, maxLength: 80}
         direccion_fisica: {type: string, maxLength: 255}
         telefono_whatsapp: {type: string, maxLength: 30}

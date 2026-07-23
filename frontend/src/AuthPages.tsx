@@ -1,4 +1,4 @@
-import { Eye, EyeOff, KeyRound, LogIn, Mail, Store } from "lucide-react";
+import { Eye, EyeOff, KeyRound, LogIn, Mail, Store, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { api, apiError, type SessionUser } from "./api";
@@ -12,11 +12,13 @@ function PasswordField({
   value,
   onChange,
   autoComplete = "current-password",
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   autoComplete?: string;
+  placeholder?: string;
 }) {
   const [visible, setVisible] = useState(false);
   return (
@@ -29,6 +31,7 @@ function PasswordField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           autoComplete={autoComplete}
+          placeholder={placeholder}
         />
         <button
           type="button"
@@ -47,17 +50,19 @@ function AuthShell({
   subtitle,
   icon,
   children,
+  className = "",
 }: {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <main className="auth-shell">
+    <main className={`auth-shell ${className}`.trim()}>
       <section className="auth-panel">
         <Link to="/catalogo" className="auth-brand">
-          <Store /> Catálogo Digital de Ferias
+          <Store /> Ferias Productivas Bolivia
         </Link>
         <div className="auth-heading">
           <span>{icon}</span>
@@ -123,16 +128,18 @@ export function LoginPage() {
   };
   return (
     <AuthShell
-      title="Bienvenido"
+      title="Iniciar sesión"
       subtitle="Ingrese sus credenciales para continuar"
       icon={<LogIn />}
+      className="login-shell"
     >
-      <form onSubmit={submit} className="auth-form">
+      <form onSubmit={submit} className="auth-form login-form">
         <Field label="Usuario">
           <input
             required
             className="input"
             autoComplete="username"
+            placeholder="Ingrese su usuario"
             value={login}
             onChange={(event) => setLogin(event.target.value)}
           />
@@ -141,15 +148,24 @@ export function LoginPage() {
           label="Contraseña"
           value={password}
           onChange={setPassword}
+          placeholder="Ingrese su contraseña"
         />
         {error && <ErrorBox message={error} />}
-        <button disabled={pending} className="btn w-full">
+        <button disabled={pending} className="btn w-full login-submit">
+          <LogIn aria-hidden="true" />
           {pending ? "Ingresando…" : "Iniciar sesión"}
         </button>
         <Link className="auth-link" to="/olvide-contrasena">
           ¿Olvidó su contraseña?
         </Link>
       </form>
+      <div className="login-register">
+        <span>¿Todavía no tiene una cuenta?</span>
+        <Link to="/solicitud-registro" className="login-register-link">
+          <UserPlus aria-hidden="true" />
+          Registrar Unidad Productiva
+        </Link>
+      </div>
     </AuthShell>
   );
 }
@@ -237,6 +253,7 @@ export function ChangePasswordPage() {
 export function ForgotPasswordPage() {
   const [step, setStep] = useState<"email" | "code" | "password" | "done">("email");
   const [email, setEmail] = useState("");
+  const [emailRejected, setEmailRejected] = useState(false);
   const [code, setCode] = useState("");
   const [resetToken, setResetToken] = useState("");
   const [password, setPassword] = useState("");
@@ -246,12 +263,15 @@ export function ForgotPasswordPage() {
   const requestCode = async () => {
     setPending(true);
     setError("");
+    setEmailRejected(false);
     try {
       await api.post("/auth/forgot-password", { email: email.trim().toLowerCase() });
       setCode("");
       setStep("code");
     } catch (reason) {
-      setError(apiError(reason, "No se pudo enviar el código."));
+      const errorMessage = apiError(reason, "No se pudo enviar el código.");
+      setError(errorMessage);
+      setEmailRejected(errorMessage.toLowerCase().includes("cuenta activa"));
     } finally {
       setPending(false);
     }
@@ -317,15 +337,21 @@ export function ForgotPasswordPage() {
         </div>
       ) : step === "email" ? (
         <form className="auth-form" onSubmit={submitEmail}>
-          <Field label="Confirme su correo Gmail">
+          <Field label="Correo electrónico registrado">
             <input
               type="email"
               className="input"
+              name="recovery_email"
               required
+              aria-invalid={emailRejected || undefined}
               autoComplete="email"
-              placeholder="usuario@gmail.com"
+              placeholder="correo@dominio.com"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setEmailRejected(false);
+                setError("");
+              }}
             />
           </Field>
           <p className="form-hint">Enviaremos un código de 6 números al correo registrado en su cuenta.</p>

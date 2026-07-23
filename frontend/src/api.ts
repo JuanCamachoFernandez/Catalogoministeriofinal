@@ -111,6 +111,9 @@ export interface RegistrationRequest {
   registro_seprec?: string | null;
   registro_pro_bolivia?: string | null;
   nombre_representante: string;
+  nombres_representante: string;
+  apellido_paterno_representante: string;
+  apellido_materno_representante: string;
   departamento: string;
   direccion_fisica: string;
   telefono_whatsapp: string;
@@ -139,6 +142,9 @@ export interface ProductiveUnit {
   registro_seprec?: string | null;
   registro_pro_bolivia?: string | null;
   nombre_representante: string;
+  nombres_representante: string;
+  apellido_paterno_representante: string;
+  apellido_materno_representante: string;
   departamento: string;
   direccion_fisica: string;
   telefono_whatsapp: string;

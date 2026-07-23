@@ -18,7 +18,7 @@ class BrevoEmailService:
         self.api_key = os.getenv("CLAVE_BREVO", "").strip()
         self.sender_email = os.getenv("CORREO_REMITENTE_BREVO", "").strip()
         self.sender_name = os.getenv(
-            "NOMBRE_REMITENTE_BREVO", "Catálogo Digital de Ferias"
+            "NOMBRE_REMITENTE_BREVO", "Ferias Productivas Bolivia"
         ).strip()
         self.enabled = os.getenv("ENVIO_CORREO_HABILITADO", "false").lower() == "true"
 
@@ -69,7 +69,7 @@ class BrevoEmailService:
             f"<h2 style=\"color:#17324d\">Recuperación de contraseña</h2>"
             f"<p>Hola {safe_name},</p>"
             "<p>Recibimos una solicitud para cambiar la contraseña de su cuenta en el "
-            "Catálogo Digital de Ferias. Ingrese el siguiente código en la pantalla de recuperación:</p>"
+            "Ferias Productivas Bolivia. Ingrese el siguiente código en la pantalla de recuperación:</p>"
             f"<p style=\"margin:28px 0;text-align:center;font-size:32px;font-weight:800;"
             f"letter-spacing:10px;color:#236132\">{code}</p>"
             "<p>El código vence en 10 minutos y solo puede utilizarse una vez. "
@@ -83,7 +83,7 @@ class BrevoEmailService:
         return self.send(
             email,
             safe_name,
-            "Credenciales temporales del Catálogo Digital",
+            "Credenciales temporales de Ferias Productivas Bolivia",
             "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:auto\">"
             f"<h2>Bienvenido/a, {safe_name}</h2>"
             "<p>Su solicitud fue aprobada. Use estas credenciales una sola vez:</p>"

@@ -54,7 +54,8 @@ def _get_available_unit(unit_id):
 def _update_fields(item, data, allow_email=True):
     allowed = {
         "nombre_comercial", "razon_social", "nit", "registro_seprec",
-        "registro_pro_bolivia", "nombre_representante", "departamento",
+        "registro_pro_bolivia", "nombres_representante",
+        "apellido_paterno_representante", "apellido_materno_representante", "departamento",
         "direccion_fisica", "telefono_whatsapp", "facebook_url",
         "instagram_url", "tiktok_url", "resena_comercial",
     }
@@ -67,6 +68,17 @@ def _update_fields(item, data, allow_email=True):
         item.correo_electronico = data["correo_electronico"].lower().strip()
         user = db.session.get(User, item.user_id)
         user.email = item.correo_electronico
+    representative_fields = {
+        "nombres_representante",
+        "apellido_paterno_representante",
+        "apellido_materno_representante",
+    }
+    if representative_fields & data.keys():
+        user = db.session.get(User, item.user_id)
+        user.first_name = item.nombres_representante
+        user.last_name = item.apellido_paterno_representante
+        user.apellido_paterno = item.apellido_paterno_representante
+        user.apellido_materno = item.apellido_materno_representante
 
 
 @productive_unit_bp.get("/admin/productive-units")
