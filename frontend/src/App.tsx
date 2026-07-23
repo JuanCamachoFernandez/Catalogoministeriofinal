@@ -11,7 +11,7 @@ const PublicCatalogPage=pick(()=>import("./PublicCatalogPages"),"PublicCatalogPa
 const AdminHomePage=pick(()=>import("./DashboardPage"),"AdminHomePage"),AuditPage=pick(()=>import("./AuditPage"),"AuditPage");
 const LoginPage=pick(()=>import("./AuthPages"),"LoginPage"),ForgotPasswordPage=pick(()=>import("./AuthPages"),"ForgotPasswordPage"),ResetPasswordPage=pick(()=>import("./AuthPages"),"ResetPasswordPage"),ChangePasswordPage=pick(()=>import("./AuthPages"),"ChangePasswordPage");
 
-function AdminRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["ADMIN","SUPERADMIN","ADMIN_VICEMINISTERIO"]}><ManagementLayout area="admin">{children}</ManagementLayout></ProtectedRoute>}
+function AdminRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["ADMIN","SUPERADMIN","ADMIN_VICEMINISTERIO"]}><ManagementLayout area="admin"><div className="admin-area">{children}</div></ManagementLayout></ProtectedRoute>}
 function UnitRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["PRODUCTIVE_UNIT_RESPONSIBLE","EXPOSITOR"]}><ManagementLayout area="productive-unit">{children}</ManagementLayout></ProtectedRoute>}
 function RouteMetadata(){const {pathname}=useLocation();useEffect(()=>{const title=pathname.startsWith("/admin")?"Administración":pathname.startsWith("/unidad-productiva")?"Unidad Productiva":pathname==="/solicitud-registro"?"Solicitud de registro":"Ferias activas";document.title=`${title} | Ferias Productivas Bolivia`;},[pathname]);return null}
 
