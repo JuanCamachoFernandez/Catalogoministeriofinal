@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, KeyRound, Link2, Mail, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, apiError, assetUrl, emptyPagination, type CanonicalFair, type CanonicalProduct, type FairParticipation, type Paged, type ProductiveSector, type ProductiveSectorLink, type ProductiveUnit, type RegistrationRequest } from "./api";
 import { BOLIVIA_DEPARTMENTS } from "./boliviaLocations";
-import { ConfirmButton, Empty, ErrorBox, FeedbackProvider, Field, Loading, Modal, PaginationBar, SearchField, StatusBadge, useFeedback } from "./ui";
+import { ConfirmButton, Empty, ErrorBox, FeedbackProvider, Field, Loading, Modal, PaginationBar, SearchField, StatusBadge, UploadProgress, useFeedback } from "./ui";
 import { PublicHeader } from "./Layouts";
 
 const pageData = <T,>(value?: Paged<T>) => value ?? { items: [], pagination: emptyPagination };
@@ -328,11 +328,56 @@ export function UnitSectorsPage(){
 type FairDraft={nombre:string;descripcion:string;ubicacion:string;departamento:string;municipio:string;fecha_inicio:string;fecha_fin:string};
 const emptyFair:FairDraft={nombre:"",descripcion:"",ubicacion:"",departamento:"",municipio:"",fecha_inicio:"",fecha_fin:""};
 export function FairsPage() {
-  const page=1;const [editing,setEditing]=useState<CanonicalFair|null>(null),[creating,setCreating]=useState(false),[draft,setDraft]=useState(emptyFair),[participants,setParticipants]=useState<CanonicalFair|null>(null);
+  const page=1;const [editing,setEditing]=useState<CanonicalFair|null>(null),[creating,setCreating]=useState(false),[draft,setDraft]=useState(emptyFair),[participants,setParticipants]=useState<CanonicalFair|null>(null),[saving,setSaving]=useState(false),[cover,setCover]=useState<File|null>(null),[coverPreview,setCoverPreview]=useState(""),[showCoverPreview,setShowCoverPreview]=useState(false),[uploadProgress,setUploadProgress]=useState(0);
   const qc=useQueryClient(),feedback=useFeedback();const list=useQuery({queryKey:["canonical-fairs",page],queryFn:()=>api.get<Paged<CanonicalFair>>("/admin/fairs",{params:{page}}).then(r=>r.data)}),data=pageData(list.data);
-  const open=(f?:CanonicalFair)=>{setEditing(f??null);setCreating(!f);setDraft(f?{nombre:f.nombre,descripcion:f.descripcion??"",ubicacion:f.ubicacion,departamento:f.departamento??"",municipio:f.municipio??"",fecha_inicio:f.fecha_inicio,fecha_fin:f.fecha_fin}:emptyFair)};
-  const save=async()=>{try{if(editing)await api.patch(`/admin/fairs/${editing.id}`,draft);else await api.post("/admin/fairs",draft);await qc.invalidateQueries({queryKey:["canonical-fairs"]});setEditing(null);setCreating(false);feedback.success("Feria guardada",draft.nombre)}catch(e){feedback.error("No se pudo guardar",message(e))}};
-  return <section><div className="page-heading"><div><span className="eyebrow">Programación</span><h1>Ferias</h1></div><button className="btn" onClick={()=>open()}>Nueva feria</button></div>{list.isLoading?<Loading/>:<div className="card-grid">{data.items.map(f=><article className="catalog-card" key={f.id}>{f.imagen_portada&&<img src={assetUrl(f.imagen_portada)} alt=""/>}<div className="card-body"><StatusBadge value={f.estado}/><h2>{f.nombre}</h2><p>{f.ubicacion}</p><small>{f.fecha_inicio} — {f.fecha_fin}</small><div className="card-actions"><button className="btn-small" disabled={['FINISHED','DISABLED'].includes(f.estado)} onClick={()=>open(f)}>Editar</button><button className="btn-small" onClick={()=>setParticipants(f)}>Participaciones</button>{!['FINISHED','DISABLED'].includes(f.estado)&&<><ConfirmButton question="¿Finalizar esta feria?" onConfirm={async()=>{await api.post(`/admin/fairs/${f.id}/finish`);await qc.invalidateQueries({queryKey:["canonical-fairs"]})}}>Finalizar</ConfirmButton><ConfirmButton question="¿Deshabilitar esta feria?" onConfirm={async()=>{await api.post(`/admin/fairs/${f.id}/disable`);await qc.invalidateQueries({queryKey:["canonical-fairs"]})}}>Deshabilitar</ConfirmButton></>}</div></div></article>)}</div>}{(editing||creating)&&<Modal title={editing?"Editar feria":"Nueva feria"} onClose={()=>{setEditing(null);setCreating(false)}}><div className="form-grid">{(Object.keys(emptyFair) as (keyof FairDraft)[]).map(key=><Field key={key} label={key.replaceAll('_',' ')}>{key==='descripcion'?<textarea className="input" value={draft[key]} onChange={e=>setDraft(d=>({...d,[key]:e.target.value}))}/>:<input className="input" required={!['descripcion'].includes(key)} type={key.startsWith('fecha')?'date':'text'} value={draft[key]} onChange={e=>setDraft(d=>({...d,[key]:e.target.value}))}/>}</Field>)}</div><button className="btn" onClick={()=>void save()}>Guardar</button></Modal>}{participants&&<ParticipationsModal fair={participants} onClose={()=>setParticipants(null)}/>}</section>;
+  useEffect(()=>()=>{if(coverPreview.startsWith("blob:"))URL.revokeObjectURL(coverPreview)},[coverPreview]);
+  const open=(f?:CanonicalFair)=>{setEditing(f??null);setCreating(!f);setDraft(f?{nombre:f.nombre,descripcion:f.descripcion??"",ubicacion:f.ubicacion,departamento:f.departamento??"",municipio:f.municipio??"",fecha_inicio:f.fecha_inicio,fecha_fin:f.fecha_fin}:emptyFair);setCover(null);setCoverPreview(assetUrl(f?.imagen_portada));setShowCoverPreview(false);setUploadProgress(0)};
+  const save=async()=>{
+    if(draft.fecha_fin<draft.fecha_inicio){feedback.notify({title:"Revise las fechas",message:"La fecha de finalización no puede ser anterior a la fecha de inicio.",tone:"warning"});return}
+    if(!editing&&!cover){feedback.error("Falta la portada","Seleccione una imagen de portada para crear la feria.");return}
+    const wasEditing=Boolean(editing);let createdNow=false;
+    setSaving(true);
+    try{
+      const response=editing?await api.patch<CanonicalFair>(`/admin/fairs/${editing.id}`,draft):await api.post<CanonicalFair>("/admin/fairs",draft);
+      if(!editing){createdNow=true;setEditing(response.data);setCreating(false)}
+      if(cover){const form=new FormData();form.append("file",cover);await api.post(`/admin/fairs/${response.data.id}/cover`,form,{onUploadProgress:event=>{if(event.total)setUploadProgress(Math.min(100,Math.round(event.loaded*100/event.total)))}})}
+      await qc.invalidateQueries({queryKey:["canonical-fairs"]});setEditing(null);setCreating(false);setCover(null);setCoverPreview("");feedback.success(wasEditing?"Feria actualizada":"Feria creada",cover?"Los datos y la imagen de portada se guardaron correctamente.":"Los cambios se guardaron conservando la portada actual.")
+    }catch(e){feedback.error(createdNow?"Feria creada, portada pendiente":"No se pudo guardar",createdNow?`La feria se creó, pero la portada no pudo subirse. Vuelva a guardar para reintentar. ${message(e)}`:message(e))}
+    finally{setSaving(false);setUploadProgress(0)}
+  };
+  const closeForm=()=>{if(saving)return;setEditing(null);setCreating(false);setCover(null);setCoverPreview("");setShowCoverPreview(false);setUploadProgress(0)};
+  return <section>
+    <div className="page-heading"><div><span className="eyebrow">Programación</span><h1>Ferias</h1></div><button className="btn" onClick={()=>open()}>Nueva feria</button></div>
+    {list.isLoading?<Loading/>:<div className="card-grid">{data.items.map(f=><article className="catalog-card" key={f.id}>{f.imagen_portada&&<img src={assetUrl(f.imagen_portada)} alt=""/>}<div className="card-body"><StatusBadge value={f.estado}/><h2>{f.nombre}</h2><p>{f.ubicacion}</p><small>{f.fecha_inicio} — {f.fecha_fin}</small><div className="card-actions"><button className="btn-small" disabled={['FINISHED','DISABLED'].includes(f.estado)} onClick={()=>open(f)}>Editar</button><button className="btn-small" onClick={()=>setParticipants(f)}>Participaciones</button>{!['FINISHED','DISABLED'].includes(f.estado)&&<><ConfirmButton question="¿Finalizar esta feria?" onConfirm={async()=>{await api.post(`/admin/fairs/${f.id}/finish`);await qc.invalidateQueries({queryKey:["canonical-fairs"]})}}>Finalizar</ConfirmButton><ConfirmButton question="¿Deshabilitar esta feria?" onConfirm={async()=>{await api.post(`/admin/fairs/${f.id}/disable`);await qc.invalidateQueries({queryKey:["canonical-fairs"]})}}>Deshabilitar</ConfirmButton></>}</div></div></article>)}</div>}
+    {(editing||creating)&&<Modal title={editing?"Editar feria":"Crear nueva feria"} onClose={closeForm} wide className="fair-form-modal">
+      <form className="fair-form" onSubmit={event=>{event.preventDefault();void save()}}>
+        <div className="fair-form-intro"><span>Información de la feria</span><p>Complete los datos que se mostrarán en el catálogo público.</p></div>
+        <div className="fair-form-grid">
+          <div className="fair-field-name"><Field label="Nombre de la feria"><input className="input" required placeholder="Ej.: Feria Productiva Nacional" value={draft.nombre} onChange={e=>setDraft(d=>({...d,nombre:e.target.value}))}/></Field></div>
+          <div className="fair-field-description"><Field label="Descripción"><textarea className="input" rows={4} placeholder="Cuente brevemente qué encontrarán los visitantes" value={draft.descripcion} onChange={e=>setDraft(d=>({...d,descripcion:e.target.value}))}/></Field></div>
+          <div className="fair-field-cover">
+            <span className="fair-cover-label">Imagen de portada</span>
+            <div className="fair-cover-control">
+              {coverPreview?<button type="button" className="fair-cover-thumb has-image" onClick={()=>setShowCoverPreview(true)} aria-label="Ampliar imagen de portada" title="Haga clic para ampliar"><img src={coverPreview} alt="Vista previa completa de la portada"/><small>Ampliar</small></button>:<div className="fair-cover-thumb"><span>Sin imagen</span></div>}
+              <div className="fair-cover-copy">
+                <strong>{cover?cover.name:editing&&coverPreview?"Portada actual":"Seleccione una imagen"}</strong>
+                <p>Se admite una sola imagen JPG, PNG o WebP, de hasta 10 MB.</p>
+                <label className="btn-outline fair-cover-picker">{coverPreview?"Cambiar imagen":"Elegir imagen"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{const file=event.target.files?.[0]??null;if(!file)return;if(!["image/png","image/jpeg","image/webp"].includes(file.type)){event.target.value="";feedback.error("Archivo no válido","Seleccione una imagen JPG, PNG o WebP.");return}if(file.size>10*1024*1024){event.target.value="";feedback.error("Imagen demasiado grande","La portada no puede superar los 10 MB.");return}setCover(file);setCoverPreview(URL.createObjectURL(file))}}/></label>
+              </div>
+            </div>
+            <UploadProgress value={uploadProgress}/>
+          </div>
+          <Field label="Lugar o dirección"><input className="input" required placeholder="Ej.: Campo Ferial, pabellón central" value={draft.ubicacion} onChange={e=>setDraft(d=>({...d,ubicacion:e.target.value}))}/></Field>
+          <Field label="Departamento"><select className="input" required value={draft.departamento} onChange={e=>setDraft(d=>({...d,departamento:e.target.value}))}><option value="">Seleccione un departamento</option>{BOLIVIA_DEPARTMENTS.map(item=><option key={item} value={item}>{item}</option>)}</select></Field>
+          <Field label="Municipio"><input className="input" required placeholder="Ej.: La Paz" value={draft.municipio} onChange={e=>setDraft(d=>({...d,municipio:e.target.value}))}/></Field>
+          <div className="fair-form-dates"><span className="fair-form-section-title">Duración de la feria</span><div><Field label="Fecha de inicio"><input className="input" required type="date" value={draft.fecha_inicio} onChange={e=>setDraft(d=>({...d,fecha_inicio:e.target.value}))}/></Field><Field label="Fecha de finalización"><input className="input" required type="date" min={draft.fecha_inicio||undefined} value={draft.fecha_fin} onChange={e=>setDraft(d=>({...d,fecha_fin:e.target.value}))}/></Field></div></div>
+        </div>
+        <div className="fair-form-actions"><button type="button" className="btn-outline" disabled={saving} onClick={closeForm}>Cancelar</button><button type="submit" className="btn" disabled={saving}>{saving?uploadProgress>0?`Subiendo imagen ${uploadProgress}%`:"Guardando…":editing?"Guardar cambios":"Crear feria"}</button></div>
+      </form>
+    </Modal>}
+    {showCoverPreview&&coverPreview&&<Modal title="Vista previa de la portada" onClose={()=>setShowCoverPreview(false)} wide className="image-preview-dialog fair-cover-preview-dialog"><img src={coverPreview} alt="Imagen de portada completa"/><div className="modal-actions"><button type="button" className="btn" onClick={()=>setShowCoverPreview(false)}>OK</button></div></Modal>}
+    {participants&&<ParticipationsModal fair={participants} onClose={()=>setParticipants(null)}/>}
+  </section>;
 }
 
 function ParticipationsModal({fair,onClose}:{fair:CanonicalFair;onClose:()=>void}) {

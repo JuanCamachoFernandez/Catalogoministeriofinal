@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Empty,
@@ -78,6 +79,18 @@ describe("componentes comunes", () => {
     last.focus();
     fireEvent.keyDown(document, { key: "Tab" });
     expect(document.activeElement).toBe(first);
+  });
+
+  it("conserva el foco al escribir aunque cambie la función de cierre", async () => {
+    function FormInModal() {
+      const [value, setValue] = useState("");
+      return <Modal title="Nueva feria" onClose={() => setValue("")}><input aria-label="Nombre de la feria" value={value} onChange={(event) => setValue(event.target.value)} /></Modal>;
+    }
+    render(<FormInModal />);
+    const input = screen.getByRole("textbox", { name: "Nombre de la feria" });
+    await userEvent.type(input, "Feria nacional");
+    expect((input as HTMLInputElement).value).toBe("Feria nacional");
+    expect(document.activeElement).toBe(input);
   });
 
   it("navega a la siguiente página", async () => {

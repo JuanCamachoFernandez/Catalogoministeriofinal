@@ -340,14 +340,20 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  className = "",
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   const dialog = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const dialogElement = dialog.current;
@@ -357,7 +363,7 @@ export function Modal({
     const handleKeyboard = (event: KeyboardEvent) => {
       if (openModalStack.at(-1) !== dialogElement) return;
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !dialogElement) return;
@@ -383,7 +389,7 @@ export function Modal({
       if (!openModalStack.length) document.body.classList.remove("modal-open");
       previous?.focus();
     };
-  }, [onClose]);
+  }, []);
   return createPortal(
     <div
       className="modal-backdrop"
@@ -393,7 +399,7 @@ export function Modal({
       <section
         ref={dialog}
         tabIndex={-1}
-        className={`modal ${wide ? "modal-wide" : ""}`}
+        className={`modal ${wide ? "modal-wide" : ""} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
