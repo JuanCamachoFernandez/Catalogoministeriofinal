@@ -598,6 +598,7 @@ textarea.input {
   color: var(--color-text-secondary);
 }
 .back-link {
+  display: inline-flex;
   color: var(--color-primary);
   font-weight: 700;
   text-decoration: none;
