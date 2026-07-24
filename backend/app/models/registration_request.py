@@ -91,3 +91,27 @@ class RegistrationRequestSector(db.Model):
             name="sector_solicitud_registro_unico",
         ),
     )
+
+
+class RegistrationRequestProduct(TimestampMixin, db.Model):
+    __tablename__ = "productos_solicitud_registro"
+
+    id = db.Column(db.Uuid, primary_key=True, default=uid)
+    registration_request_id = db.Column(
+        db.Uuid,
+        db.ForeignKey("solicitudes_registro.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    nombre_comercial = db.Column(db.String(200), nullable=False)
+    descripcion_tecnica = db.Column(db.Text, nullable=False)
+    precio_referencia = db.Column(db.Numeric(10, 2), nullable=False)
+    imagen_url = db.Column(db.String(500), nullable=False)
+    orden = db.Column(db.Integer, nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "registration_request_id",
+            "orden",
+            name="producto_solicitud_registro_orden_unico",
+        ),
+    )

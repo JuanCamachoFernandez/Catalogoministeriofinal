@@ -36,7 +36,27 @@ def _png():
     return stream
 
 
-def _registration_payload(sector_id):
+def _upload_request_logo(client):
+    response = client.post(
+        "/api/registration-requests/logo",
+        data={"file": (_png(), "logo.png")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 201
+    return response.json["logo_url"]
+
+
+def _upload_request_image(client, filename):
+    response = client.post(
+        "/api/registration-requests/products/image",
+        data={"file": (_png(), filename)},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 201
+    return response.json["imagen_url"]
+
+
+def _registration_payload(client, sector_id):
     return {
         "nombre_comercial": "Manos Andinas",
         "razon_social": "Manos Andinas SRL",
@@ -53,6 +73,34 @@ def _registration_payload(sector_id):
     }
 
 
+def _registration_payload(client, sector_id):
+    payload = {
+        "nombre_comercial": "Manos Andinas",
+        "razon_social": "Manos Andinas SRL",
+        "nit": "123456789",
+        "nombres_representante": "Ana María",
+        "apellido_paterno_representante": "Quispe",
+        "apellido_materno_representante": "Mamani",
+        "departamento": "La Paz",
+        "direccion_fisica": "Calle 1",
+        "telefono_whatsapp": "76543210",
+        "correo_electronico": "ana@manos.bo",
+        "resena_comercial": "Artesanía boliviana",
+        "logo_url": _upload_request_logo(client),
+        "sectores": [{"productive_sector_id": str(sector_id)}],
+    }
+    payload["productos"] = [
+        {
+            "nombre_comercial": f"Producto de prueba {index + 1}",
+            "descripcion_tecnica": "Descripción de prueba",
+            "precio_referencia": "10.00",
+            "imagen_url": _upload_request_image(client, f"producto-{index + 1}.png"),
+        }
+        for index in range(3)
+    ]
+    return payload
+
+
 def test_solicitud_valida_formato_numerico_del_nit(app, client):
     with app.app_context():
         sector = ProductiveSector(nombre="Manufactura", es_otro=False)
@@ -61,24 +109,24 @@ def test_solicitud_valida_formato_numerico_del_nit(app, client):
         sector_id = sector.id
 
     for invalid_nit in ("1234", "1234567890123", "123-456789", "ABC123456"):
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload["nit"] = invalid_nit
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
     for invalid_seprec in ("1234", "1234567890123", "123-456789", "SEPREC123"):
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload["registro_seprec"] = invalid_seprec
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
     for invalid_pro_bolivia in ("1234", "1234567890123", "123-456789", "PROBOL123"):
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload["registro_pro_bolivia"] = invalid_pro_bolivia
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-    valid_payload = _registration_payload(sector_id)
+    valid_payload = _registration_payload(client, sector_id)
     valid_payload["nit"] = "12345"
     valid_payload["registro_seprec"] = "12345"
     valid_payload["registro_pro_bolivia"] = "12345"
@@ -99,17 +147,17 @@ def test_solicitud_requiere_nombres_y_ambos_apellidos_del_representante(app, cli
         "apellido_materno_representante",
     )
     for field in representative_fields:
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload.pop(field)
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload[field] = ""
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload[field] = "   "
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
@@ -129,7 +177,7 @@ def test_solicitud_valida_nombres_telefono_boliviano_y_correo(app, client):
     )
     for field in representative_fields:
         for invalid_name in ("Ana2", "Quispe!", "123456"):
-            payload = _registration_payload(sector_id)
+            payload = _registration_payload(client, sector_id)
             payload[field] = invalid_name
             response = client.post("/api/registration-requests", json=payload)
             assert response.status_code == 400
@@ -141,18 +189,18 @@ def test_solicitud_valida_nombres_telefono_boliviano_y_correo(app, client):
         "71-234567",
         "+59171234567",
     ):
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload["telefono_whatsapp"] = invalid_phone
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
     for invalid_email in ("ana", "ana@", "@manos.bo", "ana@manos", "ana manos@manos.bo"):
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload["correo_electronico"] = invalid_email
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-    valid_payload = _registration_payload(sector_id)
+    valid_payload = _registration_payload(client, sector_id)
     valid_payload["nombres_representante"] = "Ana María"
     valid_payload["apellido_paterno_representante"] = "D'Angelo"
     valid_payload["apellido_materno_representante"] = "Pérez-López"
@@ -176,12 +224,12 @@ def test_solicitud_valida_urls_de_redes_sociales(app, client):
         ("tiktok_url", "https://example.com/@mi.unidad"),
     )
     for field, invalid_url in invalid_social_urls:
-        payload = _registration_payload(sector_id)
+        payload = _registration_payload(client, sector_id)
         payload[field] = invalid_url
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-    valid_payload = _registration_payload(sector_id)
+    valid_payload = _registration_payload(client, sector_id)
     valid_payload.update(
         {
             "facebook_url": "https://facebook.com/mi.unidad",
@@ -256,12 +304,12 @@ def test_solicitud_aprobacion_y_credenciales_temporales(app, client, monkeypatch
         sector_id = sector.id
 
     response = client.post(
-        "/api/registration-requests", json=_registration_payload(sector_id)
+        "/api/registration-requests", json=_registration_payload(client, sector_id)
     )
     assert response.status_code == 201
     request_id = response.json["id"]
     duplicate = client.post(
-        "/api/registration-requests", json=_registration_payload(sector_id)
+        "/api/registration-requests", json=_registration_payload(client, sector_id)
     )
     assert duplicate.status_code == 409
 
@@ -351,7 +399,7 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
         db.session.add(sector)
         db.session.commit()
         sector_id = sector.id
-    requested = client.post("/api/registration-requests", json=_registration_payload(sector_id))
+    requested = client.post("/api/registration-requests", json=_registration_payload(client, sector_id))
     request_id = requested.json["id"]
     client.post(f"/api/admin/registration-requests/{request_id}/approve", headers=admin_headers, json={})
     temporary_login = client.post("/api/auth/login", json={"login": "ana@manos.bo", "password": "TemporalUnidad2026!"})
@@ -363,31 +411,19 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
     assert changed.status_code == 200
     login = client.post("/api/auth/login", json={"login": "ana@manos.bo", "password": "DefinitivaUnidad2026!"})
     unit_headers = {"Authorization": f"Bearer {login.json['access_token']}"}
-    product_ids = []
-    for number in range(3):
-        created = client.post(
-            "/api/productive-unit/products",
-            headers=unit_headers,
-            json={
-                "nombre_comercial": f"Producto {number}",
-                "descripcion_tecnica": "Descripción",
-                "materia_prima": "Lana",
-                "presentacion_empaque": "Unidad",
-                "precio_referencia": "25.00",
-                "capacidad_produccion_stock": "100 unidades",
-            },
-        )
-        assert created.status_code == 201
-        product_id = created.json["id"]
-        product_ids.append(product_id)
-        for image_number in range(3):
+    own_products = client.get("/api/productive-unit/products", headers=unit_headers)
+    assert own_products.status_code == 200
+    product_ids = [item["id"] for item in own_products.json["items"]]
+    assert len(product_ids) == 3
+    for number, product_id in enumerate(product_ids):
+        for image_number in range(2):
             uploaded = client.post(
                 f"/api/productive-unit/products/{product_id}/images",
                 headers=unit_headers,
                 data={
                     "file": (_png(), f"producto-{number}-{image_number}.png"),
                     "alt_text": f"Vista {image_number}",
-                    "is_cover": "true" if image_number == 0 else "false",
+                    "is_cover": "false",
                 },
                 content_type="multipart/form-data",
             )
@@ -447,7 +483,12 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
     assert whatsapp.json["url"].startswith("https://wa.me/591")
     whatsapp_message = unquote(whatsapp.json["url"].split("?text=", 1)[1])
     assert "Feria vigente" in whatsapp_message
-    assert "Producto 0 — Cantidad: 2" in whatsapp_message
+    selected_product_name = next(
+        item["nombre_comercial"]
+        for item in public_unit.json["productos"]
+        if item["id"] == product_ids[0]
+    )
+    assert f"{selected_product_name} — Cantidad: 2" in whatsapp_message
 
     base_product = {
         "descripcion_tecnica": "Descripción",
