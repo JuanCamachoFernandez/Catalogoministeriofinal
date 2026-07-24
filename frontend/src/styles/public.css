@@ -37,7 +37,7 @@
   flex-direction: column;
 }
 .fair-public-card h2 {
-  margin: 0.1rem 0 0.8rem;
+  margin: 0.05rem 0 0.15rem;
   font-size: 1.35rem;
 }
 .fair-public-card .line-clamp {
@@ -168,7 +168,12 @@
   height: 235px;
 }
 .fair-public-card .card-body {
-  gap: 0.65rem;
+  gap: 0.45rem;
+  padding: 1rem;
+}
+.fair-public-card .fair-card-meta {
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
 }
 .fair-public-card .btn {
   width: 100%;

@@ -771,6 +771,17 @@
   outline-offset: 3px;
 }
 
+.product-image-stage {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+.product-image-stage > .field:first-child {
+  grid-column: 1 / -1;
+}
+.product-image-preview,
 .image-admin-preview {
   position: relative;
   overflow: hidden;
