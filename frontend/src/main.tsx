@@ -10,6 +10,9 @@ import "./index.css";
 import "./styles/public.css";
 import "./styles/auth.css";
 import "./styles/admin.css";
+import "./styles/registration.css";
+import "./styles/profile.css";
+import "./styles/reports.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, gcTime: 30 * 60_000, refetchOnWindowFocus: false, retry: 1 } } });
 createRoot(document.getElementById("root")!).render(<React.StrictMode><ErrorBoundary><QueryClientProvider client={queryClient}><BrowserRouter><AuthProvider><App/></AuthProvider></BrowserRouter></QueryClientProvider></ErrorBoundary></React.StrictMode>);
