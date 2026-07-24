@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request
 from sqlalchemy import func, select
@@ -146,17 +146,49 @@ def delete_admin_unit(unit_id):
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO)
 def admin_dashboard():
     from .fair_controller import sync_fair_lifecycle
+    from ..models.fair import bolivia_today
 
     sync_fair_lifecycle()
+    today = bolivia_today()
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     count = lambda model, *conditions: db.session.scalar(
         select(func.count()).select_from(model).where(*conditions)
     ) or 0
-    audits = db.session.scalars(select(Audit).order_by(Audit.created_at.desc()).limit(8)).all()
+    hidden_dashboard_actions = {
+        "INICIAR_SESION",
+        "CERRAR_SESION",
+        "REAUTENTICAR",
+        "RENOVAR_SESION",
+        "SESION_CADUCADA",
+        "INTENTO_FALLIDO",
+    }
+    audits = db.session.scalars(
+        select(Audit)
+        .where(Audit.accion.notin_(hidden_dashboard_actions))
+        .order_by(Audit.created_at.desc())
+        .limit(8)
+    ).all()
     audit_users = {
         item.user_id: db.session.get(User, item.user_id)
         for item in audits
         if item.user_id
     }
+    next_fair = db.session.scalar(
+        select(Fair)
+        .where(
+            Fair.deleted_at.is_(None),
+            Fair.fecha_fin >= today,
+            Fair.estado.notin_([FeriaStatus.DISABLED, FeriaStatus.FINISHED]),
+        )
+        .order_by(Fair.fecha_inicio.asc())
+        .limit(1)
+    )
+    units_by_department = db.session.execute(
+        select(ProductiveUnit.departamento, func.count(ProductiveUnit.id))
+        .where(ProductiveUnit.deleted_at.is_(None))
+        .group_by(ProductiveUnit.departamento)
+        .order_by(func.count(ProductiveUnit.id).desc(), ProductiveUnit.departamento.asc())
+    ).all()
     return {
         "stats": {
             "ferias": count(Fair, Fair.deleted_at.is_(None)),
@@ -195,11 +227,37 @@ def admin_dashboard():
                 RegistrationRequest,
                 RegistrationRequest.estado == RegistrationStatus.PENDING,
             ),
+            "solicitudes_ultimos_30_dias": count(
+                RegistrationRequest,
+                RegistrationRequest.created_at >= thirty_days_ago,
+            ),
             "participaciones_pendientes": count(
                 FairParticipation,
                 FairParticipation.estado == AssignmentStatus.PENDING,
             ),
         },
+        "proxima_feria": (
+            {
+                "id": str(next_fair.id),
+                "nombre": next_fair.nombre,
+                "ubicacion": next_fair.ubicacion or next_fair.lugar,
+                "fecha_inicio": next_fair.fecha_inicio.isoformat(),
+                "fecha_fin": next_fair.fecha_fin.isoformat(),
+                "estado": next_fair.estado.value,
+                "en_curso": next_fair.fecha_inicio <= today <= next_fair.fecha_fin,
+                "dias_restantes": (
+                    (next_fair.fecha_fin - today).days
+                    if next_fair.fecha_inicio <= today <= next_fair.fecha_fin
+                    else (next_fair.fecha_inicio - today).days
+                ),
+            }
+            if next_fair
+            else None
+        ),
+        "unidades_por_departamento": [
+            {"departamento": department, "cantidad": amount}
+            for department, amount in units_by_department
+        ],
         "recent_audits": [
             {
                 "id": str(item.id),

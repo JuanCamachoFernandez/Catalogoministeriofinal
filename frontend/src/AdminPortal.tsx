@@ -34,6 +34,7 @@ import {
   type UserRole,
 } from "./api";
 import { useAuth } from "./AuthContext";
+import { auditActionLabel, auditDescriptionLabel, auditEntityLabel } from "./auditLabels";
 import { ProductManager } from "./ProductManager";
 import {
   gmailAddress,
@@ -226,9 +227,9 @@ export function AdminDashboard() {
                 <span className="activity-dot" />
                 <div>
                   <strong>
-                    {item.accion} · {item.entidad}
+                    {auditActionLabel(item.accion)} · {auditEntityLabel(item.entidad)}
                   </strong>
-                  <p>{item.descripcion || "Sin descripción"}</p>
+                  <p>{auditDescriptionLabel(item.descripcion)}</p>
                   <time>
                     {new Date(item.created_at).toLocaleString("es-BO")}
                   </time>
@@ -2158,7 +2159,7 @@ export function AuditPage() {
         >
           <option value="">Todas las acciones</option>
           {(reportOptions.data?.actions ?? actions).map((value) => (
-            <option key={value}>{value}</option>
+            <option key={value} value={value}>{auditActionLabel(value)}</option>
           ))}
         </select>
         <select
@@ -2198,10 +2199,10 @@ export function AuditPage() {
                     <td>{new Date(item.created_at).toLocaleString("es-BO")}</td>
                     <td>{item.usuario}</td>
                     <td>
-                      <strong>{item.accion}</strong>
+                      <strong>{auditActionLabel(item.accion)}</strong>
                     </td>
-                    <td>{item.entidad}</td>
-                    <td>{item.descripcion || "—"}</td>
+                    <td>{auditEntityLabel(item.entidad)}</td>
+                    <td>{auditDescriptionLabel(item.descripcion)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -43,6 +43,13 @@ class RequestedSectorSchema(Schema):
     detalle_otro = fields.String(allow_none=True, validate=validate.Length(max=255))
 
 
+class RequestedProductSchema(Schema):
+    nombre_comercial = fields.String(required=True, validate=validate.Length(min=1, max=200))
+    descripcion_tecnica = fields.String(required=True, validate=validate.Length(min=1, max=5000))
+    precio_referencia = fields.Decimal(required=True, places=2, as_string=True, validate=validate.Range(min=0))
+    imagen_url = fields.String(required=True, validate=validate.Length(min=1, max=500))
+
+
 class RegistrationRequestSchema(Schema):
     nombre_comercial = fields.String(required=True, validate=validate.Length(min=1, max=200))
     razon_social = fields.String(required=True, validate=validate.Length(min=1, max=200))
@@ -84,8 +91,13 @@ class RegistrationRequestSchema(Schema):
     instagram_url = fields.Url(allow_none=True, schemes={"https"}, validate=instagram_url_validator)
     tiktok_url = fields.Url(allow_none=True, schemes={"https"}, validate=tiktok_url_validator)
     resena_comercial = fields.String(required=True, validate=validate.Length(min=1, max=5000))
-    logo_url = fields.String(allow_none=True, validate=validate.Length(max=500))
+    logo_url = fields.String(required=True, validate=validate.Length(min=1, max=500))
     sectores = fields.List(fields.Nested(RequestedSectorSchema), required=True, validate=validate.Length(min=1))
+    productos = fields.List(
+        fields.Nested(RequestedProductSchema),
+        required=True,
+        validate=validate.Length(equal=3),
+    )
 
 
 class RejectRegistrationRequestSchema(Schema):

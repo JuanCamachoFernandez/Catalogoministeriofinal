@@ -135,6 +135,16 @@ export interface RegistrationRequest {
   observaciones?: string | null;
   notification_status?: NotificationStatus | null;
   sectores: ProductiveSectorLink[];
+  productos: RegistrationRequestedProduct[];
+}
+
+export interface RegistrationRequestedProduct {
+  id: string;
+  nombre_comercial: string;
+  descripcion_tecnica: string;
+  precio_referencia: number;
+  imagen_url: string;
+  orden: number;
 }
 
 export interface ProductiveUnit {

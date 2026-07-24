@@ -21,7 +21,14 @@ type RegistrationDraft = {
   departamento: string; direccion_fisica: string; telefono_whatsapp: string; correo_electronico: string;
   facebook_url: string; instagram_url: string; tiktok_url: string; resena_comercial: string;
 };
+type RequestedProductDraft = {
+  nombre_comercial: string;
+  descripcion_tecnica: string;
+  precio_referencia: string;
+  imagen: File | null;
+};
 const emptyRegistration: RegistrationDraft = { nombre_comercial: "", razon_social: "", nit: "", registro_seprec: "", registro_pro_bolivia: "", nombres_representante: "", apellido_paterno_representante: "", apellido_materno_representante: "", departamento: "", direccion_fisica: "", telefono_whatsapp: "", correo_electronico: "", facebook_url: "", instagram_url: "", tiktok_url: "", resena_comercial: "" };
+const emptyRequestedProduct = (): RequestedProductDraft => ({ nombre_comercial: "", descripcion_tecnica: "", precio_referencia: "", imagen: null });
 const REPRESENTATIVE_NAME_PATTERN = "[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:[ '’\\-][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*";
 const EMAIL_PATTERN = String.raw`[^@\s]+@[^@\s]+\.[^@\s]+`;
 const sanitizeRepresentativeName = (value: string) => value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ '’-]/g, "");
@@ -94,6 +101,11 @@ function RegistrationPageContent() {
   const [sectorIds, setSectorIds] = useState<string[]>([]);
   const [otherDetail, setOtherDetail] = useState("");
   const [logo, setLogo] = useState<File | null>(null);
+  const [products, setProducts] = useState<RequestedProductDraft[]>([
+    emptyRequestedProduct(),
+    emptyRequestedProduct(),
+    emptyRequestedProduct(),
+  ]);
   const [created, setCreated] = useState<RegistrationRequest | null>(null);
   const sectors = useQuery({ queryKey: ["productive-sectors", "active"], queryFn: () => api.get<Paged<ProductiveSector>>("/productive-sectors", { params: { per_page: 100 } }).then(r => r.data.items) });
   const focusInvalidControl = (control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, popupMessage: string) => {
@@ -119,14 +131,29 @@ function RegistrationPageContent() {
     const errorMessage = (response?.data?.error ?? "").toLowerCase();
     if (errorMessage.includes("correo")) return "correo_electronico";
     if (errorMessage.includes("nit")) return "nit";
-    if (errorMessage.includes("imagen") || errorMessage.includes("archivo") || errorMessage.includes("logotipo")) return "logo";
+    if (errorMessage.includes("logotipo")) return "logo";
+    if (errorMessage.includes("producto")) return "productos.0.nombre_comercial";
+    if (errorMessage.includes("imagen") || errorMessage.includes("archivo")) return "productos.0.imagen";
     return "";
   };
   const mutation = useMutation({ mutationFn: async () => {
-    let logo_url: string | null = null;
-    if (logo) { const form = new FormData(); form.append("file", logo); logo_url = (await api.post<{url:string}>("/registration-requests/logo", form)).data.url; }
+    if (!logo) throw new Error("Debe subir el logotipo");
+    const form = new FormData(); form.append("file", logo);
+    const logo_url = (await api.post<{url:string}>("/registration-requests/logo", form)).data.url;
+    const uploadedProducts = await Promise.all(products.map(async product => {
+      if (!product.imagen) throw new Error("Cada producto debe incluir una imagen");
+      const productForm = new FormData();
+      productForm.append("file", product.imagen);
+      const imagen_url = (await api.post<{url:string}>("/registration-requests/products/image", productForm)).data.url;
+      return {
+        nombre_comercial: product.nombre_comercial,
+        descripcion_tecnica: product.descripcion_tecnica,
+        precio_referencia: product.precio_referencia,
+        imagen_url,
+      };
+    }));
     const selected = sectorIds.map(id => { const sector = sectors.data?.find(item => item.id === id); return { productive_sector_id: id, detalle_otro: sector?.es_otro ? clean(otherDetail) : null }; });
-    return (await api.post<RegistrationRequest>("/registration-requests", { ...draft, nit: clean(draft.nit), registro_seprec: clean(draft.registro_seprec), registro_pro_bolivia: clean(draft.registro_pro_bolivia), facebook_url: clean(draft.facebook_url), instagram_url: clean(draft.instagram_url), tiktok_url: clean(draft.tiktok_url), logo_url, sectores: selected })).data;
+    return (await api.post<RegistrationRequest>("/registration-requests", { ...draft, nit: clean(draft.nit), registro_seprec: clean(draft.registro_seprec), registro_pro_bolivia: clean(draft.registro_pro_bolivia), facebook_url: clean(draft.facebook_url), instagram_url: clean(draft.instagram_url), tiktok_url: clean(draft.tiktok_url), logo_url, sectores: selected, productos: uploadedProducts })).data;
   }, onSuccess: setCreated, onError: error => {
     const fieldName = fieldFromServerError(error);
     const control = fieldName ? formRef.current?.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`[name="${fieldName}"]`) : null;
@@ -154,6 +181,7 @@ function RegistrationPageContent() {
     <Link className="registration-back-link" to="/catalogo">Volver a las ferias</Link>
   </section></main></>;
   const change = (key: keyof RegistrationDraft, value: string) => setDraft(current => ({ ...current, [key]: value }));
+  const changeProduct = (index: number, key: keyof RequestedProductDraft, value: string | File | null) => setProducts(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
   const otherSelected = sectors.data?.some(item => item.es_otro && sectorIds.includes(item.id));
   const submitRegistration = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -173,6 +201,12 @@ function RegistrationPageContent() {
     if (sectorIds.length === 0) {
       const firstSector = event.currentTarget.querySelector<HTMLInputElement>('input[name="sectores"]');
       if (firstSector) focusInvalidControl(firstSector, "Seleccione al menos un Sector Productivo. Al cerrar este mensaje podrá elegirlo.");
+      return;
+    }
+    const incompleteProductIndex = products.findIndex(product => !product.nombre_comercial.trim() || !product.descripcion_tecnica.trim() || !product.precio_referencia.trim() || !product.imagen);
+    if (incompleteProductIndex >= 0) {
+      const firstProductField = event.currentTarget.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="productos.${incompleteProductIndex}.nombre_comercial"]`);
+      if (firstProductField) focusInvalidControl(firstProductField, "Complete obligatoriamente los tres productos requeridos.");
       return;
     }
     mutation.mutate();
@@ -202,13 +236,14 @@ function RegistrationPageContent() {
         <SocialUrlField name="facebook_url" label="Facebook" value={draft.facebook_url} example="https://facebook.com/mi.unidad" pattern={SOCIAL_URL_PATTERNS.facebook} error="Ingrese una URL válida de Facebook que comience con https://, por ejemplo: https://facebook.com/mi.unidad" onChange={value=>change("facebook_url",value)}/>
         <SocialUrlField name="instagram_url" label="Instagram" value={draft.instagram_url} example="https://instagram.com/mi.unidad" pattern={SOCIAL_URL_PATTERNS.instagram} error="Ingrese una URL válida de Instagram que comience con https://, por ejemplo: https://instagram.com/mi.unidad" onChange={value=>change("instagram_url",value)}/>
         <SocialUrlField name="tiktok_url" label="TikTok" value={draft.tiktok_url} example="https://tiktok.com/@mi.unidad" pattern={SOCIAL_URL_PATTERNS.tiktok} error="Ingrese una URL válida de TikTok que comience con https://, por ejemplo: https://tiktok.com/@mi.unidad" onChange={value=>change("tiktok_url",value)}/>
-        <Field label="Logotipo" optional hint="Formatos permitidos: PNG, JPG, JPEG y WebP."><input className="input registration-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setLogo(e.target.files?.[0]??null)}/></Field>
+        <Field label="Logotipo" required hint="Formatos permitidos: PNG, JPG, JPEG y WebP."><input className="input registration-file" name="logo" type="file" required accept="image/png,image/jpeg,image/webp" onChange={e=>setLogo(e.target.files?.[0]??null)}/></Field>
       </div></section>
       <section className="registration-section"><div className="registration-section-heading"><span>04</span><div><h2>Actividad productiva</h2><p>Seleccione al menos un sector y describa brevemente su oferta.</p></div></div>
         <Field label="Sectores Productivos" required>{sectors.isLoading?<Loading label="Cargando sectores…"/>:sectors.error?<ErrorBox message={message(sectors.error)}/>:<div className="registration-sectors">{sectors.data?.map(item=><label key={item.id}><input name="sectores" type="checkbox" checked={sectorIds.includes(item.id)} onChange={()=>setSectorIds(ids=>ids.includes(item.id)?ids.filter(id=>id!==item.id):[...ids,item.id])}/><span>{item.nombre}</span></label>)}</div>}</Field>
         {otherSelected&&<Field label="Detalle de Otros" required><input className="input" name="detalle_otro" required placeholder="Describa su actividad productiva" value={otherDetail} onChange={e=>setOtherDetail(e.target.value)}/></Field>}
         <div className="registration-review-field"><Field label="Reseña comercial" required><textarea className="input" name="resena_comercial" required rows={5} placeholder="Cuéntenos qué produce, cómo trabaja y qué distingue a su unidad" value={draft.resena_comercial} onChange={e=>change("resena_comercial",e.target.value)}/></Field></div>
       </section>
+      <section className="registration-section"><div className="registration-section-heading"><span>05</span><div><h2>Productos iniciales</h2><p>Registre obligatoriamente tres productos para revisión. Cada uno debe incluir nombre, imagen, reseña y precio.</p></div></div><div className="registration-products">{products.map((product,index)=><article key={index} className="registration-product-card"><h3>Producto {index+1}</h3><div className="registration-product-grid"><Field label="Nombre del producto" required><input className="input" name={`productos.${index}.nombre_comercial`} required value={product.nombre_comercial} onChange={e=>changeProduct(index,"nombre_comercial",e.target.value)}/></Field><Field label="Precio" required><input className="input" name={`productos.${index}.precio_referencia`} required type="number" min="0" step="0.01" value={product.precio_referencia} onChange={e=>changeProduct(index,"precio_referencia",e.target.value)}/></Field><div className="registration-product-full"><Field label="Reseña o descripción" required><textarea className="input" name={`productos.${index}.descripcion_tecnica`} required rows={4} value={product.descripcion_tecnica} onChange={e=>changeProduct(index,"descripcion_tecnica",e.target.value)}/></Field></div><div className="registration-product-full"><Field label="Imagen" required><input className="input registration-file" name={`productos.${index}.imagen`} required type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>changeProduct(index,"imagen",e.target.files?.[0]??null)}/></Field></div></div></article>)}</div></section>
       <footer className="registration-actions"><span>{sectorIds.length===0?"Seleccione al menos un sector productivo.":"Revise sus datos antes de enviar la solicitud."}</span><button className="registration-submit" disabled={mutation.isPending}><Send aria-hidden="true"/>{mutation.isPending?"Enviando…":"Enviar solicitud"}</button></footer>
     </form>
   </main></>;
@@ -222,7 +257,7 @@ export function RegistrationRequestsPage() {
   const act=async(path:string,payload?:object)=>{try{await api.post(path,payload);await qc.invalidateQueries({queryKey:["registration-requests"]});setSelected(null);feedback.success("Operación completada","La solicitud fue actualizada.");}catch(error){feedback.error("No se pudo actualizar",message(error));}};
   const data=pageData(list.data);
   return <section><div className="page-heading"><div><span className="eyebrow">Incorporación</span><h1>Solicitudes de registro</h1></div></div><div className="toolbar"><SearchField value={q} onChange={v=>{setQ(v);setPage(1)}} placeholder="Buscar nombre, correo o NIT…"/><select className="input" value={estado} onChange={e=>{setEstado(e.target.value);setPage(1)}}><option value="">Todos los estados</option><option>PENDING</option><option>APPROVED</option><option>REJECTED</option></select></div>{list.isLoading?<Loading/>:list.error?<ErrorBox message={message(list.error)}/>:data.items.length?<><div className="table-wrap"><table><thead><tr><th>Unidad Productiva</th><th>Contacto</th><th>Departamento</th><th>Estado</th><th></th></tr></thead><tbody>{data.items.map(item=><tr key={item.id}><td><strong>{item.nombre_comercial}</strong><small>{item.razon_social}</small></td><td>{item.correo_electronico}</td><td>{item.departamento}</td><td><StatusBadge value={item.estado}/></td><td><button className="btn-small" onClick={()=>setSelected(item)}>Revisar</button></td></tr>)}</tbody></table></div><PaginationBar pagination={data.pagination} onPageChange={setPage}/></>:<Empty title="No hay solicitudes"/>}
-  {selected&&<Modal title={`Solicitud: ${selected.nombre_comercial}`} onClose={()=>setSelected(null)}><div className="detail-grid"><p><strong>Representante</strong><br/>{selected.nombre_representante}</p><p><strong>Contacto</strong><br/>{selected.telefono_whatsapp}<br/>{selected.correo_electronico}</p><p><strong>Dirección</strong><br/>{selected.departamento}, {selected.direccion_fisica}</p><p><strong>Sectores</strong><br/>{selected.sectores.map(s=>s.nombre+(s.detalle_otro?`: ${s.detalle_otro}`:"")).join(", ")}</p></div><p>{selected.resena_comercial}</p>{selected.logo_url&&<img className="detail-logo" src={assetUrl(selected.logo_url)} alt={`Logo de ${selected.nombre_comercial}`}/>} {selected.estado==="PENDING"&&<div className="modal-actions"><button className="btn" onClick={()=>void act(`/admin/registration-requests/${selected.id}/approve`,{observaciones:null})}>Aprobar</button><Field label="Motivo de rechazo"><textarea className="input" value={rejectReason} onChange={e=>setRejectReason(e.target.value)}/></Field><button className="btn-danger" disabled={!rejectReason.trim()} onClick={()=>void act(`/admin/registration-requests/${selected.id}/reject`,{motivo:rejectReason})}>Rechazar</button></div>}{selected.estado==="APPROVED"&&<button className="btn-secondary" onClick={()=>void act(`/admin/registration-requests/${selected.id}/resend-credentials`)}>Reenviar credenciales</button>}</Modal>}</section>;
+  {selected&&<Modal title={`Solicitud: ${selected.nombre_comercial}`} onClose={()=>setSelected(null)}><div className="detail-grid"><p><strong>Representante</strong><br/>{selected.nombre_representante}</p><p><strong>Contacto</strong><br/>{selected.telefono_whatsapp}<br/>{selected.correo_electronico}</p><p><strong>Dirección</strong><br/>{selected.departamento}, {selected.direccion_fisica}</p><p><strong>Sectores</strong><br/>{selected.sectores.map(s=>s.nombre+(s.detalle_otro?`: ${s.detalle_otro}`:"")).join(", ")}</p></div><p>{selected.resena_comercial}</p>{selected.logo_url&&<img className="detail-logo" src={assetUrl(selected.logo_url)} alt={`Logo de ${selected.nombre_comercial}`}/>}<div className="card-grid">{selected.productos.map(product=><article key={product.id} className="catalog-card"><img src={assetUrl(product.imagen_url)} alt={product.nombre_comercial}/><div className="card-body"><h3>{product.nombre_comercial}</h3><p>{product.descripcion_tecnica}</p><strong>Bs {Number(product.precio_referencia).toFixed(2)}</strong></div></article>)}</div> {selected.estado==="PENDING"&&<div className="modal-actions"><button className="btn" onClick={()=>void act(`/admin/registration-requests/${selected.id}/approve`,{observaciones:null})}>Aprobar</button><Field label="Motivo de rechazo"><textarea className="input" value={rejectReason} onChange={e=>setRejectReason(e.target.value)}/></Field><button className="btn-danger" disabled={!rejectReason.trim()} onClick={()=>void act(`/admin/registration-requests/${selected.id}/reject`,{motivo:rejectReason})}>Rechazar</button></div>}{selected.estado==="APPROVED"&&<button className="btn-secondary" onClick={()=>void act(`/admin/registration-requests/${selected.id}/resend-credentials`)}>Reenviar credenciales</button>}</Modal>}</section>;
 }
 
 export function ProductiveUnitsPage() {

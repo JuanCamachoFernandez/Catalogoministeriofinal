@@ -11,7 +11,11 @@ from .enums import NotificationStatus, ProductiveUnitStatus, RegistrationStatus,
 from .fair_participation import FairParticipation
 from .productive_sector import ProductiveSector
 from .productive_unit import ProductiveUnit
-from .registration_request import RegistrationRequest, RegistrationRequestSector
+from .registration_request import (
+    RegistrationRequest,
+    RegistrationRequestProduct,
+    RegistrationRequestSector,
+)
 from .unit_sector import UnitSector
 from .exhibitor import Exhibitor, ExhibitorType, ExhibitorTypeLink
 from .fair import Fair, FairExhibitor, FairImage, bolivia_today
@@ -43,6 +47,7 @@ __all__ = [
     "ProductiveUnit",
     "ProductiveUnitStatus",
     "RegistrationRequest",
+    "RegistrationRequestProduct",
     "RegistrationRequestSector",
     "RegistrationStatus",
     "RevokedToken",

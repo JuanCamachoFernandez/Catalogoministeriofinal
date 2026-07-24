@@ -14,9 +14,13 @@ from ..extensions import db
 from ..models import (
     NotificationStatus,
     ProductiveSector,
+    Product,
+    ProductImage,
+    ProductStatus,
     ProductiveUnit,
     ProductiveUnitStatus,
     RegistrationRequest,
+    RegistrationRequestProduct,
     RegistrationRequestSector,
     RegistrationStatus,
     Role,
@@ -25,6 +29,7 @@ from ..models import (
     User,
     UserStatus,
 )
+from ..utils import slugify
 from ..views import error, paginate, validate_json, validated_json
 from ..views.domain_serializers import registration_request_json
 from ..views.registration_request_view import (
@@ -70,7 +75,18 @@ def upload_registration_logo():
         return error(str(exc))
     if not url:
         return error("Debe enviar una imagen")
-    return {"logo_url": url}, 201
+    return {"logo_url": url, "url": url}, 201
+
+
+@registration_bp.post("/registration-requests/products/image")
+def upload_registration_product_image():
+    try:
+        url = save_upload(request.files.get("file"), "solicitudes")
+    except ValueError as exc:
+        return error(str(exc))
+    if not url:
+        return error("Debe enviar una imagen")
+    return {"imagen_url": url, "url": url}, 201
 
 
 @registration_bp.post("/registration-requests")
@@ -79,11 +95,10 @@ def create_registration_request():
     data = validated_json()
     email = data["correo_electronico"].lower().strip()
     nit = _clean(data.get("nit")) or None
-    if data.get("logo_url"):
-        try:
-            require_managed_upload(data["logo_url"], "solicitudes")
-        except ValueError as exc:
-            return error(str(exc))
+    try:
+        require_managed_upload(data["logo_url"], "solicitudes")
+    except ValueError as exc:
+        return error(str(exc))
     if db.session.scalar(
         select(RegistrationRequest.id).where(
             RegistrationRequest.correo_electronico == email,
@@ -110,6 +125,9 @@ def create_registration_request():
         return error("El NIT ya está registrado", 409)
     try:
         sectors = _validated_sector_rows(data.pop("sectores"))
+        products = data.pop("productos")
+        for product in products:
+            require_managed_upload(product["imagen_url"], "solicitudes")
         item = RegistrationRequest(
             **{
                 key: _clean(value)
@@ -129,6 +147,17 @@ def create_registration_request():
                 detalle_otro=detail,
             )
             for sector, detail in sectors
+        )
+        db.session.add_all(
+            RegistrationRequestProduct(
+                registration_request_id=item.id,
+                nombre_comercial=_clean(product["nombre_comercial"]),
+                descripcion_tecnica=_clean(product["descripcion_tecnica"]),
+                precio_referencia=product["precio_referencia"],
+                imagen_url=product["imagen_url"],
+                orden=index,
+            )
+            for index, product in enumerate(products)
         )
         audit("CREAR_SOLICITUD", "RegistrationRequest", item.id)
         db.session.commit()
@@ -216,6 +245,35 @@ def _stage_request_logo(item):
     return source, target, f"/uploads/unidades_productivas/{target.name}"
 
 
+def _stage_request_product_image(image_url):
+    source = require_managed_upload(image_url, "solicitudes")
+    target_folder = Path(current_app.config["CARPETA_CARGAS"]) / "productos"
+    target_folder.mkdir(parents=True, exist_ok=True)
+    target = target_folder / f"{uuid.uuid4().hex}{source.suffix.lower()}"
+    shutil.copy2(source, target)
+    return source, target, f"/uploads/productos/{target.name}"
+
+
+def _delete_request_media(item):
+    if item.logo_url:
+        try:
+            require_managed_upload(item.logo_url, "solicitudes").unlink(missing_ok=True)
+        except ValueError:
+            pass
+        item.logo_url = None
+    products = db.session.scalars(
+        select(RegistrationRequestProduct).where(
+            RegistrationRequestProduct.registration_request_id == item.id
+        )
+    ).all()
+    for product in products:
+        try:
+            require_managed_upload(product.imagen_url, "solicitudes").unlink(missing_ok=True)
+        except ValueError:
+            pass
+        db.session.delete(product)
+
+
 @registration_bp.post("/admin/registration-requests/<uuid:request_id>/approve")
 @roles(*ADMIN_ROLES)
 @validate_json(ApproveRegistrationRequestSchema())
@@ -243,6 +301,13 @@ def approve_registration_request(request_id):
         return error(str(exc), 409)
     if not sectors:
         return error("La solicitud debe tener al menos un sector activo", 409)
+    request_products = db.session.scalars(
+        select(RegistrationRequestProduct)
+        .where(RegistrationRequestProduct.registration_request_id == item.id)
+        .order_by(RegistrationRequestProduct.orden, RegistrationRequestProduct.created_at)
+    ).all()
+    if len(request_products) != 3:
+        return error("La solicitud debe incluir exactamente tres productos", 409)
     email = item.correo_electronico.lower()
     if db.session.scalar(select(User.id).where(User.email == email)) or db.session.scalar(
         select(ProductiveUnit.id).where(ProductiveUnit.correo_electronico == email)
@@ -267,8 +332,11 @@ def approve_registration_request(request_id):
     )
     user.set_password(password)
     logo_transfer = None
+    product_transfers = []
     try:
         logo_transfer = _stage_request_logo(item)
+        for requested_product in request_products:
+            product_transfers.append((requested_product, _stage_request_product_image(requested_product.imagen_url)))
         db.session.add(user)
         db.session.flush()
         unit = ProductiveUnit(
@@ -304,6 +372,36 @@ def approve_registration_request(request_id):
             )
             for sector, detail in sectors
         )
+        for requested_product, transfer in product_transfers:
+            product = Product(
+                productive_unit_id=unit.id,
+                estado=ProductStatus.DRAFT,
+            )
+            product.nombre_comercial = requested_product.nombre_comercial
+            product.descripcion_tecnica = requested_product.descripcion_tecnica
+            product.materia_prima = "Pendiente de completar"
+            product.presentacion_empaque = "Pendiente de completar"
+            product.precio_referencia = requested_product.precio_referencia
+            product.capacidad_produccion_stock = "Pendiente de completar"
+            product.nombre = requested_product.nombre_comercial
+            product.descripcion = requested_product.descripcion_tecnica
+            product.materiales_o_ingredientes = "Pendiente de completar"
+            product.presentacion = "Pendiente de completar"
+            product.precio = requested_product.precio_referencia
+            product.slug = slugify(requested_product.nombre_comercial)
+            db.session.add(product)
+            db.session.flush()
+            db.session.add(
+                ProductImage(
+                    product_id=product.id,
+                    filename=Path(transfer[2]).name,
+                    url=transfer[2],
+                    alt_text=f"Imagen de {requested_product.nombre_comercial}",
+                    is_cover=True,
+                    display_order=0,
+                )
+            )
+            requested_product.imagen_url = transfer[2]
         item.estado = RegistrationStatus.APPROVED
         item.fecha_revision = datetime.now(timezone.utc)
         item.reviewed_by = current_user().id
@@ -317,10 +415,16 @@ def approve_registration_request(request_id):
         db.session.rollback()
         if logo_transfer and logo_transfer[1].is_file():
             logo_transfer[1].unlink()
+        for _, transfer in product_transfers:
+            if transfer[1].is_file():
+                transfer[1].unlink()
         current_app.logger.warning("No fue posible aprobar la solicitud %s", item.id)
         return error("No fue posible aprobar la solicitud", 409)
     if logo_transfer and logo_transfer[0].is_file():
         logo_transfer[0].unlink()
+    for _, transfer in product_transfers:
+        if transfer[0].is_file():
+            transfer[0].unlink()
     _send_credentials(item, user, password)
     return registration_request_json(item)
 
@@ -341,6 +445,7 @@ def reject_registration_request(request_id):
     item.fecha_revision = datetime.now(timezone.utc)
     item.reviewed_by = current_user().id
     item.notification_status = NotificationStatus.PENDING
+    _delete_request_media(item)
     audit("RECHAZAR_SOLICITUD", "RegistrationRequest", item.id)
     db.session.commit()
     try:
