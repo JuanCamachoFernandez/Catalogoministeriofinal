@@ -83,13 +83,6 @@ export function AdminHomePage() {
     { label: "Ferias registradas", value: stats.ferias, detail: `${stats.ferias_publicadas} en curso`, icon: CalendarDays, to: "/admin/ferias" },
     { label: "Productos", value: stats.productos, detail: `${stats.productos_disponibles} disponibles`, icon: PackageCheck, to: "/admin/productos" },
   ];
-  const percentage = (value: number, total: number) =>
-    total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
-  const health = [
-    { label: "Unidades activas", value: stats.unidades_productivas_activas, total: stats.unidades_productivas },
-    { label: "Productos disponibles", value: stats.productos_disponibles, total: stats.productos },
-    { label: "Ferias publicadas", value: stats.ferias_publicadas, total: stats.ferias },
-  ];
   const attention = [
     { label: "Solicitudes por revisar", value: stats.solicitudes_pendientes, to: "/admin/solicitudes" },
     { label: "Participaciones pendientes", value: stats.participaciones_pendientes, to: "/admin/ferias" },
@@ -115,7 +108,7 @@ export function AdminHomePage() {
         </Link>
       </header>
 
-      <div className="dashboard-stats">
+      <div className="dashboard-stats dashboard-stats-overview">
         {cards.map(({ label, value, detail, icon: Icon, to }) => (
           <Link className="dashboard-stat" to={to} key={label}>
             <span className="dashboard-stat-icon"><Icon /></span>
@@ -125,26 +118,6 @@ export function AdminHomePage() {
       </div>
 
       <div className="dashboard-overview">
-        <article className="panel dashboard-health-panel">
-          <div className="panel-heading">
-            <div><span className="eyebrow">Cobertura</span><h2>Estado operativo</h2></div>
-          </div>
-          <div className="dashboard-health-list">
-            {health.map((item) => {
-              const progress = percentage(item.value, item.total);
-              return (
-                <div className="dashboard-health-item" key={item.label}>
-                  <div><span>{item.label}</span><small>{item.value} de {item.total}</small></div>
-                  <span className="dashboard-progress" role="progressbar" aria-label={item.label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-                    <i style={{ width: `${progress}%` }} />
-                  </span>
-                  <span className="dashboard-percentage">{progress}%</span>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-
         <aside className="panel dashboard-attention-panel">
           <div className="panel-heading">
             <div><span className="eyebrow">Pendientes</span><h2>Requiere atención</h2></div>

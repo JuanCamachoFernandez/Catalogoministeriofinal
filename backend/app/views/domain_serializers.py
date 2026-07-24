@@ -6,6 +6,7 @@ from ..models import (
     ProductImage,
     ProductiveSector,
     ProductiveUnit,
+    RegistrationRequestProduct,
     RegistrationRequestSector,
     UnitSector,
 )
@@ -48,6 +49,11 @@ def _sector_links(link_model, owner_field, owner_id):
 
 
 def registration_request_json(item):
+    requested_products = db.session.scalars(
+        select(RegistrationRequestProduct)
+        .where(RegistrationRequestProduct.registration_request_id == item.id)
+        .order_by(RegistrationRequestProduct.orden, RegistrationRequestProduct.created_at)
+    ).all()
     return {
         "id": str(item.id),
         "nombre_comercial": item.nombre_comercial,
@@ -80,6 +86,17 @@ def registration_request_json(item):
         "sectores": _sector_links(
             RegistrationRequestSector, "registration_request_id", item.id
         ),
+        "productos": [
+            {
+                "id": str(product.id),
+                "nombre_comercial": product.nombre_comercial,
+                "descripcion_tecnica": product.descripcion_tecnica,
+                "precio_referencia": float(product.precio_referencia),
+                "imagen_url": product.imagen_url,
+                "orden": product.orden,
+            }
+            for product in requested_products
+        ],
     }
 
 
