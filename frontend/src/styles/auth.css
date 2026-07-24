@@ -1,0 +1,302 @@
+.auth-shell {
+  display: grid;
+  grid-template-columns: minmax(420px, 600px) 1fr;
+  min-height: 100vh;
+}
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(2rem, 6vw, 5rem);
+}
+.auth-aside {
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+  background:
+    linear-gradient(145deg, rgb(23 50 77 / 0.35), rgb(23 50 77 / 0.9)),
+    url("/catalog-pattern.svg"), var(--color-primary);
+  padding: 4rem;
+  color: #fff;
+}
+.auth-aside strong {
+  max-width: 700px;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 1.1;
+}
+.auth-brand {
+  position: absolute;
+  top: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-primary);
+  font-weight: 800;
+  text-decoration: none;
+}
+.auth-heading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.auth-heading > span {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 1rem;
+  background: #e7f0e8;
+  color: var(--color-secondary);
+}
+.auth-heading h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+.auth-heading p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+}
+.auth-form,
+.form-stack {
+  display: grid;
+  gap: 1rem;
+}
+.auth-link {
+  text-align: center;
+}
+.auth-form .input[aria-invalid="true"] {
+  border-color: #b33128;
+  background: #fff8f7;
+  box-shadow: 0 0 0 3px rgb(179 49 40 / 0.14);
+}
+
+.auth-aside {
+  position: relative;
+  min-width: 0;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1.5rem, 4vh, 2.75rem);
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgb(0 0 0 / 0.9), rgb(17 17 17 / 0.78)),
+    url("/catalog-pattern.svg"), #111;
+  padding: clamp(3rem, 6vw, 5rem);
+}
+.auth-aside:before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 8px;
+  background: linear-gradient(
+    90deg,
+    var(--color-institutional) 0 33.33%,
+    var(--color-yellow) 33.33% 66.66%,
+    var(--color-secondary) 66.66%
+  );
+  content: "";
+}
+.auth-seal {
+  width: min(330px, 42vw, 46vh);
+  height: min(330px, 42vw, 46vh);
+  max-height: none;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: #000;
+  filter: drop-shadow(0 18px 30px rgb(0 0 0 / 0.5));
+}
+.auth-aside-copy {
+  position: static;
+  width: min(760px, 100%);
+  text-align: center;
+  text-shadow: 0 2px 8px #000;
+}
+.auth-aside-copy strong {
+  display: block;
+  margin: auto;
+  font-size: clamp(1.75rem, 3.1vw, 3rem);
+  line-height: 1.12;
+}
+.auth-heading > div {
+  min-width: 0;
+}
+.auth-heading h1 {
+  overflow-wrap: anywhere;
+}
+.auth-heading > span,
+.session-lock-icon {
+  background: #f5edcf;
+  color: var(--color-secondary);
+}
+
+.login-shell .auth-panel {
+  background: var(--color-background);
+  padding-inline: clamp(1.25rem, 6vw, 5rem);
+}
+.login-shell .auth-brand {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.login-shell .auth-brand svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.8;
+}
+.login-shell .auth-heading {
+  margin-bottom: 1.75rem;
+}
+.login-shell .auth-heading > span {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #e2dbc6;
+  border-radius: 50%;
+  background: #faf7ed;
+}
+.login-shell .auth-heading > span svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+}
+.login-shell .auth-heading h1 {
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.login-shell .auth-heading p {
+  font-size: 0.92rem;
+}
+.login-shell .field {
+  gap: 0.4rem;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+.login-shell .input {
+  min-height: 46px;
+  border-color: #d9d5ca;
+  border-radius: 0.65rem;
+  background: #fff;
+  box-shadow: none;
+}
+.login-shell .input:hover {
+  border-color: #aaa397;
+}
+.login-shell .input:focus {
+  border-color: #81765e;
+  box-shadow: 0 0 0 3px rgb(129 118 94 / 0.13);
+}
+.login-shell .password-input button svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.7;
+}
+.login-shell .login-submit {
+  min-height: 46px;
+  border-radius: 0.65rem;
+  box-shadow: none;
+  font-weight: 600;
+}
+.login-shell .login-submit svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+}
+.login-shell .auth-link {
+  justify-self: end;
+  color: #514c43;
+  font-size: 0.84rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.login-shell .auth-link:hover {
+  text-decoration: underline;
+}
+.login-register {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid #e8e4da;
+  padding-top: 1.25rem;
+  text-align: center;
+}
+.login-register > span {
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+.login-register-link {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid #cbc5b7;
+  border-radius: 0.65rem;
+  background: #fff;
+  padding: 0.58rem 0.85rem;
+  color: #28251f;
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.login-register-link:hover {
+  border-color: #8d846f;
+  background: #faf8f2;
+}
+.login-register-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.login-register-link svg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-secondary);
+  stroke-width: 1.8;
+}
+@media (max-width: 1000px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+  }
+  .auth-aside {
+    display: none;
+  }
+}
+@media (max-width: 380px) {
+  .auth-panel {
+    padding-inline: 1rem;
+  }
+  .auth-brand {
+    right: 1rem;
+    font-size: 0.9rem;
+  }
+  .auth-heading {
+    gap: 0.75rem;
+  }
+  .auth-heading > span {
+    width: 46px;
+    height: 46px;
+    flex: none;
+  }
+  .auth-heading h1 {
+    font-size: 1.7rem;
+  }
+}
+@media (max-width: 380px) {
+  .login-shell .auth-panel {
+    padding-inline: 1rem;
+  }
+  .login-shell .auth-heading {
+    align-items: flex-start;
+  }
+  .login-shell .auth-heading h1 {
+    font-size: 1.65rem;
+  }
+  .login-shell .auth-heading p {
+    font-size: 0.86rem;
+  }
+  .login-register {
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+  }
+}
