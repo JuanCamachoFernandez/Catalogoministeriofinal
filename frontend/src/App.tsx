@@ -2,17 +2,19 @@ import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./AuthContext";
 import { ManagementLayout } from "./Layouts";
+import { UnitRoute } from "./unidad_productiva/UnitRoute";
 import { Loading } from "./ui";
 
 const pages = () => import("./CanonicalPages");
 const pick = <T extends Record<string, unknown>, K extends keyof T>(loader:()=>Promise<T>,key:K)=>lazy(()=>loader().then(module=>({default:module[key] as React.ComponentType})));
-const RegistrationPage=pick(pages,"RegistrationPage"),RegistrationRequestsPage=pick(pages,"RegistrationRequestsPage"),ProductiveUnitsPage=pick(pages,"ProductiveUnitsPage"),ProductiveSectorsPage=pick(pages,"ProductiveSectorsPage"),ProductsPage=pick(pages,"ProductsPage"),AdminProductsPage=pick(pages,"AdminProductsPage"),ProductiveUnitProfilePage=pick(pages,"ProductiveUnitProfilePage"),UnitSectorsPage=pick(pages,"UnitSectorsPage"),FairsPage=pick(pages,"FairsPage"),NotFoundPage=pick(pages,"NotFoundPage");
-const PublicCatalogPage=pick(()=>import("./PublicCatalogPages"),"PublicCatalogPage"),PublicFairPage=pick(()=>import("./PublicCatalogPages"),"PublicFairPage"),PublicUnitPage=pick(()=>import("./PublicCatalogPages"),"PublicUnitPage");
+const RegistrationPage=pick(pages,"RegistrationPage"),RegistrationRequestsPage=pick(pages,"RegistrationRequestsPage"),ProductiveUnitsPage=pick(pages,"ProductiveUnitsPage"),ProductiveSectorsPage=pick(pages,"ProductiveSectorsPage"),ProductsPage=pick(pages,"ProductsPage"),AdminProductsPage=pick(pages,"AdminProductsPage"),FairsPage=pick(pages,"FairsPage"),NotFoundPage=pick(pages,"NotFoundPage");
+const unitPages=()=>import("./unidad_productiva");
+const ProductiveUnitProfilePage=pick(unitPages,"ProductiveUnitProfilePage"),UnitSectorsPage=pick(unitPages,"UnitSectorsPage");
+const PublicCatalogPage=pick(()=>import("./portal_publico"),"PublicCatalogPage"),PublicFairPage=pick(()=>import("./portal_publico"),"PublicFairPage"),PublicUnitPage=pick(()=>import("./portal_publico"),"PublicUnitPage");
 const AdminHomePage=pick(()=>import("./DashboardPage"),"AdminHomePage"),AuditPage=pick(()=>import("./AuditPage"),"AuditPage");
 const LoginPage=pick(()=>import("./AuthPages"),"LoginPage"),ForgotPasswordPage=pick(()=>import("./AuthPages"),"ForgotPasswordPage"),ResetPasswordPage=pick(()=>import("./AuthPages"),"ResetPasswordPage"),ChangePasswordPage=pick(()=>import("./AuthPages"),"ChangePasswordPage");
 
 function AdminRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["ADMIN","SUPERADMIN","ADMIN_VICEMINISTERIO"]}><ManagementLayout area="admin"><div className="admin-area">{children}</div></ManagementLayout></ProtectedRoute>}
-function UnitRoute({children}:{children:React.ReactNode}){return <ProtectedRoute roles={["PRODUCTIVE_UNIT_RESPONSIBLE","EXPOSITOR"]}><ManagementLayout area="productive-unit">{children}</ManagementLayout></ProtectedRoute>}
 function RouteMetadata(){const {pathname}=useLocation();useEffect(()=>{const title=pathname.startsWith("/admin")?"Administración":pathname.startsWith("/unidad-productiva")?"Unidad Productiva":pathname==="/solicitud-registro"?"Solicitud de registro":"Ferias activas";document.title=`${title} | Ferias Productivas Bolivia`;},[pathname]);return null}
 
 export default function App(){return <><RouteMetadata/><Suspense fallback={<Loading label="Cargando página…"/>}><Routes>

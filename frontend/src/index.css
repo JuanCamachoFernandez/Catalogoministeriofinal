@@ -2074,24 +2074,10 @@ textarea.input {
   margin: auto;
 }
 .form-grid,
-.detail-grid,
-.profile-grid {
+.detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
-}
-.check-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  padding: 0.8rem;
-}
-.check-grid label {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
 }
 .table-wrap td small,
 .card-body small {
@@ -2131,8 +2117,7 @@ textarea.input {
   width: auto;
   min-width: 110px;
 }
-.detail-logo,
-.profile-logo {
+.detail-logo {
   display: block;
   width: min(240px, 100%);
   max-height: 240px;
@@ -2201,11 +2186,7 @@ textarea.input {
   }
   .form-grid,
   .detail-grid,
-  .profile-grid,
   .public-hero {
-    grid-template-columns: 1fr;
-  }
-  .check-grid {
     grid-template-columns: 1fr;
   }
   .image-grid {
@@ -2361,26 +2342,6 @@ textarea.input {
   color: #252117;
   font-weight: 750;
   cursor: pointer;
-}
-.check-grid {
-  border-color: #dbcfaa;
-  border-radius: 0.9rem;
-  background: #fffdf7;
-  padding: 1rem;
-}
-.check-grid label {
-  min-height: 42px;
-  border-radius: 0.65rem;
-  padding: 0.45rem 0.55rem;
-  transition: background 0.18s;
-}
-.check-grid label:hover {
-  background: #f7efd6;
-}
-.check-grid input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--color-secondary);
 }
 .btn,
 .btn-secondary,

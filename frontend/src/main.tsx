@@ -12,6 +12,7 @@ import "./styles/auth.css";
 import "./styles/admin.css";
 import "./styles/registration.css";
 import "./styles/profile.css";
+import "./styles/productive-unit.css";
 import "./styles/reports.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, gcTime: 30 * 60_000, refetchOnWindowFocus: false, retry: 1 } } });

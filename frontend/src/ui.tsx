@@ -69,7 +69,14 @@ export function ErrorBox({ message }: { message: string }) {
 export function UploadProgress({ value }: { value: number }) {
   if (value <= 0 || value >= 100) return null;
   return (
-    <div className="upload-progress" role="progressbar" aria-label="Carga de imagen" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+    <div
+      className="upload-progress"
+      role="progressbar"
+      aria-label="Carga de imagen"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={value}
+    >
       <span style={{ width: `${value}%` }} />
       <small>{value}%</small>
     </div>
@@ -78,24 +85,24 @@ export function UploadProgress({ value }: { value: number }) {
 
 export function StatusBadge({ value }: { value: string | boolean }) {
   const normalized = String(value);
-  const positive = [
-    "true",
-    "ACTIVE",
-    "AVAILABLE",
-    "AUTHORIZED",
-    "PUBLISHED",
-  ].includes(normalized) || positiveAuditActions.has(normalized);
-  const warning = ["PENDING", "DRAFT", "OUT_OF_STOCK"].includes(normalized)
-    || warningAuditActions.has(normalized);
-  const negative = [
-    "INACTIVE",
-    "LOCKED",
-    "BLOCKED",
-    "DELETED",
-    "REJECTED",
-    "REVOKED",
-    "DISABLED",
-  ].includes(normalized) || negativeAuditActions.has(normalized);
+  const positive =
+    ["true", "ACTIVE", "AVAILABLE", "AUTHORIZED", "PUBLISHED"].includes(
+      normalized,
+    ) || positiveAuditActions.has(normalized);
+  const warning =
+    ["PENDING", "DRAFT", "OUT_OF_STOCK"].includes(normalized) ||
+    warningAuditActions.has(normalized);
+  const negative =
+    [
+      "INACTIVE",
+      "LOCKED",
+      "BLOCKED",
+      "DELETED",
+      "REJECTED",
+      "REVOKED",
+      "DISABLED",
+      "RETIRED",
+    ].includes(normalized) || negativeAuditActions.has(normalized);
   const labels: Record<string, string> = {
     ACTIVE: "Activo",
     INACTIVE: "Inactivo",
@@ -109,6 +116,7 @@ export function StatusBadge({ value }: { value: string | boolean }) {
     REVOKED: "Revocado",
     PUBLISHED: "Publicada",
     DRAFT: "En preparación",
+    RETIRED: "Retirado",
     FINISHED: "Finalizada",
     DISABLED: "Cancelada",
     true: "Activa",
@@ -367,9 +375,11 @@ export function Modal({
         return;
       }
       if (event.key !== "Tab" || !dialogElement) return;
-      const focusable = [...dialogElement.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )].filter((element) => !element.hasAttribute("hidden"));
+      const focusable = [
+        ...dialogElement.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => !element.hasAttribute("hidden"));
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -384,7 +394,9 @@ export function Modal({
     document.addEventListener("keydown", handleKeyboard);
     return () => {
       document.removeEventListener("keydown", handleKeyboard);
-      const index = dialogElement ? openModalStack.lastIndexOf(dialogElement) : -1;
+      const index = dialogElement
+        ? openModalStack.lastIndexOf(dialogElement)
+        : -1;
       if (index >= 0) openModalStack.splice(index, 1);
       if (!openModalStack.length) document.body.classList.remove("modal-open");
       previous?.focus();
@@ -526,29 +538,42 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   );
 
   const tone = feedback?.kind === "notice" ? feedback.tone : "warning";
-  const Icon = feedback?.kind === "confirm" ? ShieldQuestion : feedbackIcons[tone];
+  const Icon =
+    feedback?.kind === "confirm" ? ShieldQuestion : feedbackIcons[tone];
 
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      {feedback?.kind === "notice" && createPortal(
-        <aside
-          className={`feedback-toast feedback-${tone}`}
-          role={tone === "error" || tone === "warning" ? "alert" : "status"}
-          aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}
-        >
-          <div className="feedback-toast-icon" aria-hidden="true"><Icon/></div>
-          <div className="feedback-toast-copy">
-            <strong>{feedback.title}</strong>
-            {feedback.message && <p>{feedback.message}</p>}
-          </div>
-          <button type="button" className="feedback-toast-close" onClick={() => close(false)} aria-label="Cerrar notificación">
-            <X/>
-          </button>
-          {feedback.autoClose && <div className="feedback-timeout" aria-hidden="true"/>}
-        </aside>,
-        document.body,
-      )}
+      {feedback?.kind === "notice" &&
+        createPortal(
+          <aside
+            className={`feedback-toast feedback-${tone}`}
+            role={tone === "error" || tone === "warning" ? "alert" : "status"}
+            aria-live={
+              tone === "error" || tone === "warning" ? "assertive" : "polite"
+            }
+          >
+            <div className="feedback-toast-icon" aria-hidden="true">
+              <Icon />
+            </div>
+            <div className="feedback-toast-copy">
+              <strong>{feedback.title}</strong>
+              {feedback.message && <p>{feedback.message}</p>}
+            </div>
+            <button
+              type="button"
+              className="feedback-toast-close"
+              onClick={() => close(false)}
+              aria-label="Cerrar notificación"
+            >
+              <X />
+            </button>
+            {feedback.autoClose && (
+              <div className="feedback-timeout" aria-hidden="true" />
+            )}
+          </aside>,
+          document.body,
+        )}
       {feedback?.kind === "confirm" && (
         <Modal title={feedback.title} onClose={() => close(false)}>
           <div className={`feedback-dialog feedback-${tone}`}>
@@ -625,18 +650,79 @@ export function Field({
   label,
   children,
   hint,
+  hintAsHelp = false,
   required = false,
   optional = false,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  hintAsHelp?: boolean;
   required?: boolean;
   optional?: boolean;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const labelContent = (
+    <>
+      {label}
+      {required && (
+        <>
+          <b className="field-required" aria-hidden="true">
+            *
+          </b>
+          <span className="sr-only"> (obligatorio)</span>
+        </>
+      )}
+      {optional && (
+        <small className="field-optional">Dejar vacío si no se tiene</small>
+      )}
+    </>
+  );
+
+  if (hint && hintAsHelp) {
+    return (
+      <div className="field field-with-help">
+        <span className="field-label-row">{labelContent}</span>
+        {children}
+        <div className="field-help-control">
+          <button
+            type="button"
+            className="field-help-button"
+            aria-label="Mostrar ayuda"
+            title={`Ayuda para ${label}`}
+            aria-expanded={helpOpen}
+            onClick={() => setHelpOpen(true)}
+          >
+            <span aria-hidden="true">?</span>
+            Ayuda
+          </button>
+        </div>
+        {helpOpen && (
+          <div
+            className="field-help-card"
+            role="dialog"
+            aria-label={`Ayuda para ${label}`}
+          >
+            <div className="field-help-card-header">
+              <strong>{label}</strong>
+              <button
+                type="button"
+                aria-label="Cerrar ayuda"
+                onClick={() => setHelpOpen(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p>{hint}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <label className="field">
-      <span>{label}{required && <><b className="field-required" aria-hidden="true">*</b><span className="sr-only"> (obligatorio)</span></>}{optional && <small className="field-optional">Dejar vacío si no se tiene</small>}</span>
+      <span className="field-label-row">{labelContent}</span>
       {children}
       {hint && <small>{hint}</small>}
     </label>

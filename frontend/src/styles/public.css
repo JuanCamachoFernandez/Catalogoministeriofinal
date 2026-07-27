@@ -108,7 +108,9 @@
 .fair-public-card .fair-entry-button:focus-visible {
   border-color: var(--color-secondary);
   background: var(--color-secondary);
-  box-shadow: 0 4px 0 #0d4023, 0 8px 22px rgb(23 107 58/0.2);
+  box-shadow:
+    0 4px 0 #0d4023,
+    0 8px 22px rgb(23 107 58/0.2);
 }
 .fair-public-card .fair-entry-button:hover span,
 .fair-public-card .fair-entry-button:focus-visible span {
@@ -321,6 +323,98 @@
   width: 18px;
   color: var(--color-secondary);
 }
+.unit-social-block {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  border: 1px solid #ddd3b7;
+  border-radius: 0.85rem;
+  background: rgb(255 255 255 / 0.72);
+  padding: 0.45rem 0.55rem 0.45rem 0.75rem;
+  box-shadow: 0 7px 18px rgb(34 42 36 / 0.07);
+}
+.unit-social-title {
+  color: #554f43;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.unit-social-links {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.unit-social-button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  color: #fff;
+  box-shadow: 0 6px 15px rgb(34 42 36 / 0.14);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+.unit-social-button svg {
+  width: 20px;
+  height: 20px;
+  fill: currentcolor;
+  stroke: none;
+}
+.unit-social-button.instagram svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+}
+.unit-social-button.instagram .social-icon-fill {
+  fill: currentcolor;
+  stroke: none;
+}
+.unit-social-button.facebook {
+  border-color: #1877f2;
+  background: #1877f2;
+}
+.unit-social-button.instagram {
+  border-color: #c13584;
+  background: linear-gradient(135deg, #f9ce34 0%, #ee2a7b 48%, #6228d7 100%);
+}
+.unit-social-button.tiktok {
+  border-color: #111;
+  background: #111;
+}
+.unit-social-button.tiktok svg {
+  filter: drop-shadow(-1px 0 #25f4ee) drop-shadow(1px 0 #fe2c55);
+}
+.unit-social-button.facebook:hover,
+.unit-social-button.facebook:focus-visible {
+  border-color: #0d65d9;
+  background: #0d65d9;
+  color: #fff;
+}
+.unit-social-button.instagram:hover,
+.unit-social-button.instagram:focus-visible {
+  border-color: #a92772;
+  background: linear-gradient(135deg, #f6bd16 0%, #df176a 48%, #5120bd 100%);
+  color: #fff;
+}
+.unit-social-button.tiktok:hover,
+.unit-social-button.tiktok:focus-visible {
+  border-color: #191919;
+  background: #191919;
+  color: #fff;
+}
+.unit-social-button:hover,
+.unit-social-button:focus-visible {
+  box-shadow: 0 8px 18px rgb(34 42 36 / 0.13);
+  outline: none;
+  transform: translateY(-2px);
+}
 .selection-error {
   position: fixed;
   right: 1.5rem;
@@ -366,7 +460,11 @@
   font-weight: 500;
   line-height: 1;
   text-decoration: none;
-  transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.18s;
+  transition:
+    background 0.18s,
+    border-color 0.18s,
+    color 0.18s,
+    transform 0.18s;
 }
 .public-action svg {
   width: 16px;
@@ -527,6 +625,12 @@
     margin: auto;
   }
   .unit-public-meta {
+    justify-content: center;
+  }
+  .unit-social-links {
+    justify-content: center;
+  }
+  .unit-social-block {
     justify-content: center;
   }
   .selection-bar {
@@ -1514,4 +1618,3 @@
     width: 100%;
   }
 }
-

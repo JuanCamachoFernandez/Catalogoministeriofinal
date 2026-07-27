@@ -13,7 +13,7 @@ import {
   ShoppingBag,
   Trash2,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Link,
   useLocation,
@@ -21,18 +21,18 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
-  api,
   apiError,
   assetUrl,
   emptyPagination,
-  type CanonicalFair,
   type CanonicalProduct,
-  type Paged,
-  type ProductiveSector,
-  type ProductiveUnit,
-} from "./api";
-import { BOLIVIA_DEPARTMENTS } from "./boliviaLocations";
-import { PublicHeader, InstitutionalSeal } from "./Layouts";
+} from "../../api";
+import { BOLIVIA_DEPARTMENTS } from "../../boliviaLocations";
+import { CatalogPlaceholder } from "../components/CatalogPlaceholder";
+import { FairImage } from "../components/FairImage";
+import { PublicShell } from "../components/PublicShell";
+import { UnitSocialLinks } from "../components/UnitSocialLinks";
+import { displayDate } from "../utils";
+import { publicCatalogApi } from "../services/publicCatalogApi";
 import {
   Empty,
   ErrorBox,
@@ -41,113 +41,13 @@ import {
   PaginationBar,
   SearchableSelect,
   SearchField,
-} from "./ui";
-
-type ActiveFairsResponse = {
-  active: boolean;
-  fair: CanonicalFair | null;
-  items: CanonicalFair[];
-};
-
-const displayDate = (value: string) =>
-  new Intl.DateTimeFormat("es-BO", { dateStyle: "long" }).format(
-    new Date(`${value}T12:00:00`),
-  );
-function PublicFooter() {
-  return (
-    <footer className="public-footer">
-      <div className="container public-footer-content">
-        <InstitutionalSeal className="footer-seal" />
-        <div>
-          <strong>Ferias Productivas Bolivia</strong>
-          <p>
-            Promoviendo la producción boliviana y el contacto directo con sus
-            productores.
-          </p>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-function PublicShell({ children }: { children: React.ReactNode }) {
-  const { pathname } = useLocation();
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    const previousBehavior = root.style.scrollBehavior;
-    root.style.scrollBehavior = "auto";
-    window.scrollTo(0, 0);
-    root.scrollTop = 0;
-    document.body.scrollTop = 0;
-    root.style.scrollBehavior = previousBehavior;
-  }, [pathname]);
-
-  return (
-    <>
-      <PublicHeader />
-      <main className="container public-main">{children}</main>
-      <PublicFooter />
-    </>
-  );
-}
-
-function FairImage({ fair }: { fair: CanonicalFair }) {
-  return fair.imagen_portada ? (
-    <img
-      className="card-media"
-      src={assetUrl(fair.imagen_portada)}
-      alt={`Portada de ${fair.nombre}`}
-    />
-  ) : (
-    <div className="card-media image-placeholder">
-      <CalendarDays />
-      <span>Feria productiva</span>
-    </div>
-  );
-}
-
-function CatalogPlaceholder({
-  kind,
-  name,
-  large = false,
-}: {
-  kind: "unit" | "product";
-  name: string;
-  large?: boolean;
-}) {
-  const initials =
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase() || (kind === "unit" ? "UP" : "PB");
-  return (
-    <div
-      className={`${large ? "detail-image " : "card-media "}catalog-media-placeholder ${kind === "unit" ? "unit-placeholder" : "product-placeholder"}`}
-      aria-label={`${name}, imagen no disponible`}
-    >
-      <span className="placeholder-orbit" aria-hidden="true" />
-      <span className="placeholder-mark" aria-hidden="true">
-        {kind === "unit" ? <Factory /> : <PackageSearch />}
-      </span>
-      <strong>{initials}</strong>
-      <small>
-        {kind === "unit" ? "Unidad Productiva" : "Producto boliviano"}
-      </small>
-    </div>
-  );
-}
+} from "../../ui";
 
 export function PublicCatalogPage() {
   const [q, setQ] = useState("");
   const fairs = useQuery({
     queryKey: ["public", "active-fairs"],
-    queryFn: () =>
-      api
-        .get<ActiveFairsResponse>("/public/fairs/active")
-        .then((response) => response.data),
+    queryFn: publicCatalogApi.getActiveFairs,
   });
   const filtered = (fairs.data?.items ?? []).filter((fair) =>
     `${fair.nombre} ${fair.ubicacion} ${fair.descripcion ?? ""}`
@@ -238,37 +138,24 @@ export function PublicFairPage() {
     );
   const fairs = useQuery({
     queryKey: ["public", "active-fairs"],
-    queryFn: () =>
-      api
-        .get<ActiveFairsResponse>("/public/fairs/active")
-        .then((response) => response.data),
+    queryFn: publicCatalogApi.getActiveFairs,
   });
   const fair = fairs.data?.items.find((item) => item.id === fairId);
   const sectors = useQuery({
     queryKey: ["productive-sectors", "public"],
-    queryFn: () =>
-      api
-        .get<Paged<ProductiveSector>>("/productive-sectors", {
-          params: { per_page: 100 },
-        })
-        .then((response) => response.data.items),
+    queryFn: publicCatalogApi.getSectors,
   });
   const units = useQuery({
     queryKey: ["public", "fair-units", fairId, q, sector, department, page],
     enabled: Boolean(fair),
     queryFn: () =>
-      api
-        .get<Paged<ProductiveUnit>>("/public/productive-units", {
-          params: {
-            fair_id: fairId,
-            q: q || undefined,
-            sector_id: sector || undefined,
-            departamento: department || undefined,
-            page,
-            per_page: 12,
-          },
-        })
-        .then((response) => response.data),
+      publicCatalogApi.getFairUnits({
+        fairId,
+        query: q,
+        sectorId: sector,
+        department,
+        page,
+      }),
   });
   const data = units.data ?? { items: [], pagination: emptyPagination };
 
@@ -485,12 +372,7 @@ export function PublicUnitPage() {
   const [sendError, setSendError] = useState("");
   const unit = useQuery({
     queryKey: ["public", "fair-unit", fairId, unitId],
-    queryFn: () =>
-      api
-        .get<ProductiveUnit>(`/public/productive-units/${unitId}`, {
-          params: { fair_id: fairId },
-        })
-        .then((response) => response.data),
+    queryFn: () => publicCatalogApi.getFairUnit(fairId, unitId),
   });
   const selectedItems = useMemo(
     () => Object.entries(cart).filter(([, quantity]) => quantity > 0),
@@ -554,14 +436,14 @@ export function PublicUnitPage() {
     setSending(true);
     setSendError("");
     try {
-      const response = await api.post<{ url: string }>("/public/whatsapp", {
-        fair_id: fairId,
-        items: selectedItems.map(([product_id, quantity]) => ({
+      const url = await publicCatalogApi.createWhatsAppUrl(
+        fairId,
+        selectedItems.map(([product_id, quantity]) => ({
           product_id,
           quantity,
         })),
-      });
-      window.open(response.data.url, "_blank", "noopener,noreferrer");
+      );
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
       setSendError(apiError(error, "No se pudo abrir WhatsApp."));
     } finally {
@@ -620,6 +502,7 @@ export function PublicUnitPage() {
                   {unit.data.productos?.length ?? 0} productos disponibles
                 </span>
               </div>
+              <UnitSocialLinks unit={unit.data} />
             </div>
           </section>
           <div className="section-heading">

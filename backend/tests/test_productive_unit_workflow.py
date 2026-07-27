@@ -495,7 +495,7 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
         "materia_prima": "Lana",
         "presentacion_empaque": "Unidad",
         "precio_referencia": "10.00",
-        "capacidad_produccion_stock": "10 unidades",
+        "capacidad_produccion_stock": "10",
     }
     for number in (4, 5):
         extra = client.post(
