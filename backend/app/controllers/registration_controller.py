@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import secrets
 import string
 from pathlib import Path
@@ -6,7 +6,7 @@ import shutil
 import uuid
 
 from flask import Blueprint, current_app, request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from ..email_service import BrevoEmailService, EmailDeliveryError
@@ -176,6 +176,19 @@ def list_registration_requests():
     department = request.args.get("departamento")
     term = (request.args.get("q") or "").strip()
     sector_id = request.args.get("sector_id")
+    try:
+        date_from = (
+            date.fromisoformat(request.args["date_from"])
+            if request.args.get("date_from")
+            else None
+        )
+        date_to = (
+            date.fromisoformat(request.args["date_to"])
+            if request.args.get("date_to")
+            else None
+        )
+    except ValueError:
+        return error("Rango de fechas inválido")
     if state:
         try:
             query = query.where(RegistrationRequest.estado == RegistrationStatus(state))
@@ -193,6 +206,10 @@ def list_registration_requests():
         query = query.join(RegistrationRequestSector).where(
             RegistrationRequestSector.productive_sector_id == sector_id
         )
+    if date_from:
+        query = query.where(func.date(RegistrationRequest.created_at) >= date_from)
+    if date_to:
+        query = query.where(func.date(RegistrationRequest.created_at) <= date_to)
     return paginate(query.order_by(RegistrationRequest.created_at.desc()), registration_request_json)
 
 

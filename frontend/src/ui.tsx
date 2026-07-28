@@ -84,6 +84,7 @@ export function StatusBadge({ value }: { value: string | boolean }) {
     "AVAILABLE",
     "AUTHORIZED",
     "PUBLISHED",
+    "APPROVED",
   ].includes(normalized) || positiveAuditActions.has(normalized);
   const warning = ["PENDING", "DRAFT", "OUT_OF_STOCK"].includes(normalized)
     || warningAuditActions.has(normalized);
@@ -92,6 +93,7 @@ export function StatusBadge({ value }: { value: string | boolean }) {
     "LOCKED",
     "BLOCKED",
     "DELETED",
+    "LOGICALLY_DELETED",
     "REJECTED",
     "REVOKED",
     "DISABLED",
@@ -99,6 +101,7 @@ export function StatusBadge({ value }: { value: string | boolean }) {
   const labels: Record<string, string> = {
     ACTIVE: "Activo",
     INACTIVE: "Inactivo",
+    LOGICALLY_DELETED: "Inhabilitada",
     LOCKED: "Bloqueado",
     AVAILABLE: "Disponible",
     OUT_OF_STOCK: "Agotado",
@@ -108,6 +111,7 @@ export function StatusBadge({ value }: { value: string | boolean }) {
     REJECTED: "Rechazado",
     REVOKED: "Revocado",
     PUBLISHED: "Publicada",
+    APPROVED: "Aprobada",
     DRAFT: "En preparación",
     FINISHED: "Finalizada",
     DISABLED: "Cancelada",
@@ -202,9 +206,11 @@ export function SearchableSelect({
   placeholder = "Seleccione…",
   searchPlaceholder = "Buscar…",
   disabled = false,
+  searchable = true,
   allowCustom = false,
   onDelete,
   ariaLabel,
+  className = "",
 }: {
   value: string;
   options: SearchableOption[];
@@ -212,9 +218,11 @@ export function SearchableSelect({
   placeholder?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  searchable?: boolean;
   allowCustom?: boolean;
   onDelete?: (option: SearchableOption) => void | Promise<void>;
   ariaLabel?: string;
+  className?: string;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -222,9 +230,11 @@ export function SearchableSelect({
   const [query, setQuery] = useState("");
   const selected = options.find((option) => option.value === value);
   const normalized = query.trim().toLocaleLowerCase("es");
-  const filtered = options.filter((option) =>
-    option.label.toLocaleLowerCase("es").includes(normalized),
-  );
+  const filtered = searchable
+    ? options.filter((option) =>
+        option.label.toLocaleLowerCase("es").includes(normalized),
+      )
+    : options;
   const customValue = query.trim();
   const customExists = options.some(
     (option) =>
@@ -245,7 +255,9 @@ export function SearchableSelect({
     setOpen((current) => {
       if (!current) {
         setQuery("");
-        setTimeout(() => search.current?.focus(), 0);
+        if (searchable) {
+          setTimeout(() => search.current?.focus(), 0);
+        }
       }
       return !current;
     });
@@ -257,7 +269,10 @@ export function SearchableSelect({
   };
 
   return (
-    <div className={`searchable-select ${open ? "is-open" : ""}`} ref={root}>
+    <div
+      className={`searchable-select ${open ? "is-open" : ""} ${className}`.trim()}
+      ref={root}
+    >
       <button
         type="button"
         className="searchable-select-trigger"
@@ -274,27 +289,29 @@ export function SearchableSelect({
       </button>
       {open && (
         <div className="searchable-select-menu">
-          <label className="searchable-select-search">
-            <Search size={17} />
-            <input
-              ref={search}
-              value={query}
-              placeholder={searchPlaceholder}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setOpen(false);
-                if (
-                  event.key === "Enter" &&
-                  allowCustom &&
-                  customValue &&
-                  !customExists
-                ) {
-                  event.preventDefault();
-                  choose(customValue);
-                }
-              }}
-            />
-          </label>
+          {searchable && (
+            <label className="searchable-select-search">
+              <Search size={17} />
+              <input
+                ref={search}
+                value={query}
+                placeholder={searchPlaceholder}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setOpen(false);
+                  if (
+                    event.key === "Enter" &&
+                    allowCustom &&
+                    customValue &&
+                    !customExists
+                  ) {
+                    event.preventDefault();
+                    choose(customValue);
+                  }
+                }}
+              />
+            </label>
+          )}
           <div className="searchable-select-options" role="listbox">
             {filtered.map((option) => (
               <div
@@ -316,7 +333,7 @@ export function SearchableSelect({
                 )}
               </div>
             ))}
-            {allowCustom && customValue && !customExists && (
+            {searchable && allowCustom && customValue && !customExists && (
               <button
                 type="button"
                 className="searchable-select-custom"
@@ -550,7 +567,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
         document.body,
       )}
       {feedback?.kind === "confirm" && (
-        <Modal title={feedback.title} onClose={() => close(false)}>
+        <Modal title={feedback.title} onClose={() => close(false)} className="confirm-modal">
           <div className={`feedback-dialog feedback-${tone}`}>
             <div className="feedback-icon" aria-hidden="true">
               <Icon />
@@ -593,18 +610,25 @@ export function ConfirmButton({
   onConfirm,
   className = "btn-danger",
   disabled = false,
+  title,
+  confirmDialogTitle = "Confirmar acción",
+  confirmLabel = "Sí, continuar",
 }: {
   children: React.ReactNode;
   question: string;
   onConfirm: () => void;
   className?: string;
   disabled?: boolean;
+  title?: string;
+  confirmDialogTitle?: string;
+  confirmLabel?: string;
 }) {
   const feedback = useFeedback();
   return (
     <button
       type="button"
       disabled={disabled}
+      title={title}
       className={className}
       onClick={async () => {
         const confirmed = await feedback.confirm({

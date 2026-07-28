@@ -105,7 +105,7 @@ export function CatalogPage() {
                   <div className="card-body">
                     <h2>{fair.nombre}</h2>
                     <div className="fair-card-meta">
-                      <span><MapPin /> {fair.municipio}, {fair.departamento}</span>
+                      <span><MapPin /> {fair.departamento}</span>
                       <span><CalendarDays /> {formatDate(fair.fecha_inicio)} – {formatDate(fair.fecha_fin)}</span>
                     </div>
                     {fair.descripcion && <p className="line-clamp">{fair.descripcion}</p>}
@@ -156,7 +156,7 @@ export function FairDetailPage() {
                 <h1>{fair.data.nombre}</h1>
                 {fair.data.descripcion && <p>{fair.data.descripcion}</p>}
                 <div className="hero-meta">
-                  <span><MapPin /> {fair.data.lugar}, {fair.data.municipio}, {fair.data.departamento}</span>
+                  <span><MapPin /> {fair.data.lugar}, {fair.data.departamento}</span>
                   <span><CalendarDays /> {formatDate(fair.data.fecha_inicio)} – {formatDate(fair.data.fecha_fin)}</span>
                 </div>
                 {fair.data.direccion && <p className="fair-address">Dirección: {fair.data.direccion}</p>}

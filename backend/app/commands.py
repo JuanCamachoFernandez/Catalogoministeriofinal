@@ -101,7 +101,7 @@ def register_commands(app):
     @app.cli.command("seed-test-data")
     @with_appcontext
     def seed_test_data():
-        """Carga catÃ¡logos y un SUPERADMIN predecible para pruebas."""
+        """Carga catalogos y un SUPERADMIN predecible para pruebas."""
         require_postgresql_test_database()
         email = os.getenv("CORREO_ADMINISTRADOR_PRUEBAS", "catalogo.test@gmail.com").lower()
         password = os.getenv("CONTRASENA_ADMINISTRADOR_PRUEBAS", "Catalogo.Test123!")

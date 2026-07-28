@@ -48,7 +48,6 @@ def fair_json(fair):
         "lugar": fair.lugar,
         "direccion": fair.direccion,
         "departamento": fair.departamento,
-        "municipio": fair.municipio,
         "fecha_inicio": fair.fecha_inicio.isoformat(),
         "fecha_fin": fair.fecha_fin.isoformat(),
         "hora_inicio": fair.hora_inicio.isoformat() if fair.hora_inicio else None,

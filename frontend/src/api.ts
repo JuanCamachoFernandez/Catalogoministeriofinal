@@ -170,6 +170,10 @@ export interface ProductiveUnit {
   resena_comercial: string;
   logo_url?: string | null;
   estado: ProductiveUnitStatus;
+  deleted_at?: string | null;
+  fecha_aprobacion: string;
+  fecha_creacion: string;
+  fecha_actualizacion: string;
   sectores: ProductiveSectorLink[];
   cantidad_productos_publicables?: number;
   productos?: CanonicalProduct[];
@@ -207,7 +211,6 @@ export interface CanonicalFair {
   descripcion?: string | null;
   ubicacion: string;
   departamento?: string;
-  municipio?: string;
   fecha_inicio: string;
   fecha_fin: string;
   imagen_portada?: string | null;
@@ -221,6 +224,24 @@ export interface FairParticipation {
   nombre_comercial: string;
   estado: AssignmentStatus | "INACTIVE";
   observaciones?: string | null;
+  authorized_at?: string | null;
+  revoked_at?: string | null;
+}
+
+export interface ProductiveUnitFairParticipation {
+  id: string;
+  fair_id: string;
+  productive_unit_id: string;
+  nombre_feria: string;
+  ubicacion: string;
+  departamento: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+  estado_feria: FairStatus;
+  estado: AssignmentStatus | "INACTIVE";
+  observaciones?: string | null;
+  fecha_registro: string;
+  fecha_actualizacion: string;
   authorized_at?: string | null;
   revoked_at?: string | null;
 }
@@ -295,7 +316,6 @@ export interface Fair {
   lugar: string;
   direccion: string | null;
   departamento: string;
-  municipio: string;
   fecha_inicio: string;
   fecha_fin: string;
   hora_inicio?: string | null;

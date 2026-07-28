@@ -11,6 +11,7 @@ import "./styles/public.css";
 import "./styles/auth.css";
 import "./styles/admin.css";
 import "./styles/registration.css";
+import "./styles/fairs.css";
 import "./styles/profile.css";
 import "./styles/reports.css";
 
