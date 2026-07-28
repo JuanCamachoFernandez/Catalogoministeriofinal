@@ -1,12 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import unquote
+from uuid import UUID
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from PIL import Image
+from sqlalchemy import select
 
 from app.extensions import db
-from app.models import ProductiveSector, Role, SectorStatus, UnitSector, User, UserStatus
+from app.models import ProductiveSector, ProductiveUnit, RegistrationRequest, Role, SectorStatus, UnitSector, User, UserStatus
 
 
 def _admin(client):
@@ -99,6 +101,42 @@ def _registration_payload(client, sector_id):
         for index in range(3)
     ]
     return payload
+
+
+def test_admin_puede_registrar_una_unidad_sin_logo_ni_productos(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Manufactura", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    response = client.post(
+        "/api/admin/productive-units",
+        headers=_admin(client),
+        json={
+            "nombre_comercial": "Tejidos del Altiplano",
+            "razon_social": "Tejidos del Altiplano SRL",
+            "nit": "987654321",
+            "nombres_representante": "Lucía",
+            "apellido_paterno_representante": "Mamani",
+            "apellido_materno_representante": "Quispe",
+            "departamento": "La Paz",
+            "direccion_fisica": "Calle 2",
+            "telefono_whatsapp": "76543210",
+            "correo_electronico": "lucia@tejidos.bo",
+            "resena_comercial": "Tejidos artesanales de alpaca",
+            "sectores": [{"productive_sector_id": str(sector_id)}],
+        },
+    )
+
+    assert response.status_code == 201
+    with app.app_context():
+        unit = db.session.get(ProductiveUnit, UUID(response.json["id"]))
+        assert unit.logo_url is None
+        assert unit.estado.value == "ACTIVE"
+        assert db.session.scalar(select(UnitSector.id).where(UnitSector.productive_unit_id == unit.id))
+        user = db.session.get(User, unit.user_id)
+        assert user.must_change_password is True
 
 
 def test_solicitud_valida_formato_numerico_del_nit(app, client):
@@ -531,3 +569,38 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
     # Participation history remains AUTHORIZED, but the complete unit disappears
     # dynamically when it drops below three publishable products.
     assert client.get("/api/public/products").json["pagination"]["total"] == 0
+
+
+def test_admin_lista_solicitudes_filtra_por_rango_de_fechas(app, client):
+    with app.app_context():
+        headers = _admin(client)
+        sector = ProductiveSector(nombre="Ceramica", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    first = client.post("/api/registration-requests", json=_registration_payload(client, sector_id))
+    second_payload = _registration_payload(client, sector_id)
+    second_payload["correo_electronico"] = "otra@manos.bo"
+    second_payload["nit"] = "987654321"
+    second_payload["nombre_comercial"] = "Ceramica Andina"
+    second_payload["razon_social"] = "Ceramica Andina SRL"
+    second = client.post("/api/registration-requests", json=second_payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    with app.app_context():
+        first_item = db.session.get(RegistrationRequest, UUID(first.json["id"]))
+        second_item = db.session.get(RegistrationRequest, UUID(second.json["id"]))
+        first_item.created_at = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
+        second_item.created_at = datetime(2026, 7, 25, 12, 0, tzinfo=timezone.utc)
+        db.session.commit()
+
+    filtered = client.get(
+        "/api/admin/registration-requests?date_from=2026-07-20&date_to=2026-07-27",
+        headers=headers,
+    )
+
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json["items"]] == [second.json["id"]]

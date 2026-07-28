@@ -90,7 +90,6 @@ REPORT_COLUMNS = {
         "nombre": "Feria",
         "lugar": "Lugar",
         "departamento": "Departamento",
-        "municipio": "Municipio",
         "direccion": "Dirección",
         "fecha_inicio": "Fecha de inicio",
         "fecha_fin": "Fecha final",
@@ -288,13 +287,11 @@ def fair_rows():
     term = request.args.get("q", "").strip()
     if term:
         pattern = f"%{term}%"
-        query = query.where(or_(Fair.nombre.ilike(pattern), Fair.lugar.ilike(pattern), Fair.municipio.ilike(pattern)))
+        query = query.where(or_(Fair.nombre.ilike(pattern), Fair.lugar.ilike(pattern)))
     if request.args.get("status") in {item.value for item in FeriaStatus}:
         query = query.where(Fair.estado == FeriaStatus(request.args["status"]))
     if request.args.get("department"):
         query = query.where(Fair.departamento == request.args["department"])
-    if request.args.get("municipality"):
-        query = query.where(Fair.municipio == request.args["municipality"])
     start, end = parse_date("date_from"), parse_date("date_to")
     if start:
         query = query.where(Fair.fecha_fin >= start)
@@ -303,7 +300,7 @@ def fair_rows():
     query = query.order_by(Fair.fecha_inicio.desc())
     return [{
         "nombre": item.nombre, "lugar": item.lugar, "departamento": item.departamento,
-        "municipio": item.municipio, "direccion": item.direccion,
+        "direccion": item.direccion,
         "fecha_inicio": item.fecha_inicio, "fecha_fin": item.fecha_fin,
         "estado": item.estado, "visible": item.visible_publicamente,
         "descripcion": item.descripcion, "creado": item.created_at,

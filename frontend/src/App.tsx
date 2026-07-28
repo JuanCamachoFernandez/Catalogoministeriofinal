@@ -5,8 +5,13 @@ import { ManagementLayout } from "./Layouts";
 import { Loading } from "./ui";
 
 const pages = () => import("./CanonicalPages");
+const adminRequests = () => import("./admin/RegistrationRequestsPage");
+const adminUnits = () => import("./admin/ProductiveUnitsPage");
+const adminSectors = () => import("./admin/ProductiveSectorsPage");
+const adminProducts = () => import("./admin/AdminProductsPage");
+const adminFairs = () => import("./admin/FairsPage");
 const pick = <T extends Record<string, unknown>, K extends keyof T>(loader:()=>Promise<T>,key:K)=>lazy(()=>loader().then(module=>({default:module[key] as React.ComponentType})));
-const RegistrationPage=pick(pages,"RegistrationPage"),RegistrationRequestsPage=pick(pages,"RegistrationRequestsPage"),ProductiveUnitsPage=pick(pages,"ProductiveUnitsPage"),ProductiveSectorsPage=pick(pages,"ProductiveSectorsPage"),ProductsPage=pick(pages,"ProductsPage"),AdminProductsPage=pick(pages,"AdminProductsPage"),ProductiveUnitProfilePage=pick(pages,"ProductiveUnitProfilePage"),UnitSectorsPage=pick(pages,"UnitSectorsPage"),FairsPage=pick(pages,"FairsPage"),NotFoundPage=pick(pages,"NotFoundPage");
+const RegistrationPage=pick(pages,"RegistrationPage"),RegistrationRequestsPage=pick(adminRequests,"default"),ProductiveUnitsPage=pick(adminUnits,"default"),ProductiveSectorsPage=pick(adminSectors,"default"),ProductsPage=pick(pages,"ProductsPage"),AdminProductsPage=pick(adminProducts,"default"),ProductiveUnitProfilePage=pick(pages,"ProductiveUnitProfilePage"),UnitSectorsPage=pick(pages,"UnitSectorsPage"),FairsPage=pick(adminFairs,"default"),NotFoundPage=pick(pages,"NotFoundPage");
 const PublicCatalogPage=pick(()=>import("./PublicCatalogPages"),"PublicCatalogPage"),PublicFairPage=pick(()=>import("./PublicCatalogPages"),"PublicFairPage"),PublicUnitPage=pick(()=>import("./PublicCatalogPages"),"PublicUnitPage");
 const AdminHomePage=pick(()=>import("./DashboardPage"),"AdminHomePage"),AuditPage=pick(()=>import("./AuditPage"),"AuditPage");
 const LoginPage=pick(()=>import("./AuthPages"),"LoginPage"),ForgotPasswordPage=pick(()=>import("./AuthPages"),"ForgotPasswordPage"),ResetPasswordPage=pick(()=>import("./AuthPages"),"ResetPasswordPage"),ChangePasswordPage=pick(()=>import("./AuthPages"),"ChangePasswordPage");

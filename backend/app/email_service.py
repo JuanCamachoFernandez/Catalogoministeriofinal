@@ -86,10 +86,10 @@ class BrevoEmailService:
             "Credenciales temporales de Ferias Productivas Bolivia",
             "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:auto\">"
             f"<h2>Bienvenido/a, {safe_name}</h2>"
-            "<p>Su solicitud fue aprobada. Use estas credenciales una sola vez:</p>"
+            "<p>Su solicitud fue aprobada. Use estas credenciales para ingresar al portal:</p>"
             f"<p><strong>Usuario:</strong> {escape(username)}</p>"
             f"<p><strong>Contraseña temporal:</strong> {escape(temporary_password)}</p>"
-            "<p>El sistema le pedirá establecer una contraseña definitiva al ingresar.</p></div>",
+            "<p>El sistema le pedirá establecer una nueva contraseña definitiva al ingresar.</p></div>",
         )
 
     def send_registration_rejected(self, email, name, reason):

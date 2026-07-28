@@ -12,6 +12,7 @@ from ..models import (
     Product,
     ProductImage,
     ProductStatus,
+    ProductiveUnit,
     Role,
     ProductiveUnitStatus,
 )
@@ -482,6 +483,9 @@ def delete_productive_product(product_id):
 @roles(Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN)
 def list_admin_productive_products():
     query = select(Product).where(Product.productive_unit_id.is_not(None))
+    if request.args.get("q"):
+        term = request.args["q"].strip()
+        query = query.where(Product.nombre_comercial.ilike(f"%{term}%"))
     if request.args.get("productive_unit_id"):
         query = query.where(Product.productive_unit_id == request.args["productive_unit_id"])
     if request.args.get("estado"):

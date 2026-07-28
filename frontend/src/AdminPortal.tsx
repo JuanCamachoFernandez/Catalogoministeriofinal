@@ -1464,7 +1464,6 @@ type FairDraft = {
   lugar: string;
   direccion: string;
   departamento: string;
-  municipio: string;
   fecha_inicio: string;
   fecha_fin: string;
   observaciones: string;
@@ -1476,7 +1475,6 @@ const blankFair: FairDraft = {
   lugar: "",
   direccion: "",
   departamento: "La Paz",
-  municipio: "",
   fecha_inicio: "",
   fecha_fin: "",
   observaciones: "",
@@ -1511,7 +1509,6 @@ function FairForm({
           descripcion: fair.descripcion ?? "",
           direccion: fair.direccion ?? "",
           departamento: fair.departamento,
-          municipio: fair.municipio,
           fecha_inicio: fair.fecha_inicio,
           fecha_fin: fair.fecha_fin,
         }
@@ -1593,12 +1590,20 @@ function FairForm({
             onChange={(e) => change("direccion", e.target.value)}
           />
         </Field>
-        <LocationFields
-          department={draft.departamento}
-          municipality={draft.municipio}
-          onDepartment={(value) => change("departamento", value)}
-          onMunicipality={(value) => change("municipio", value)}
-        />
+        <Field label="Departamento">
+          <select
+            className="input"
+            required
+            value={draft.departamento}
+            onChange={(e) => change("departamento", e.target.value)}
+          >
+            {BOLIVIA_DEPARTMENTS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Fecha de inicio">
           <input
             className="input"
@@ -1937,18 +1942,17 @@ export function FairsPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [department, setDepartment] = useState("");
-  const [municipality, setMunicipality] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Fair | "new" | null>(null);
   const [workspace, setWorkspace] = useState<Fair | null>(null);
   const list = useQuery({
-    queryKey: ["fairs", query, status, department, municipality, dateFrom, dateTo, page],
+    queryKey: ["fairs", query, status, department, dateFrom, dateTo, page],
     queryFn: () =>
       api
         .get<Paged<Fair>>("/fairs", {
-          params: { q: query || undefined, estado: status || undefined, departamento: department || undefined, municipio: municipality || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, page },
+          params: { q: query || undefined, estado: status || undefined, departamento: department || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, page },
         })
         .then((r) => r.data),
   });
@@ -2008,8 +2012,7 @@ export function FairsPage() {
           <option value="FINISHED">Finalizada</option>
           <option value="DISABLED">Cancelada</option>
         </select>
-        <SearchableSelect value={department} options={[{ value: "", label: "Todos los departamentos" }, ...BOLIVIA_DEPARTMENTS.map((item) => ({ value: item, label: item }))]} placeholder="Todos los departamentos" ariaLabel="Departamento de feria" onChange={(value) => { setDepartment(value); setMunicipality(""); setPage(1); }} />
-        <SearchableSelect disabled={!department} value={municipality} options={[{ value: "", label: "Todos los municipios" }, ...municipalitiesFor(department).map((item) => ({ value: item, label: item }))]} placeholder="Todos los municipios" ariaLabel="Municipio de feria" onChange={(value) => { setMunicipality(value); setPage(1); }} />
+        <SearchableSelect value={department} options={[{ value: "", label: "Todos los departamentos" }, ...BOLIVIA_DEPARTMENTS.map((item) => ({ value: item, label: item }))]} placeholder="Todos los departamentos" ariaLabel="Departamento de feria" onChange={(value) => { setDepartment(value); setPage(1); }} />
         <input className="input" type="date" aria-label="Ferias desde" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
         <input className="input" type="date" aria-label="Ferias hasta" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
       </div>
@@ -2036,7 +2039,7 @@ export function FairsPage() {
                       <StatusBadge value={fair.estado} />
                     </div>
                     <p>
-                      {fair.lugar}, {fair.municipio}
+                      {fair.lugar}, {fair.departamento}
                     </p>
                     <small>
                       {fair.fecha_inicio} – {fair.fecha_fin}

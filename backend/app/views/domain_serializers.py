@@ -124,6 +124,7 @@ def productive_unit_json(item, include_products=False):
         "resena_comercial": item.resena_comercial,
         "logo_url": item.logo_url,
         "estado": item.estado.value,
+        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
         "fecha_aprobacion": item.fecha_aprobacion.isoformat(),
         "fecha_creacion": item.created_at.isoformat(),
         "fecha_actualizacion": item.updated_at.isoformat(),
