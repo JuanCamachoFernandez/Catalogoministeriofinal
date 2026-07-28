@@ -58,6 +58,7 @@ import {
   StatusBadge,
   UploadProgress,
   useFeedback,
+  useResponsivePaginationItems,
 } from "./ui";
 
 function Header({
@@ -499,6 +500,11 @@ export function AdministratorsPage() {
         })
         .then((response) => response.data),
   });
+  const displayedAdmins = useResponsivePaginationItems(
+    list.data?.items ?? [],
+    list.data?.pagination ?? emptyPagination,
+    `${query}|${status}|${role}|${unit}`,
+  );
   const units = useQuery({
     queryKey: ["admin-units"],
     queryFn: () => api.get<{ items: { id: string; nombre: string }[] }>("/admin/units").then((response) => response.data.items),
@@ -542,12 +548,12 @@ export function AdministratorsPage() {
         <select className="input" value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }}><option value="">Todos los roles</option><option value="SUPERADMIN">Superadministradores</option><option value="ADMIN_VICEMINISTERIO">Administradores</option></select>
         <select className="input" value={unit} onChange={(event) => { setUnit(event.target.value); setPage(1); }}><option value="">Todas las unidades</option>{units.data?.map((item) => <option key={item.id} value={item.nombre}>{item.nombre}</option>)}</select>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedAdmins.length ? (
         <Loading />
-      ) : list.data?.items.length ? (
+      ) : displayedAdmins.length ? (
         <>
           <div className="data-cards">
-            {list.data.items.map((item) => (
+            {displayedAdmins.map((item) => (
               <article className="data-card" key={item.id}>
                 <div className="data-card-main">
                   <div className="avatar">
@@ -640,7 +646,7 @@ export function AdministratorsPage() {
               </article>
             ))}
           </div>
-          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+          <PaginationBar pagination={list.data?.pagination ?? emptyPagination} onPage={setPage} mobileLabel="Ver más administradores" />
         </>
       ) : (
         <Empty title="No hay administradores" />
@@ -1071,6 +1077,11 @@ export function ExhibitorsPage() {
         })
         .then((r) => r.data),
   });
+  const displayedExhibitors = useResponsivePaginationItems(
+    list.data?.items ?? [],
+    list.data?.pagination ?? emptyPagination,
+    `${query}|${status}|${department}|${municipality}|${documentType}`,
+  );
   const types = useQuery({
     queryKey: ["exhibitor-types"],
     queryFn: () =>
@@ -1149,12 +1160,12 @@ export function ExhibitorsPage() {
         />
         <select className="input" value={documentType} onChange={(event) => { setDocumentType(event.target.value); setPage(1); }}><option value="">Todos los documentos</option><option value="CI">CI</option><option value="NIT">NIT</option><option value="OTRO">Otro</option></select>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedExhibitors.length ? (
         <Loading />
-      ) : list.data?.items.length ? (
+      ) : displayedExhibitors.length ? (
         <>
           <div className="data-cards">
-            {list.data.items.map((item) => (
+            {displayedExhibitors.map((item) => (
               <article className="data-card" key={item.id}>
                 <div className="data-card-main">
                   {item.logo ? (
@@ -1251,7 +1262,7 @@ export function ExhibitorsPage() {
               </article>
             ))}
           </div>
-          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+          <PaginationBar pagination={list.data?.pagination ?? emptyPagination} onPage={setPage} mobileLabel="Ver más expositores" />
         </>
       ) : (
         <Empty title="No se encontraron expositores" />
@@ -1357,6 +1368,11 @@ export function CategoriesPage() {
         .get<Paged<Category>>("/admin/categories", { params: { q: query || undefined, status: status || undefined, page } })
         .then((r) => r.data),
   });
+  const displayedCategories = useResponsivePaginationItems(
+    list.data?.items ?? [],
+    list.data?.pagination ?? emptyPagination,
+    `${query}|${status}`,
+  );
   const action = async (
     operation: () => Promise<unknown>,
     successMessage: string,
@@ -1386,12 +1402,12 @@ export function CategoriesPage() {
         <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Buscar categoría…" />
         <select className="input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Todos los estados</option><option value="active">Activas</option><option value="inactive">Inactivas</option></select>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedCategories.length ? (
         <Loading />
-      ) : list.data?.items.length ? (
+      ) : displayedCategories.length ? (
         <>
           <div className="data-cards">
-            {list.data.items.map((item) => (
+            {displayedCategories.map((item) => (
               <article className="data-card" key={item.id}>
                 <div className="data-card-main">
                   <div className="avatar">
@@ -1443,7 +1459,7 @@ export function CategoriesPage() {
               </article>
             ))}
           </div>
-          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+          <PaginationBar pagination={list.data?.pagination ?? emptyPagination} onPage={setPage} mobileLabel="Ver más categorías" />
         </>
       ) : (
         <Empty title="No hay categorías" />
@@ -1952,6 +1968,11 @@ export function FairsPage() {
         })
         .then((r) => r.data),
   });
+  const displayedFairs = useResponsivePaginationItems(
+    list.data?.items ?? [],
+    list.data?.pagination ?? emptyPagination,
+    `${query}|${status}|${department}|${municipality}|${dateFrom}|${dateTo}`,
+  );
   const exhibitors = useQuery({
     queryKey: ["exhibitors", "fair-options"],
     queryFn: () =>
@@ -2013,12 +2034,12 @@ export function FairsPage() {
         <input className="input" type="date" aria-label="Ferias desde" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
         <input className="input" type="date" aria-label="Ferias hasta" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedFairs.length ? (
         <Loading />
-      ) : list.data?.items.length ? (
+      ) : displayedFairs.length ? (
         <>
           <div className="fair-admin-grid">
-            {list.data.items.map((fair) => {
+            {displayedFairs.map((fair) => {
               const terminal =
                 fair.estado === "FINISHED" || fair.estado === "DISABLED";
               return (
@@ -2077,7 +2098,7 @@ export function FairsPage() {
               );
             })}
           </div>
-          <PaginationBar pagination={list.data.pagination} onPage={setPage} />
+          <PaginationBar pagination={list.data?.pagination ?? emptyPagination} onPage={setPage} mobileLabel="Ver más ferias" />
         </>
       ) : (
         <Empty title="No hay ferias registradas" />
@@ -2117,18 +2138,23 @@ export function AuditPage() {
         .get<Paged<AuditItem>>("/audit", { params: { q: query || undefined, action: action || undefined, entity: entity || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, page } })
         .then((r) => r.data),
   });
+  const displayedAuditItems = useResponsivePaginationItems(
+    list.data?.items ?? [],
+    list.data?.pagination ?? emptyPagination,
+    `${query}|${action}|${entity}|${dateFrom}|${dateTo}`,
+  );
   const actions = useMemo(
-    () => [...new Set(list.data?.items.map((item) => item.accion) ?? [])].sort(),
-    [list.data],
+    () => [...new Set(displayedAuditItems.map((item) => item.accion))].sort(),
+    [displayedAuditItems],
   );
   const entities = useMemo(
-    () => [...new Set(list.data?.items.map((item) => item.entidad) ?? [])].sort(),
-    [list.data],
+    () => [...new Set(displayedAuditItems.map((item) => item.entidad))].sort(),
+    [displayedAuditItems],
   );
   const reportOptions = useQuery({ queryKey: ["report-options"], queryFn: () => api.get<{ actions: string[]; entities: string[] }>("/reports/options").then((response) => response.data) });
   const filtered = useMemo(() => {
     const term = query.trim().toLocaleLowerCase("es");
-    return (list.data?.items ?? []).filter(
+    return displayedAuditItems.filter(
       (item) =>
         (!action || item.accion === action) &&
         (!entity || item.entidad === entity) &&
@@ -2137,7 +2163,7 @@ export function AuditPage() {
             .toLocaleLowerCase("es")
             .includes(term)),
     );
-  }, [list.data, query, action, entity]);
+  }, [displayedAuditItems, query, action, entity]);
   return (
     <>
       <Header
@@ -2176,11 +2202,11 @@ export function AuditPage() {
         <input className="input" type="date" aria-label="Auditoría desde" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
         <input className="input" type="date" aria-label="Auditoría hasta" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedAuditItems.length ? (
         <Loading />
       ) : list.error ? (
         <ErrorBox message={apiError(list.error)} />
-      ) : list.data?.items.length ? (
+      ) : displayedAuditItems.length ? (
         <>
           <div className="audit-table">
             <table>
@@ -2215,8 +2241,9 @@ export function AuditPage() {
             />
           )}
           <PaginationBar
-            pagination={list.data.pagination ?? emptyPagination}
+            pagination={list.data?.pagination ?? emptyPagination}
             onPage={setPage}
+            mobileLabel="Ver más registros"
           />
         </>
       ) : (

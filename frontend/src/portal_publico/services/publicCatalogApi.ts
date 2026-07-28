@@ -1,5 +1,6 @@
 import {
   api,
+  type CanonicalProduct,
   type Paged,
   type ProductiveSector,
   type ProductiveUnit,
@@ -7,9 +8,15 @@ import {
 import type { ActiveFairsResponse } from "../types";
 
 export const publicCatalogApi = {
-  getActiveFairs: () =>
+  getActiveFairs: ({
+    page = 1,
+    perPage = 100,
+    query = "",
+  }: { page?: number; perPage?: number; query?: string } = {}) =>
     api
-      .get<ActiveFairsResponse>("/public/fairs/active")
+      .get<ActiveFairsResponse>("/public/fairs/active", {
+        params: { page, per_page: perPage, q: query || undefined },
+      })
       .then((response) => response.data),
 
   getSectors: () =>
@@ -49,6 +56,18 @@ export const publicCatalogApi = {
     api
       .get<ProductiveUnit>(`/public/productive-units/${unitId}`, {
         params: { fair_id: fairId },
+      })
+      .then((response) => response.data),
+
+  getFairUnitProducts: (fairId: string, unitId: string, page: number) =>
+    api
+      .get<Paged<CanonicalProduct>>("/public/products", {
+        params: {
+          fair_id: fairId,
+          productive_unit_id: unitId,
+          page,
+          per_page: 6,
+        },
       })
       .then((response) => response.data),
 

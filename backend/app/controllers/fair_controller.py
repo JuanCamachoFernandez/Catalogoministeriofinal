@@ -784,8 +784,8 @@ def canonical_authorize_participation(fair_id, participation_id):
     if not unit or unit.deleted_at or unit.estado != ProductiveUnitStatus.ACTIVE:
         return error("La Unidad Productiva no está activa", 409)
     publicable_count = len(db.session.scalars(Product.publicable_query(unit.id)).all())
-    if not 3 <= publicable_count <= 5:
-        return error("Se requieren entre tres y cinco productos publicables", 409)
+    if publicable_count < 3:
+        return error("Se requieren al menos tres productos publicables", 409)
     item.estado = AssignmentStatus.AUTHORIZED
     item.authorized_by = current_user().id
     item.authorized_at = datetime.now(timezone.utc)

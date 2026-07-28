@@ -581,6 +581,7 @@ export function ProductiveUnitProfilePage() {
         <Modal
           title="Editar perfil"
           wide
+          hideHeader
           className="unit-profile-editor-modal"
           onClose={() => {
             setEditing(false);

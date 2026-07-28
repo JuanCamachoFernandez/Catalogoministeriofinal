@@ -1,8 +1,165 @@
-import { Activity, CalendarDays, ClipboardList, Factory, History, Image, LayoutDashboard, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen, UserRound, X } from "lucide-react";
-import { useEffect,useState } from "react";
-import { Link,NavLink,useNavigate } from "react-router-dom";
-import { assetUrl } from "./api";import { useAuth } from "./AuthContext";import { FeedbackProvider } from "./ui";import { SessionInactivityGuard } from "./SessionInactivityGuard";
-const adminNav=[["/admin","Resumen",LayoutDashboard],["/admin/solicitudes","Solicitudes",ClipboardList],["/admin/unidades-productivas","Unidades Productivas",Factory],["/admin/sectores-productivos","Sectores Productivos",Activity],["/admin/productos","Productos",Package],["/admin/ferias","Ferias",CalendarDays],["/admin/auditoria","Auditoría",History]] as const;
-const unitNav=[["/unidad-productiva/productos","Mis productos",Package],["/unidad-productiva/perfil","Mi Unidad Productiva",UserRound],["/unidad-productiva/sectores","Mis sectores",Activity]] as const;
-export function InstitutionalSeal({className=""}:{className?:string}){return <img className={`institutional-seal ${className}`.trim()} src="/escudo-bolivia-legible.png" alt="Escudo del Estado Plurinacional de Bolivia"/>}
-export function ManagementLayout({children,area}:{children:React.ReactNode;area:"admin"|"productive-unit"}){const[open,setOpen]=useState(false),[collapsed,setCollapsed]=useState(()=>localStorage.getItem("catalog_sidebar_collapsed")==="true");const{user,logout}=useAuth();const navigate=useNavigate(),links=area==="admin"?adminNav:unitNav;useEffect(()=>localStorage.setItem("catalog_sidebar_collapsed",String(collapsed)),[collapsed]);const signOut=async()=>{await logout();navigate("/login",{replace:true})};return <FeedbackProvider><div className={`management-shell ${area==="productive-unit"?"productive-unit-shell":""} ${collapsed?"sidebar-collapsed":""}`}><SessionInactivityGuard/><header className="management-header"><div className="header-brand"><button className="mobile-menu" onClick={()=>setOpen(true)} aria-label="Abrir menú"><Menu/></button><button className="sidebar-toggle" onClick={()=>setCollapsed(v=>!v)} aria-label="Alternar barra lateral">{collapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button><strong>Ferias Productivas Bolivia</strong></div><InstitutionalSeal className="management-seal"/><div className="header-user"><Link className="header-profile-link" to={area==="admin"?"/admin":"/unidad-productiva/perfil"}>{user?.foto_perfil?<img src={assetUrl(user.foto_perfil)} alt="Perfil"/>:<span className="header-avatar">{user?.first_name?.charAt(0)}</span>}</Link><span className="header-user-copy"><strong>{user?.first_name}</strong><small>{area==="admin"?"Administrador":"Responsable"}</small></span><button onClick={signOut}><LogOut size={18}/><span>Salir</span></button></div></header>{open&&<button className="sidebar-scrim" onClick={()=>setOpen(false)} aria-label="Cerrar menú"/>}<aside className={`sidebar ${open?"sidebar-open":""}`}><button className="sidebar-close" onClick={()=>setOpen(false)} aria-label="Cerrar"><X/></button><p className="sidebar-title">{area==="admin"?<LayoutDashboard/>:<Factory/>}<span>{area==="admin"?"Administración":"Unidad Productiva"}</span></p><nav>{links.map(([to,label,Icon])=><NavLink end={to==="/admin"} key={to} to={to} title={collapsed?label:undefined} onClick={()=>setOpen(false)} className={({isActive})=>isActive?"active":""}><Icon size={20}/><span>{label}</span></NavLink>)}</nav><Link className="catalog-link" to="/catalogo"><Image size={19}/><span>Ver catálogo público</span></Link></aside><main className="management-main"><div className="content-wrap">{children}</div></main></div></FeedbackProvider>}
+import {
+  Activity,
+  CalendarDays,
+  ClipboardList,
+  Factory,
+  History,
+  Image,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Package,
+  PanelLeftClose,
+  PanelLeftOpen,
+  UserRound,
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { assetUrl } from "./api";
+import { useAuth } from "./AuthContext";
+import { FeedbackProvider } from "./ui";
+import { SessionInactivityGuard } from "./SessionInactivityGuard";
+const adminNav = [
+  ["/admin", "Resumen", LayoutDashboard],
+  ["/admin/solicitudes", "Solicitudes", ClipboardList],
+  ["/admin/unidades-productivas", "Unidades Productivas", Factory],
+  ["/admin/sectores-productivos", "Sectores Productivos", Activity],
+  ["/admin/productos", "Productos", Package],
+  ["/admin/ferias", "Ferias", CalendarDays],
+  ["/admin/auditoria", "Auditoría", History],
+] as const;
+const unitNav = [
+  ["/unidad-productiva/productos", "Mis productos", Package],
+  ["/unidad-productiva/perfil", "Mi Unidad Productiva", UserRound],
+  ["/unidad-productiva/sectores", "Mis sectores", Activity],
+] as const;
+export function InstitutionalSeal({ className = "" }: { className?: string }) {
+  return (
+    <img
+      className={`institutional-seal ${className}`.trim()}
+      src="/escudo-bolivia-legible.png"
+      alt="Escudo del Estado Plurinacional de Bolivia"
+    />
+  );
+}
+export function ManagementLayout({
+  children,
+  area,
+}: {
+  children: React.ReactNode;
+  area: "admin" | "productive-unit";
+}) {
+  const [open, setOpen] = useState(false),
+    [collapsed, setCollapsed] = useState(
+      () => localStorage.getItem("catalog_sidebar_collapsed") === "true",
+    );
+  const { user, logout } = useAuth();
+  const navigate = useNavigate(),
+    links = area === "admin" ? adminNav : unitNav;
+  useEffect(
+    () => localStorage.setItem("catalog_sidebar_collapsed", String(collapsed)),
+    [collapsed],
+  );
+  const signOut = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
+  return (
+    <FeedbackProvider>
+      <div
+        className={`management-shell ${area === "productive-unit" ? "productive-unit-shell" : ""} ${collapsed ? "sidebar-collapsed" : ""}`}
+      >
+        <SessionInactivityGuard />
+        <header className="management-header">
+          <div className="header-brand">
+            <button
+              className="mobile-menu"
+              onClick={() => setOpen(true)}
+              aria-label="Abrir menú"
+            >
+              <Menu />
+            </button>
+            <button
+              className="sidebar-toggle"
+              onClick={() => setCollapsed((v) => !v)}
+              aria-label="Alternar barra lateral"
+            >
+              {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+            </button>
+            <strong>Ferias Productivas Bolivia</strong>
+          </div>
+          <InstitutionalSeal className="management-seal" />
+          <div className="header-user">
+            <Link
+              className="header-profile-link"
+              to={area === "admin" ? "/admin" : "/unidad-productiva/perfil"}
+            >
+              {user?.foto_perfil ? (
+                <img src={assetUrl(user.foto_perfil)} alt="Perfil" />
+              ) : (
+                <span className="header-avatar">
+                  {user?.first_name?.charAt(0)}
+                </span>
+              )}
+            </Link>
+            <span className="header-user-copy">
+              <strong>{user?.first_name}</strong>
+              <small>
+                {area === "admin" ? "Administrador" : "Responsable"}
+              </small>
+            </span>
+            <button onClick={signOut}>
+              <LogOut size={18} />
+              <span>Salir</span>
+            </button>
+          </div>
+        </header>
+        {open && (
+          <button
+            className="sidebar-scrim"
+            onClick={() => setOpen(false)}
+            aria-label="Cerrar menú"
+          />
+        )}
+        <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
+          <button
+            className="sidebar-close"
+            onClick={() => setOpen(false)}
+            aria-label="Cerrar"
+          >
+            <X />
+          </button>
+          <p className="sidebar-title">
+            {area === "admin" ? <LayoutDashboard /> : <Factory />}
+            <span>
+              {area === "admin" ? "Administración" : "Unidad Productiva"}
+            </span>
+          </p>
+          <nav>
+            {links.map(([to, label, Icon]) => (
+              <NavLink
+                end={to === "/admin"}
+                key={to}
+                to={to}
+                title={collapsed ? label : undefined}
+                onClick={() => setOpen(false)}
+                className={({ isActive }) => (isActive ? "active" : "")}
+              >
+                <Icon size={20} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+          <Link className="catalog-link" to="/catalogo">
+            <Image size={19} />
+            <span>Ver catálogo público</span>
+          </Link>
+        </aside>
+        <main className="management-main">
+          <div className="content-wrap">{children}</div>
+        </main>
+      </div>
+    </FeedbackProvider>
+  );
+}

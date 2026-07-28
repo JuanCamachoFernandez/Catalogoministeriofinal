@@ -44,6 +44,7 @@ import {
   StatusBadge,
   UploadProgress,
   useFeedback,
+  useResponsivePaginationItems,
 } from "./ui";
 import { PublicHeader } from "./PublicHeader";
 
@@ -1032,6 +1033,11 @@ export function RegistrationRequestsPage() {
     }
   };
   const data = pageData(list.data);
+  const displayedRequests = useResponsivePaginationItems(
+    data.items,
+    data.pagination,
+    `${q}|${estado}`,
+  );
   return (
     <section>
       <div className="page-heading">
@@ -1063,11 +1069,11 @@ export function RegistrationRequestsPage() {
           <option>REJECTED</option>
         </select>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedRequests.length ? (
         <Loading />
       ) : list.error ? (
         <ErrorBox message={message(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedRequests.length ? (
         <>
           <div className="table-wrap">
             <table>
@@ -1081,7 +1087,7 @@ export function RegistrationRequestsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => (
+                {displayedRequests.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <strong>{item.nombre_comercial}</strong>
@@ -1105,7 +1111,7 @@ export function RegistrationRequestsPage() {
               </tbody>
             </table>
           </div>
-          <PaginationBar pagination={data.pagination} onPageChange={setPage} />
+          <PaginationBar pagination={data.pagination} onPageChange={setPage} mobileLabel="Ver más solicitudes" />
         </>
       ) : (
         <Empty title="No hay solicitudes" />
@@ -1254,6 +1260,11 @@ export function ProductiveUnitsPage() {
     }
   };
   const data = pageData(list.data);
+  const displayedUnits = useResponsivePaginationItems(
+    data.items,
+    data.pagination,
+    `${q}|${estado}`,
+  );
   return (
     <section>
       <div className="page-heading">
@@ -1285,14 +1296,14 @@ export function ProductiveUnitsPage() {
           <option>SUSPENDED</option>
         </select>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedUnits.length ? (
         <Loading />
       ) : list.error ? (
         <ErrorBox message={message(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedUnits.length ? (
         <>
           <div className="card-grid">
-            {data.items.map((item) => (
+            {displayedUnits.map((item) => (
               <article className="catalog-card" key={item.id}>
                 {item.logo_url && <img src={assetUrl(item.logo_url)} alt="" />}
                 <div className="card-body">
@@ -1323,7 +1334,7 @@ export function ProductiveUnitsPage() {
               </article>
             ))}
           </div>
-          <PaginationBar pagination={data.pagination} onPageChange={setPage} />
+          <PaginationBar pagination={data.pagination} onPageChange={setPage} mobileLabel="Ver más unidades productivas" />
         </>
       ) : (
         <Empty title="No hay Unidades Productivas" />
@@ -1691,7 +1702,10 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
     [creating, setCreating] = useState(false),
     [draft, setDraft] = useState(emptyProduct),
     [validationErrors, setValidationErrors] = useState<ProductDraftErrors>({}),
-    [imagesFor, setImagesFor] = useState<CanonicalProduct | null>(null);
+    [imagesFor, setImagesFor] = useState<CanonicalProduct | null>(null),
+    [deletedProductIds, setDeletedProductIds] = useState<Set<string>>(
+      () => new Set(),
+    );
   const qc = useQueryClient(),
     feedback = useFeedback(),
     base = admin ? "/admin/products" : "/productive-unit/products";
@@ -1699,11 +1713,32 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
       queryKey: ["canonical-products", admin, page],
       queryFn: () =>
         api
-          .get<Paged<CanonicalProduct>>(base, { params: { page } })
+          .get<Paged<CanonicalProduct>>(base, {
+            params: { page, per_page: admin ? 20 : 6 },
+          })
           .then((r) => r.data),
     }),
     data = pageData(list.data);
+  const displayedProducts = useResponsivePaginationItems(
+    data.items,
+    data.pagination,
+    admin ? "admin" : "unidad-productiva",
+  );
+  const visibleProducts = displayedProducts.filter(
+    (product) => !deletedProductIds.has(product.id),
+  );
+  const productLimit = 15;
+  const productCount = admin ? 0 : data.pagination.total;
+  const reachedProductLimit = !admin && productCount >= productLimit;
   const open = (p?: CanonicalProduct) => {
+    if (!p && reachedProductLimit) {
+      feedback.notify({
+        title: "Límite de productos alcanzado",
+        message: `La unidad puede registrar como máximo ${productLimit} productos.`,
+        tone: "warning",
+      });
+      return;
+    }
     setValidationErrors({});
     setEditing(p ?? null);
     setCreating(!p);
@@ -1786,23 +1821,55 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
               </p>
             </div>
           </div>
-          <button
-            className="unit-products-create-button"
-            onClick={() => open()}
-          >
-            <Plus size={19} />
-            Nuevo producto
-          </button>
+          <div className="unit-products-hero-actions">
+            <div
+              className="unit-products-quota"
+              aria-label={`${productCount} de ${productLimit} productos registrados`}
+            >
+              <div className="unit-products-quota-copy">
+                <span>Productos registrados</span>
+                <strong>
+                  {productCount}<small>/{productLimit}</small>
+                </strong>
+              </div>
+              <div
+                className="unit-products-quota-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={productLimit}
+                aria-valuenow={Math.min(productCount, productLimit)}
+              >
+                <span
+                  style={{
+                    width: `${Math.min((productCount / productLimit) * 100, 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+            <button
+              className="unit-products-create-button"
+              onClick={() => open()}
+              disabled={reachedProductLimit}
+              title={
+                reachedProductLimit
+                  ? `Límite máximo de ${productLimit} productos alcanzado`
+                  : undefined
+              }
+            >
+              <Plus size={19} />
+              {reachedProductLimit ? "Límite alcanzado" : "Nuevo producto"}
+            </button>
+          </div>
         </header>
       )}
-      {list.isLoading ? (
+      {list.isLoading && !visibleProducts.length ? (
         <Loading />
       ) : list.error ? (
         <ErrorBox message={message(list.error)} />
-      ) : data.items.length ? (
+      ) : visibleProducts.length ? (
         <>
           <div className="card-grid">
-            {data.items.map((p) => (
+            {visibleProducts.map((p) => (
               <article
                 className={`catalog-card ${admin ? "" : "unit-product-card"}`}
                 key={p.id}
@@ -1884,6 +1951,39 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
                         >
                           <Images size={16} /> Imágenes
                         </button>
+                        <ConfirmButton
+                          className="btn-small btn-danger unit-product-delete-button"
+                          question={`¿Eliminar permanentemente “${p.nombre_comercial}”? Esta acción no se puede deshacer.`}
+                          onConfirm={async () => {
+                            try {
+                              await api.delete(
+                                `/productive-unit/products/${p.id}`,
+                              );
+                              setDeletedProductIds((current) => {
+                                const next = new Set(current);
+                                next.add(p.id);
+                                return next;
+                              });
+                              if (data.items.length === 1 && page > 1) {
+                                setPage((current) => current - 1);
+                              }
+                              await qc.invalidateQueries({
+                                queryKey: ["canonical-products"],
+                              });
+                              feedback.success(
+                                "Producto eliminado permanentemente",
+                                p.nombre_comercial,
+                              );
+                            } catch (error) {
+                              feedback.error(
+                                "No se pudo eliminar el producto",
+                                message(error),
+                              );
+                            }
+                          }}
+                        >
+                          <Trash2 size={16} /> Eliminar producto
+                        </ConfirmButton>
                       </>
                     )}
                     <label className="product-status-field">
@@ -1893,13 +1993,21 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
                         className={`input compact product-status-select product-status-${p.estado.toLowerCase().replaceAll("_", "-")}`}
                         value={p.estado}
                         onChange={async (e) => {
-                          await api.patch(
+                          const response = await api.patch<CanonicalProduct>(
                             `${admin ? "/admin/products" : "/productive-unit/products"}/${p.id}/status`,
                             { estado: e.target.value },
                           );
-                          await qc.invalidateQueries({
-                            queryKey: ["canonical-products"],
-                          });
+                          qc.setQueryData<Paged<CanonicalProduct>>(
+                            ["canonical-products", admin, page],
+                            (current) => current
+                              ? {
+                                  ...current,
+                                  items: current.items.map((item) =>
+                                    item.id === p.id ? response.data : item,
+                                  ),
+                                }
+                              : current,
+                          );
                         }}
                       >
                         <option value="DRAFT">En preparación</option>
@@ -1913,7 +2021,7 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
               </article>
             ))}
           </div>
-          <PaginationBar pagination={data.pagination} onPageChange={setPage} />
+          <PaginationBar pagination={data.pagination} onPageChange={setPage} mobileLabel="Ver más productos" />
         </>
       ) : !admin ? (
         <div className="unit-products-empty">
@@ -1939,6 +2047,7 @@ export function ProductsPage({ admin = false }: { admin?: boolean }) {
         <Modal
           title={editing ? "Editar producto" : "Nuevo producto"}
           wide
+          hideHeader
           className="product-editor-modal"
           onClose={() => {
             setEditing(null);
@@ -2097,6 +2206,7 @@ function ProductImagesModal({
       title="Galería del producto"
       onClose={onClose}
       wide
+      hideHeader
       className="product-images-modal"
     >
       <div className="product-images-intro">
@@ -2285,8 +2395,8 @@ const emptyFair: FairDraft = {
   fecha_fin: "",
 };
 export function FairsPage() {
-  const page = 1;
-  const [editing, setEditing] = useState<CanonicalFair | null>(null),
+  const [page, setPage] = useState(1),
+    [editing, setEditing] = useState<CanonicalFair | null>(null),
     [creating, setCreating] = useState(false),
     [draft, setDraft] = useState(emptyFair),
     [participants, setParticipants] = useState<CanonicalFair | null>(null),
@@ -2305,6 +2415,11 @@ export function FairsPage() {
           .then((r) => r.data),
     }),
     data = pageData(list.data);
+  const displayedFairs = useResponsivePaginationItems(
+    data.items,
+    data.pagination,
+    "admin-fairs",
+  );
   useEffect(
     () => () => {
       if (coverPreview.startsWith("blob:")) URL.revokeObjectURL(coverPreview);
@@ -2416,11 +2531,12 @@ export function FairsPage() {
           Nueva feria
         </button>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedFairs.length ? (
         <Loading />
       ) : (
+        <>
         <div className="card-grid">
-          {data.items.map((f) => (
+          {displayedFairs.map((f) => (
             <article className="catalog-card" key={f.id}>
               {f.imagen_portada && (
                 <img src={assetUrl(f.imagen_portada)} alt="" />
@@ -2477,6 +2593,12 @@ export function FairsPage() {
             </article>
           ))}
         </div>
+        <PaginationBar
+          pagination={data.pagination}
+          onPageChange={setPage}
+          mobileLabel="Ver más ferias"
+        />
+        </>
       )}
       {(editing || creating) && (
         <Modal

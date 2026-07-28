@@ -935,12 +935,58 @@ textarea.input {
 }
 .pagination {
   display: flex;
+  overflow-anchor: none;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   margin-top: 1rem;
   color: var(--color-text-secondary);
   font-size: 0.9rem;
+}
+.pagination-desktop-controls,
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.pagination-desktop-controls {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+.pagination-pages {
+  flex-wrap: nowrap;
+  justify-content: center;
+}
+.pagination-page {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: #fff;
+  color: var(--color-text);
+  font-weight: 800;
+  cursor: pointer;
+}
+.pagination-page:hover,
+.pagination-page.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+.pagination-page.active {
+  cursor: default;
+}
+.pagination-arrow {
+  min-width: 38px;
+  padding-inline: 0.55rem;
+}
+.pagination-mobile-more {
+  display: none !important;
+  width: 100%;
+  justify-content: center;
+}
+.pagination-scroll-target {
+  scroll-margin-top: 6.25rem;
 }
 .page-state,
 .empty-state {
@@ -1185,6 +1231,18 @@ textarea.input {
   .detail-image {
     height: 300px;
   }
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+    text-align: center;
+  }
+  .pagination-desktop-controls,
+  .pagination-summary {
+    display: none;
+  }
+  .pagination-mobile-more {
+    display: inline-flex !important;
+  }
 }
 @media (max-width: 520px) {
   .exhibitor-grid,
@@ -1213,10 +1271,6 @@ textarea.input {
   }
   .data-card-actions > * {
     width: 100%;
-  }
-  .pagination {
-    align-items: flex-start;
-    flex-direction: column;
   }
   .selection-bar > div span {
     display: none;

@@ -32,6 +32,7 @@ import {
 } from "./auditLabels";
 
 const openModalStack: HTMLElement[] = [];
+const FIELD_HELP_OPEN_EVENT = "catalog:field-help-open";
 
 export function Loading({ label = "Cargando…" }: { label?: string }) {
   return (
@@ -135,40 +136,156 @@ export function PaginationBar({
   pagination,
   onPage,
   onPageChange,
+  mobileLabel = "Ver más resultados",
+  scrollTargetId,
+  scrollOnDesktop = true,
 }: {
   pagination: Pagination;
   onPage?: (page: number) => void;
   onPageChange?: (page: number) => void;
+  mobileLabel?: string;
+  scrollTargetId?: string;
+  scrollOnDesktop?: boolean;
 }) {
   const changePage = onPage ?? onPageChange ?? (() => undefined);
   if (!pagination.total) return null;
+  const selectDesktopPage = (page: number) => {
+    changePage(page);
+    if (
+      scrollOnDesktop &&
+      !navigator.userAgent.toLowerCase().includes("jsdom")
+    ) {
+      window.requestAnimationFrame(() => {
+        const target = scrollTargetId
+          ? document.getElementById(scrollTargetId)
+          : null;
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+        else window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    }
+  };
   return (
     <div className="pagination" aria-label="Paginación">
-      <span>
+      <span className="pagination-summary">
         Página {pagination.page} de {Math.max(1, pagination.pages)} ·{" "}
         {pagination.total} registros
       </span>
-      <div className="flex gap-2">
+      <div className="pagination-desktop-controls">
         <button
-          className="btn-outline"
+          className="btn-outline pagination-arrow"
           disabled={!pagination.has_prev}
-          onClick={() => changePage(pagination.page - 1)}
+          onClick={() => selectDesktopPage(pagination.page - 1)}
           aria-label="Página anterior"
         >
           <ChevronLeft size={18} />
         </button>
+        <div className="pagination-pages" aria-label="Páginas disponibles">
+          {Array.from({ length: Math.max(1, pagination.pages) }, (_, index) => {
+            const page = index + 1;
+            return (
+              <button
+                className={`pagination-page${page === pagination.page ? " active" : ""}`}
+                key={page}
+                disabled={page === pagination.page}
+                onClick={() => selectDesktopPage(page)}
+                aria-label={`Ir a la página ${page}`}
+                aria-current={page === pagination.page ? "page" : undefined}
+              >
+                {page}
+              </button>
+            );
+          })}
+        </div>
         <button
-          className="btn-outline"
+          className="btn-outline pagination-arrow"
           disabled={!pagination.has_next}
-          onClick={() => changePage(pagination.page + 1)}
+          onClick={() => selectDesktopPage(pagination.page + 1)}
           aria-label="Página siguiente"
         >
           <ChevronRight size={18} />
         </button>
       </div>
+      {pagination.has_next && (
+        <button
+          className="btn pagination-mobile-more"
+          onClick={(event) => {
+            event.currentTarget.blur();
+            changePage(pagination.page + 1);
+          }}
+        >
+          {mobileLabel}
+        </button>
+      )}
     </div>
   );
 }
+
+export function useIsMobilePagination() {
+  const getValue = () =>
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(max-width: 760px)").matches
+      : false;
+  const [mobile, setMobile] = useState(getValue);
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const media = window.matchMedia("(max-width: 760px)");
+    const update = () => setMobile(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return mobile;
+}
+
+/* The next page arrives asynchronously from the API, so the accumulated mobile
+   list must be synchronized when that external result changes. */
+/* eslint-disable react-hooks/set-state-in-effect */
+export function useResponsivePaginationItems<T extends { id?: string }>(
+  items: T[],
+  pagination: Pagination,
+  resetKey = "",
+) {
+  const mobile = useIsMobilePagination();
+  const [accumulated, setAccumulated] = useState<T[]>(items);
+  const previousResetKey = useRef(resetKey);
+
+  useEffect(() => {
+    if (previousResetKey.current !== resetKey) {
+      previousResetKey.current = resetKey;
+      setAccumulated(pagination.page <= 1 ? items : []);
+      return;
+    }
+    if (mobile && !items.length && !pagination.total) return;
+    if (!mobile || pagination.page <= 1) {
+      setAccumulated((current) =>
+        current.length === items.length &&
+        current.every((item, index) => item.id === items[index]?.id)
+          ? current
+          : items,
+      );
+      return;
+    }
+    if (!items.length) return;
+    setAccumulated((current) => {
+      const incoming = new Map(
+        items.map((item, index) => [item.id ?? `incoming-${index}`, item]),
+      );
+      const known = new Set(current.map((item) => item.id).filter(Boolean));
+      const updated = current.map((item) =>
+        item.id && incoming.has(item.id) ? incoming.get(item.id)! : item,
+      );
+      for (const item of items) {
+        if (!item.id || !known.has(item.id)) updated.push(item);
+      }
+      const unchanged =
+        updated.length === current.length &&
+        updated.every((item, index) => item === current[index]);
+      return unchanged ? current : updated;
+    });
+  }, [items, mobile, pagination.page, pagination.total, resetKey]);
+
+  return mobile ? accumulated : items;
+}
+/* eslint-enable react-hooks/set-state-in-effect */
 
 export function SearchField({
   value,
@@ -349,12 +466,14 @@ export function Modal({
   onClose,
   wide = false,
   className = "",
+  hideHeader = false,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
   wide?: boolean;
   className?: string;
+  hideHeader?: boolean;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -411,17 +530,32 @@ export function Modal({
       <section
         ref={dialog}
         tabIndex={-1}
-        className={`modal ${wide ? "modal-wide" : ""} ${className}`.trim()}
+        className={`modal ${wide ? "modal-wide" : ""} ${hideHeader ? "modal-headerless" : ""} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        <header className="modal-header">
-          <h2 id={titleId}>{title}</h2>
-          <button onClick={onClose} aria-label="Cerrar">
-            <X />
-          </button>
-        </header>
+        {hideHeader ? (
+          <>
+            <h2 id={titleId} className="sr-only">
+              {title}
+            </h2>
+            <button
+              className="modal-floating-close"
+              onClick={onClose}
+              aria-label="Cerrar"
+            >
+              <X />
+            </button>
+          </>
+        ) : (
+          <header className="modal-header">
+            <h2 id={titleId}>{title}</h2>
+            <button onClick={onClose} aria-label="Cerrar">
+              <X />
+            </button>
+          </header>
+        )}
         {children}
       </section>
     </div>,
@@ -662,6 +796,45 @@ export function Field({
   optional?: boolean;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const helpId = useId();
+  const helpContainer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const closeWhenAnotherHelpOpens = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== helpId) {
+        setHelpOpen(false);
+      }
+    };
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (
+        helpOpen &&
+        event.target instanceof Node &&
+        !helpContainer.current?.contains(event.target)
+      ) {
+        setHelpOpen(false);
+      }
+    };
+
+    window.addEventListener(FIELD_HELP_OPEN_EVENT, closeWhenAnotherHelpOpens);
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => {
+      window.removeEventListener(
+        FIELD_HELP_OPEN_EVENT,
+        closeWhenAnotherHelpOpens,
+      );
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+    };
+  }, [helpId, helpOpen]);
+
+  const toggleHelp = () => {
+    if (!helpOpen) {
+      window.dispatchEvent(
+        new CustomEvent<string>(FIELD_HELP_OPEN_EVENT, { detail: helpId }),
+      );
+    }
+    setHelpOpen((current) => !current);
+  };
+
   const labelContent = (
     <>
       {label}
@@ -681,7 +854,7 @@ export function Field({
 
   if (hint && hintAsHelp) {
     return (
-      <div className="field field-with-help">
+      <div ref={helpContainer} className="field field-with-help">
         <span className="field-label-row">{labelContent}</span>
         {children}
         <div className="field-help-control">
@@ -691,7 +864,7 @@ export function Field({
             aria-label="Mostrar ayuda"
             title={`Ayuda para ${label}`}
             aria-expanded={helpOpen}
-            onClick={() => setHelpOpen(true)}
+            onClick={toggleHelp}
           >
             <span aria-hidden="true">?</span>
             Ayuda

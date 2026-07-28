@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 
 from app.extensions import db
-from app.models import ProductiveSector, Role, SectorStatus, UnitSector, User, UserStatus
+from app.models import Product, ProductiveSector, Role, SectorStatus, UnitSector, User, UserStatus
 
 
 def _admin(client):
@@ -504,12 +504,36 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
             json={"nombre_comercial": f"Producto {number}", **base_product},
         )
         assert extra.status_code == 201
-    sixth = client.post(
+    last_created = None
+    for number in range(6, 16):
+        last_created = client.post(
+            "/api/productive-unit/products",
+            headers=unit_headers,
+            json={"nombre_comercial": f"Producto {number}", **base_product},
+        )
+        assert last_created.status_code == 201
+    over_limit = client.post(
         "/api/productive-unit/products",
         headers=unit_headers,
-        json={"nombre_comercial": "Producto 6", **base_product},
+        json={"nombre_comercial": "Producto 16", **base_product},
     )
-    assert sixth.status_code == 409
+    assert over_limit.status_code == 409
+    assert "máximo 15 productos" in over_limit.json["error"]
+
+    deleted_product_id = last_created.json["id"]
+    deleted = client.delete(
+        f"/api/productive-unit/products/{deleted_product_id}",
+        headers=unit_headers,
+    )
+    assert deleted.status_code == 204
+    with app.app_context():
+        assert db.session.get(Product, deleted_product_id) is None
+    replacement = client.post(
+        "/api/productive-unit/products",
+        headers=unit_headers,
+        json={"nombre_comercial": "Producto de reemplazo", **base_product},
+    )
+    assert replacement.status_code == 201
 
     revoked = client.post(
         f"/api/admin/fairs/{fair.json['id']}/participations/{participation.json['id']}/revoke",

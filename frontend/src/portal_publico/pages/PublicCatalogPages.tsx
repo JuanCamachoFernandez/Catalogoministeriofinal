@@ -13,7 +13,7 @@ import {
   ShoppingBag,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -41,18 +41,28 @@ import {
   PaginationBar,
   SearchableSelect,
   SearchField,
+  useIsMobilePagination,
+  useResponsivePaginationItems,
 } from "../../ui";
 
 export function PublicCatalogPage() {
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const fairs = useQuery({
-    queryKey: ["public", "active-fairs"],
-    queryFn: publicCatalogApi.getActiveFairs,
+    queryKey: ["public", "active-fairs", q, page],
+    queryFn: () =>
+      publicCatalogApi.getActiveFairs({ page, perPage: 6, query: q }),
   });
-  const filtered = (fairs.data?.items ?? []).filter((fair) =>
-    `${fair.nombre} ${fair.ubicacion} ${fair.descripcion ?? ""}`
-      .toLocaleLowerCase("es")
-      .includes(q.trim().toLocaleLowerCase("es")),
+  const data = fairs.data ?? {
+    active: false,
+    fair: null,
+    items: [],
+    pagination: emptyPagination,
+  };
+  const displayedFairs = useResponsivePaginationItems(
+    data.items,
+    data.pagination,
+    q,
   );
 
   return (
@@ -67,17 +77,21 @@ export function PublicCatalogPage() {
         </div>
         <SearchField
           value={q}
-          onChange={setQ}
+          onChange={(value) => {
+            setQ(value);
+            setPage(1);
+          }}
           placeholder="Buscar feria o ubicación…"
         />
       </div>
-      {fairs.isLoading ? (
+      {fairs.isLoading && !displayedFairs.length ? (
         <Loading label="Buscando ferias activas…" />
       ) : fairs.error ? (
         <ErrorBox message={apiError(fairs.error)} />
-      ) : filtered.length ? (
+      ) : displayedFairs.length ? (
+        <>
         <div className="fair-public-grid">
-          {filtered.map((fair) => (
+          {displayedFairs.map((fair) => (
             <article className="public-card fair-public-card" key={fair.id}>
               <FairImage fair={fair} />
               <div className="card-body">
@@ -103,6 +117,12 @@ export function PublicCatalogPage() {
             </article>
           ))}
         </div>
+        <PaginationBar
+          pagination={data.pagination}
+          onPageChange={setPage}
+          mobileLabel="Ver más ferias"
+        />
+        </>
       ) : (
         <Empty
           title="No hay ferias activas en este momento"
@@ -116,15 +136,20 @@ export function PublicCatalogPage() {
 export function PublicFairPage() {
   const { fairId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const mobilePagination = useIsMobilePagination();
+  const [mobilePage, setMobilePage] = useState(1);
+  const pendingDesktopScroll = useRef(false);
   const q = searchParams.get("q") ?? "",
     sector = searchParams.get("sector") ?? "",
     department = searchParams.get("departamento") ?? "";
   const parsedPage = Number(searchParams.get("pagina") ?? 1),
-    page =
+    desktopPage =
       Number.isFinite(parsedPage) && parsedPage > 0
         ? Math.floor(parsedPage)
         : 1;
-  const updateFilters = (updates: Record<string, string>) =>
+  const page = mobilePagination ? mobilePage : desktopPage;
+  const updateFilters = (updates: Record<string, string>) => {
+    if (Object.hasOwn(updates, "pagina") && !updates.pagina) setMobilePage(1);
     setSearchParams(
       (current) => {
         const next = new URLSearchParams(current);
@@ -136,9 +161,10 @@ export function PublicFairPage() {
       },
       { replace: true },
     );
+  };
   const fairs = useQuery({
-    queryKey: ["public", "active-fairs"],
-    queryFn: publicCatalogApi.getActiveFairs,
+    queryKey: ["public", "active-fairs", "all"],
+    queryFn: () => publicCatalogApi.getActiveFairs(),
   });
   const fair = fairs.data?.items.find((item) => item.id === fairId);
   const sectors = useQuery({
@@ -158,6 +184,25 @@ export function PublicFairPage() {
       }),
   });
   const data = units.data ?? { items: [], pagination: emptyPagination };
+  const displayedUnits = useResponsivePaginationItems(
+    data.items,
+    data.pagination,
+    `${fairId}|${q}|${sector}|${department}`,
+  );
+  useEffect(() => {
+    if (
+      mobilePagination ||
+      !pendingDesktopScroll.current ||
+      units.data?.pagination.page !== page
+    ) return;
+    pendingDesktopScroll.current = false;
+    window.requestAnimationFrame(() => {
+      document.getElementById("unidades-productivas")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [mobilePagination, page, units.data?.pagination.page]);
 
   return (
     <PublicShell>
@@ -203,7 +248,7 @@ export function PublicFairPage() {
               </div>
             </div>
           </section>
-          <div className="section-heading">
+          <div className="section-heading pagination-scroll-target" id="unidades-productivas">
             <div>
               <span className="eyebrow">Expositores</span>
               <h2>Unidades Productivas participantes</h2>
@@ -291,7 +336,10 @@ export function PublicFairPage() {
                   </div>
                   <button
                     className="clear-filters"
-                    onClick={() => setSearchParams({}, { replace: true })}
+                    onClick={() => {
+                      setMobilePage(1);
+                      setSearchParams({}, { replace: true });
+                    }}
                   >
                     Limpiar filtros
                   </button>
@@ -299,14 +347,14 @@ export function PublicFairPage() {
               )}
             </div>
           </div>
-          {units.isLoading ? (
+          {units.isLoading && !displayedUnits.length ? (
             <Loading label="Cargando expositores…" />
           ) : units.error ? (
             <ErrorBox message={apiError(units.error)} />
-          ) : data.items.length ? (
+          ) : displayedUnits.length ? (
             <>
               <div className="exhibitor-grid">
-                {data.items.map((unit) => (
+                {displayedUnits.map((unit) => (
                   <article className="public-card exhibitor-card" key={unit.id}>
                     {unit.logo_url ? (
                       <img
@@ -342,9 +390,15 @@ export function PublicFairPage() {
               </div>
               <PaginationBar
                 pagination={data.pagination}
-                onPageChange={(next) =>
-                  updateFilters({ pagina: next > 1 ? String(next) : "" })
-                }
+                onPageChange={(next) => {
+                  if (mobilePagination) setMobilePage(next);
+                  else {
+                    pendingDesktopScroll.current = true;
+                    updateFilters({ pagina: next > 1 ? String(next) : "" });
+                  }
+                }}
+                mobileLabel="Ver más unidades productivas"
+                scrollOnDesktop={false}
               />
             </>
           ) : (
@@ -362,7 +416,13 @@ export function PublicFairPage() {
 export function PublicUnitPage() {
   const { fairId = "", unitId = "" } = useParams();
   const location = useLocation();
+  const mobilePagination = useIsMobilePagination();
+  const [productPage, setProductPage] = useState(1);
+  const pendingProductScroll = useRef(false);
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [cartProducts, setCartProducts] = useState<
+    Record<string, CanonicalProduct>
+  >({});
   const [selected, setSelected] = useState<CanonicalProduct | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showProductImage, setShowProductImage] = useState(false);
@@ -374,16 +434,47 @@ export function PublicUnitPage() {
     queryKey: ["public", "fair-unit", fairId, unitId],
     queryFn: () => publicCatalogApi.getFairUnit(fairId, unitId),
   });
+  const products = useQuery({
+    queryKey: ["public", "fair-unit-products", fairId, unitId, productPage],
+    queryFn: () =>
+      publicCatalogApi.getFairUnitProducts(fairId, unitId, productPage),
+  });
+  const productData = products.data ?? {
+    items: [],
+    pagination: emptyPagination,
+  };
+  const displayedProducts = useResponsivePaginationItems(
+    productData.items,
+    productData.pagination,
+    `${fairId}|${unitId}`,
+  );
+  useEffect(() => {
+    if (
+      mobilePagination ||
+      !pendingProductScroll.current ||
+      products.data?.pagination.page !== productPage
+    ) return;
+    pendingProductScroll.current = false;
+    window.requestAnimationFrame(() => {
+      document.getElementById("productos-unidad")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [mobilePagination, productPage, products.data?.pagination.page]);
   const selectedItems = useMemo(
     () => Object.entries(cart).filter(([, quantity]) => quantity > 0),
     [cart],
   );
   const selectedProducts = useMemo(
     () =>
-      (unit.data?.productos ?? [])
-        .map((product) => ({ product, quantity: cart[product.id] ?? 0 }))
-        .filter((item) => item.quantity > 0),
-    [cart, unit.data],
+      Object.entries(cart)
+        .map(([id, quantity]) => ({ product: cartProducts[id], quantity }))
+        .filter(
+          (item): item is { product: CanonicalProduct; quantity: number } =>
+            Boolean(item.product) && item.quantity > 0,
+        ),
+    [cart, cartProducts],
   );
   const selectedQuantity = useMemo(
     () => selectedProducts.reduce((total, item) => total + item.quantity, 0),
@@ -399,11 +490,16 @@ export function PublicUnitPage() {
     [selectedProducts],
   );
   const selectedImages = useMemo(() => selected?.imagenes ?? [], [selected]);
-  const changeQuantity = (id: string, value: number) =>
-    setCart((current) => ({
-      ...current,
-      [id]: Math.max(0, Math.min(999, value)),
-    }));
+  const changeQuantity = (product: CanonicalProduct, value: number) => {
+    const quantity = Math.max(0, Math.min(999, value));
+    setCart((current) => ({ ...current, [product.id]: quantity }));
+    setCartProducts((current) => {
+      if (quantity > 0) return { ...current, [product.id]: product };
+      const next = { ...current };
+      delete next[product.id];
+      return next;
+    });
+  };
   const openProduct = (product: CanonicalProduct) => {
     const coverIndex = product.imagenes.findIndex(
       (image) => image.es_principal,
@@ -499,13 +595,13 @@ export function PublicUnitPage() {
                 </span>
                 <span>
                   <PackageSearch />
-                  {unit.data.productos?.length ?? 0} productos disponibles
+                  {unit.data.cantidad_productos_publicables ?? 0} productos disponibles
                 </span>
               </div>
               <UnitSocialLinks unit={unit.data} />
             </div>
           </section>
-          <div className="section-heading">
+          <div className="section-heading pagination-scroll-target" id="productos-unidad">
             <div>
               <span className="eyebrow">Catálogo del expositor</span>
               <h2>Productos disponibles</h2>
@@ -514,8 +610,14 @@ export function PublicUnitPage() {
               </p>
             </div>
           </div>
+          {products.isLoading && !displayedProducts.length ? (
+            <Loading label="Cargando productos…" />
+          ) : products.error ? (
+            <ErrorBox message={apiError(products.error)} />
+          ) : displayedProducts.length ? (
+            <>
           <div className="product-grid">
-            {unit.data.productos?.map((product) => {
+            {displayedProducts.map((product) => {
               const image =
                 product.imagenes.find((item) => item.es_principal) ??
                 product.imagenes[0];
@@ -564,7 +666,7 @@ export function PublicUnitPage() {
                         <button
                           disabled={quantity === 0}
                           onClick={() =>
-                            changeQuantity(product.id, quantity - 1)
+                            changeQuantity(product, quantity - 1)
                           }
                           aria-label={`Quitar ${product.nombre_comercial}`}
                         >
@@ -573,7 +675,7 @@ export function PublicUnitPage() {
                         <strong aria-live="polite">{quantity}</strong>
                         <button
                           onClick={() =>
-                            changeQuantity(product.id, quantity + 1)
+                            changeQuantity(product, quantity + 1)
                           }
                           aria-label={`Agregar ${product.nombre_comercial}`}
                         >
@@ -586,6 +688,22 @@ export function PublicUnitPage() {
               );
             })}
           </div>
+          <PaginationBar
+            pagination={productData.pagination}
+            onPageChange={(next) => {
+              if (!mobilePagination) pendingProductScroll.current = true;
+              setProductPage(next);
+            }}
+            mobileLabel="Ver más productos"
+            scrollOnDesktop={false}
+          />
+            </>
+          ) : (
+            <Empty
+              title="No hay productos disponibles"
+              description="Esta Unidad Productiva todavía no tiene productos publicables."
+            />
+          )}
           {sendError && <div className="selection-error">{sendError}</div>}
           {selectedItems.length > 0 && (
             <div className="selection-bar">
@@ -677,7 +795,7 @@ export function PublicUnitPage() {
                       <div className="quantity product-quantity summary-quantity">
                         <button
                           onClick={() =>
-                            changeQuantity(product.id, quantity - 1)
+                            changeQuantity(product, quantity - 1)
                           }
                           aria-label={`Quitar ${product.nombre_comercial}`}
                         >
@@ -686,7 +804,7 @@ export function PublicUnitPage() {
                         <strong>{quantity}</strong>
                         <button
                           onClick={() =>
-                            changeQuantity(product.id, quantity + 1)
+                            changeQuantity(product, quantity + 1)
                           }
                           aria-label={`Agregar ${product.nombre_comercial}`}
                         >
@@ -701,7 +819,7 @@ export function PublicUnitPage() {
                       </strong>
                       <button
                         className="selection-remove"
-                        onClick={() => changeQuantity(product.id, 0)}
+                        onClick={() => changeQuantity(product, 0)}
                         aria-label={`Eliminar ${product.nombre_comercial}`}
                       >
                         <Trash2 />
@@ -718,9 +836,10 @@ export function PublicUnitPage() {
                 <div>
                   <button
                     className="btn-outline"
-                    onClick={() => {
-                      setCart({});
-                      setShowSelection(false);
+                onClick={() => {
+                  setCart({});
+                  setCartProducts({});
+                  setShowSelection(false);
                     }}
                   >
                     Vaciar selección
@@ -873,7 +992,7 @@ export function PublicUnitPage() {
                         disabled={(cart[selected.id] ?? 0) === 0}
                         onClick={() =>
                           changeQuantity(
-                            selected.id,
+                            selected,
                             (cart[selected.id] ?? 0) - 1,
                           )
                         }
@@ -887,7 +1006,7 @@ export function PublicUnitPage() {
                       <button
                         onClick={() =>
                           changeQuantity(
-                            selected.id,
+                            selected,
                             (cart[selected.id] ?? 0) + 1,
                           )
                         }

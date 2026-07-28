@@ -25,6 +25,7 @@ import {
   StatusBadge,
   UploadProgress,
   useFeedback,
+  useResponsivePaginationItems,
 } from "./ui";
 
 type ProductDraft = {
@@ -447,6 +448,11 @@ export function ProductManager({ mode }: { mode: "admin" | "exhibitor" }) {
         })
         .then((response) => response.data),
   });
+  const displayedProducts = useResponsivePaginationItems(
+    products.data?.items ?? [],
+    products.data?.pagination ?? emptyPagination,
+    `${mode}|${query}|${exhibitorId}|${categoryId}|${status}|${dateFrom}|${dateTo}`,
+  );
   const categories = useQuery({
     queryKey: ["categories", "active"],
     queryFn: () =>
@@ -534,7 +540,7 @@ export function ProductManager({ mode }: { mode: "admin" | "exhibitor" }) {
           </>
         )}
       </div>
-      {products.isLoading ? (
+      {products.isLoading && !displayedProducts.length ? (
         <Loading />
       ) : products.error ? (
         <ErrorBox
@@ -543,10 +549,10 @@ export function ProductManager({ mode }: { mode: "admin" | "exhibitor" }) {
             "No se pudieron cargar los productos.",
           )}
         />
-      ) : products.data?.items.length ? (
+      ) : displayedProducts.length ? (
         <>
           <div className="data-cards">
-            {products.data.items.map((product) => (
+            {displayedProducts.map((product) => (
               <article className="data-card" key={product.id}>
                 <div className="data-card-main">
                   {product.imagenes[0] ? (
@@ -613,8 +619,9 @@ export function ProductManager({ mode }: { mode: "admin" | "exhibitor" }) {
             ))}
           </div>
           <PaginationBar
-            pagination={products.data.pagination ?? emptyPagination}
+            pagination={products.data?.pagination ?? emptyPagination}
             onPage={setPage}
+            mobileLabel="Ver más productos"
           />
         </>
       ) : (

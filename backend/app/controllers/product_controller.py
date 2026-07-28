@@ -13,6 +13,7 @@ from ..models import (
     ProductImage,
     ProductStatus,
     Role,
+    ProductiveUnit,
     ProductiveUnitStatus,
 )
 from ..views import error, paginate, product_json, validate_json, validated_json
@@ -38,6 +39,7 @@ from .common import (
 )
 
 product_bp = Blueprint("products", __name__)
+MAX_PRODUCTIVE_UNIT_PRODUCTS = 15
 
 
 def productive_product_or_404(product_id, unit_id=None):
@@ -60,7 +62,6 @@ def _productive_product_count(unit_id, excluding_id=None):
     query = select(func.count(Product.id)).where(
         Product.productive_unit_id == unit_id,
         Product.deleted_at.is_(None),
-        Product.estado.notin_([ProductStatus.RETIRED, ProductStatus.DELETED]),
     )
     if excluding_id:
         query = query.where(Product.id != excluding_id)
@@ -196,7 +197,7 @@ def list_products():
         query = query.where(func.date(Product.created_at) >= request.args["date_from"])
     if request.args.get("date_to"):
         query = query.where(func.date(Product.created_at) <= request.args["date_to"])
-    return paginate(query.order_by(Product.created_at.desc()), product_json)
+    return paginate(query.order_by(Product.created_at.desc(), Product.id.desc()), product_json)
 
 
 @product_bp.get("/products/<uuid:product_id>")
@@ -230,7 +231,7 @@ def delete_admin_product(product_id):
 @roles(Role.EXPOSITOR)
 def own_products():
     exhibitor = current_user().exhibitor
-    query = Product.owned_query(exhibitor.id).order_by(Product.created_at.desc())
+    query = Product.owned_query(exhibitor.id).order_by(Product.created_at.desc(), Product.id.desc())
     return paginate(query, product_json)
 
 
@@ -389,7 +390,7 @@ def own_productive_products():
         return error("Unidad Productiva no encontrada", 404)
     query = select(Product).where(
         Product.productive_unit_id == unit.id, Product.deleted_at.is_(None)
-    ).order_by(Product.created_at.desc())
+    ).order_by(Product.created_at.desc(), Product.id.desc())
     return paginate(query, productive_product_json)
 
 
@@ -410,9 +411,16 @@ def create_productive_product():
     unit = _productive_unit_for_write()
     if not unit:
         return error("La Unidad Productiva no permite modificaciones", 403)
-    unit = db.session.scalar(select(type(unit)).where(type(unit).id == unit.id).with_for_update())
-    if _productive_product_count(unit.id) >= 5:
-        return error("La Unidad Productiva ya tiene cinco productos vigentes", 409)
+    # Serialize creations for the same unit so concurrent requests cannot
+    # exceed the configured quota.
+    db.session.scalar(
+        select(ProductiveUnit).where(ProductiveUnit.id == unit.id).with_for_update()
+    )
+    if _productive_product_count(unit.id) >= MAX_PRODUCTIVE_UNIT_PRODUCTS:
+        return error(
+            f"La Unidad Productiva puede registrar como máximo {MAX_PRODUCTIVE_UNIT_PRODUCTS} productos",
+            409,
+        )
     product = Product(productive_unit_id=unit.id, estado=ProductStatus.DRAFT)
     _set_productive_product_fields(product, validated_json())
     db.session.add(product)
@@ -449,8 +457,6 @@ def update_productive_product_status(product_id):
     status = ProductStatus(validated_json()["estado"])
     if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != 3:
         return error("El producto necesita exactamente tres imágenes para publicarse", 409)
-    if status not in (ProductStatus.RETIRED,) and product.estado == ProductStatus.RETIRED and _productive_product_count(unit.id, product.id) >= 5:
-        return error("La Unidad Productiva ya tiene cinco productos vigentes", 409)
     product.estado = status
     audit("CAMBIAR_ESTADO", "Product", product.id)
     db.session.commit()
@@ -465,12 +471,16 @@ def delete_productive_product(product_id):
     product = productive_product_or_404(product_id, unit.id if unit else None)
     if not product:
         return error("Producto no encontrado", 404)
-    # Product images are retained until after the DB commit and then removed safely.
+    # Keep the managed file paths until the permanent database deletion commits.
     urls = db.session.scalars(select(ProductImage.url).where(ProductImage.product_id == product.id)).all()
-    product.deleted_at = datetime.now(timezone.utc)
-    product.estado = ProductStatus.RETIRED
     db.session.execute(db.delete(ProductImage).where(ProductImage.product_id == product.id))
-    audit("ELIMINAR", "Product", product.id)
+    audit(
+        "ELIMINAR_PERMANENTE",
+        "Product",
+        product.id,
+        before={"nombre_comercial": product.nombre_comercial, "estado": product.estado.value},
+    )
+    db.session.delete(product)
     db.session.commit()
     for url in urls:
         delete_managed_upload(url, "productos")
@@ -489,7 +499,10 @@ def list_admin_productive_products():
             query = query.where(Product.estado == ProductStatus(request.args["estado"]))
         except ValueError:
             return error("Estado inválido")
-    return paginate(query.order_by(Product.created_at.desc()), productive_product_json)
+    return paginate(
+        query.order_by(Product.created_at.desc(), Product.id.desc()),
+        productive_product_json,
+    )
 
 
 @product_bp.get("/admin/products/<uuid:product_id>")
