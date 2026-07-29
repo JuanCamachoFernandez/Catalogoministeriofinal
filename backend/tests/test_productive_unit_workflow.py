@@ -8,7 +8,17 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.extensions import db
-from app.models import ProductiveSector, ProductiveUnit, RegistrationRequest, Role, SectorStatus, UnitSector, User, UserStatus
+from app.models import (
+    Product,
+    ProductiveSector,
+    ProductiveUnit,
+    RegistrationRequest,
+    Role,
+    SectorStatus,
+    UnitSector,
+    User,
+    UserStatus,
+)
 
 
 def _admin(client):
@@ -56,23 +66,6 @@ def _upload_request_image(client, filename):
     )
     assert response.status_code == 201
     return response.json["imagen_url"]
-
-
-def _registration_payload(client, sector_id):
-    return {
-        "nombre_comercial": "Manos Andinas",
-        "razon_social": "Manos Andinas SRL",
-        "nit": "123456789",
-        "nombres_representante": "Ana María",
-        "apellido_paterno_representante": "Quispe",
-        "apellido_materno_representante": "Mamani",
-        "departamento": "La Paz",
-        "direccion_fisica": "Calle 1",
-        "telefono_whatsapp": "76543210",
-        "correo_electronico": "ana@manos.bo",
-        "resena_comercial": "Artesanía boliviana",
-        "sectores": [{"productive_sector_id": str(sector_id)}],
-    }
 
 
 def _registration_payload(client, sector_id):
@@ -533,7 +526,7 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
         "materia_prima": "Lana",
         "presentacion_empaque": "Unidad",
         "precio_referencia": "10.00",
-        "capacidad_produccion_stock": "10 unidades",
+        "capacidad_produccion_stock": "10",
     }
     for number in (4, 5):
         extra = client.post(
@@ -542,12 +535,36 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
             json={"nombre_comercial": f"Producto {number}", **base_product},
         )
         assert extra.status_code == 201
-    sixth = client.post(
+    last_created = None
+    for number in range(6, 16):
+        last_created = client.post(
+            "/api/productive-unit/products",
+            headers=unit_headers,
+            json={"nombre_comercial": f"Producto {number}", **base_product},
+        )
+        assert last_created.status_code == 201
+    over_limit = client.post(
         "/api/productive-unit/products",
         headers=unit_headers,
-        json={"nombre_comercial": "Producto 6", **base_product},
+        json={"nombre_comercial": "Producto 16", **base_product},
     )
-    assert sixth.status_code == 409
+    assert over_limit.status_code == 409
+    assert "máximo 15 productos" in over_limit.json["error"]
+
+    deleted_product_id = last_created.json["id"]
+    deleted = client.delete(
+        f"/api/productive-unit/products/{deleted_product_id}",
+        headers=unit_headers,
+    )
+    assert deleted.status_code == 204
+    with app.app_context():
+        assert db.session.get(Product, UUID(deleted_product_id)) is None
+    replacement = client.post(
+        "/api/productive-unit/products",
+        headers=unit_headers,
+        json={"nombre_comercial": "Producto de reemplazo", **base_product},
+    )
+    assert replacement.status_code == 201
 
     revoked = client.post(
         f"/api/admin/fairs/{fair.json['id']}/participations/{participation.json['id']}/revoke",

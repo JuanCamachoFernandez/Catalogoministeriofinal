@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,9 +12,14 @@ import {
   SearchField,
   SearchableSelect,
   StatusBadge,
+  useResponsivePaginationItems,
 } from "./ui";
+import type { Pagination } from "./api";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("componentes comunes", () => {
   it("traduce los estados técnicos", () => {
@@ -98,6 +103,41 @@ describe("componentes comunes", () => {
     render(<PaginationBar pagination={{ page: 1, per_page: 20, pages: 2, total: 21, has_next: true, has_prev: false }} onPage={onPage}/>);
     await userEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
     expect(onPage).toHaveBeenCalledWith(2);
+  });
+
+  it("conserva los elementos anteriores al cargar más en móvil", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    const MobileList = ({ items, pagination }: {
+      items: { id: string; name: string }[];
+      pagination: Pagination;
+    }) => {
+      const displayed = useResponsivePaginationItems(items, pagination, "ferias");
+      return <div>{displayed.map((item) => <span key={item.id}>{item.name}</span>)}</div>;
+    };
+    const firstPage = Array.from({ length: 6 }, (_, index) => ({
+      id: String(index + 1), name: `Demo ${index + 1}`,
+    }));
+    const secondPage = Array.from({ length: 6 }, (_, index) => ({
+      id: String(index + 7), name: `Demo ${index + 7}`,
+    }));
+    const { rerender } = render(<MobileList items={firstPage} pagination={{
+      page: 1, per_page: 6, pages: 2, total: 12, has_next: true, has_prev: false,
+    }} />);
+
+    rerender(<MobileList items={[]} pagination={{
+      page: 1, per_page: 20, pages: 0, total: 0, has_next: false, has_prev: false,
+    }} />);
+    expect(screen.getByText("Demo 1")).toBeTruthy();
+
+    rerender(<MobileList items={secondPage} pagination={{
+      page: 2, per_page: 6, pages: 2, total: 12, has_next: false, has_prev: true,
+    }} />);
+    await waitFor(() => expect(screen.getByText("Demo 12")).toBeTruthy());
+    expect(screen.getByText("Demo 1")).toBeTruthy();
   });
 
   it("muestra un estado vacío comprensible", () => {

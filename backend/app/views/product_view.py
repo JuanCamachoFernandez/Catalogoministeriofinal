@@ -3,6 +3,23 @@ from marshmallow import Schema, fields, pre_load, validate, validates_schema, Va
 from ..models import ProductStatus
 
 
+def _letters_numbers_spaces(value):
+    text = value.strip()
+    if not text or any(not (character.isalnum() or character.isspace()) for character in text):
+        raise ValidationError("Use solamente letras, números y espacios")
+
+
+def _letters_spaces(value):
+    text = value.strip()
+    if not text or any(not (character.isalpha() or character.isspace()) for character in text):
+        raise ValidationError("Use solamente letras y espacios")
+
+
+def _integer_text(value):
+    if not value.strip().isdigit():
+        raise ValidationError("Ingrese únicamente un número entero")
+
+
 class ProductCreateSchema(Schema):
     exhibitor_id = fields.UUID(load_default=None, allow_none=True)
     category_id = fields.UUID(required=True)
@@ -62,27 +79,27 @@ class WhatsAppSchema(Schema):
 
 
 class ProductiveProductCreateSchema(Schema):
-    nombre_comercial = fields.String(required=True, validate=validate.Length(min=1, max=200))
+    nombre_comercial = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=200), _letters_numbers_spaces))
     descripcion_tecnica = fields.String(required=True, validate=validate.Length(min=1, max=5000))
-    materia_prima = fields.String(required=True, validate=validate.Length(min=1, max=2000))
+    materia_prima = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=2000), _letters_numbers_spaces))
     dimensiones = fields.String(allow_none=True, validate=validate.Length(max=255))
-    colores_disponibles = fields.String(allow_none=True, validate=validate.Length(max=255))
+    colores_disponibles = fields.String(allow_none=True, validate=validate.And(validate.Length(max=255), _letters_spaces))
     certificaciones = fields.String(allow_none=True, validate=validate.Length(max=2000))
-    presentacion_empaque = fields.String(required=True, validate=validate.Length(min=1, max=255))
+    presentacion_empaque = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces))
     precio_referencia = fields.Decimal(required=True, places=2, as_string=True, validate=validate.Range(min=0))
-    capacidad_produccion_stock = fields.String(required=True, validate=validate.Length(min=1, max=255))
+    capacidad_produccion_stock = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=255), _integer_text))
 
 
 class ProductiveProductUpdateSchema(Schema):
-    nombre_comercial = fields.String(validate=validate.Length(min=1, max=200))
+    nombre_comercial = fields.String(validate=validate.And(validate.Length(min=1, max=200), _letters_numbers_spaces))
     descripcion_tecnica = fields.String(validate=validate.Length(min=1, max=5000))
-    materia_prima = fields.String(validate=validate.Length(min=1, max=2000))
+    materia_prima = fields.String(validate=validate.And(validate.Length(min=1, max=2000), _letters_numbers_spaces))
     dimensiones = fields.String(allow_none=True, validate=validate.Length(max=255))
-    colores_disponibles = fields.String(allow_none=True, validate=validate.Length(max=255))
+    colores_disponibles = fields.String(allow_none=True, validate=validate.And(validate.Length(max=255), _letters_spaces))
     certificaciones = fields.String(allow_none=True, validate=validate.Length(max=2000))
-    presentacion_empaque = fields.String(validate=validate.Length(min=1, max=255))
+    presentacion_empaque = fields.String(validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces))
     precio_referencia = fields.Decimal(places=2, as_string=True, validate=validate.Range(min=0))
-    capacidad_produccion_stock = fields.String(validate=validate.Length(min=1, max=255))
+    capacidad_produccion_stock = fields.String(validate=validate.And(validate.Length(min=1, max=255), _integer_text))
 
 
 class ProductiveProductStatusSchema(Schema):

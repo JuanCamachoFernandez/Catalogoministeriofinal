@@ -107,7 +107,6 @@ def test_dashboard_muestra_indicadores_y_oculta_eventos_rutinarios(app, client):
             lugar="Campo Ferial",
             ubicacion="Campo Ferial, La Paz",
             departamento="La Paz",
-            municipio="La Paz",
             fecha_inicio=bolivia_today() + timedelta(days=5),
             fecha_fin=bolivia_today() + timedelta(days=7),
             estado=FeriaStatus.DRAFT,

@@ -3,7 +3,7 @@ import { CalendarClock, Eye, History, UserRound } from "lucide-react";
 import { useState } from "react";
 import { api, apiError, emptyPagination, type AuditItem, type Paged } from "./api";
 import { auditActionLabel, auditDescriptionLabel, auditEntityLabel } from "./auditLabels";
-import { Empty, ErrorBox, Field, Loading, Modal, PaginationBar, SearchField } from "./ui";
+import { Empty, ErrorBox, Field, Loading, Modal, PaginationBar, SearchField, useResponsivePaginationItems } from "./ui";
 
 type AuditDetail = {
   id: string;
@@ -48,7 +48,8 @@ export function AuditPage() {
   });
 
   const data = audits.data ?? { items: [], pagination: emptyPagination };
-  const actions = [...new Set(data.items.map((item) => item.accion))].sort();
+  const displayedAudits = useResponsivePaginationItems(data.items, data.pagination, `${q}|${action}|${dateFrom}|${dateTo}`);
+  const actions = [...new Set(displayedAudits.map((item) => item.accion))].sort();
   const resetPage = () => setPage(1);
 
   return (
@@ -65,12 +66,12 @@ export function AuditPage() {
         <Field label="Hasta"><input className="input" type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); resetPage(); }} /></Field>
       </div>
 
-      {audits.isLoading ? <Loading label="Cargando auditoría…" /> : audits.error ? <ErrorBox message={apiError(audits.error, "No se pudo cargar la auditoría.")} /> : data.items.length ? (
+      {audits.isLoading && !displayedAudits.length ? <Loading label="Cargando auditoría…" /> : audits.error ? <ErrorBox message={apiError(audits.error, "No se pudo cargar la auditoría.")} /> : displayedAudits.length ? (
         <>
           <div className="table-wrap audit-list-table">
             <table>
               <thead><tr><th>Usuario</th><th>Fecha</th><th>Hora</th><th>Acción</th><th>Descripción</th><th aria-label="Acciones" /></tr></thead>
-              <tbody>{data.items.map((item) => { const parts = dateParts(item.created_at); return (
+              <tbody>{displayedAudits.map((item) => { const parts = dateParts(item.created_at); return (
                 <tr key={item.id}>
                   <td><span className="table-user"><UserRound size={17} /><strong>{item.usuario}</strong></span></td>
                   <td>{parts.date}</td><td className="table-time">{parts.time}</td>
@@ -81,7 +82,7 @@ export function AuditPage() {
               ); })}</tbody>
             </table>
           </div>
-          <PaginationBar pagination={data.pagination} onPageChange={setPage} />
+          <PaginationBar pagination={data.pagination} onPageChange={setPage} mobileLabel="Ver más registros" />
         </>
       ) : <Empty title="No hay registros para estos filtros" description="Pruebe con otro período o limpie la búsqueda." />}
 

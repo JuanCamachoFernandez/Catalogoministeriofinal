@@ -246,7 +246,7 @@ def _visible_canonical_units(fair):
     visible = []
     for unit, _participation in rows:
         products = db.session.scalars(Product.publicable_query(unit.id)).all()
-        if 3 <= len(products) <= 5:
+        if len(products) >= 3:
             visible.append((unit, products))
     return visible
 
@@ -303,14 +303,18 @@ def canonical_active_fair():
     cached = get_public_cache(key)
     if cached is not None:
         return cached
-    return set_public_cache(
-        key,
-        {
-            "active": bool(fair),
-            "fair": _canonical_fair_payload(fair) if fair else None,
-            "items": [_canonical_fair_payload(item) for item in fairs],
-        },
-    )
+    term = (request.args.get("q") or "").strip().lower()
+    if term:
+        fairs = [item for item in fairs if term in " ".join(filter(None, (
+            item.nombre, item.ubicacion, item.lugar, item.descripcion,
+            item.departamento, item.municipio,
+        ))).lower()]
+    paginated = _slice_items([_canonical_fair_payload(item) for item in fairs])
+    return set_public_cache(key, {
+        "active": bool(fair),
+        "fair": _canonical_fair_payload(fair) if fair else None,
+        **paginated,
+    })
 
 
 @public_bp.get("/public/productive-units")
@@ -373,6 +377,9 @@ def canonical_public_products():
     department, sector_id = request.args.get("departamento"), request.args.get("sector_id")
     output = []
     for unit, products in _visible_canonical_units(fair):
+        requested_unit_id = request.args.get("productive_unit_id")
+        if requested_unit_id and str(unit.id) != requested_unit_id:
+            continue
         if department and unit.departamento != department:
             continue
         if sector_id and not db.session.scalar(

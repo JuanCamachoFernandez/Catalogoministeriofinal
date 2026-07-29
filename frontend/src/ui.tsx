@@ -32,6 +32,7 @@ import {
 } from "./auditLabels";
 
 const openModalStack: HTMLElement[] = [];
+const FIELD_HELP_OPEN_EVENT = "catalog:field-help-open";
 
 export function Loading({ label = "Cargando…" }: { label?: string }) {
   return (
@@ -69,7 +70,14 @@ export function ErrorBox({ message }: { message: string }) {
 export function UploadProgress({ value }: { value: number }) {
   if (value <= 0 || value >= 100) return null;
   return (
-    <div className="upload-progress" role="progressbar" aria-label="Carga de imagen" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+    <div
+      className="upload-progress"
+      role="progressbar"
+      aria-label="Carga de imagen"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={value}
+    >
       <span style={{ width: `${value}%` }} />
       <small>{value}%</small>
     </div>
@@ -113,6 +121,7 @@ export function StatusBadge({ value }: { value: string | boolean }) {
     PUBLISHED: "Publicada",
     APPROVED: "Aprobada",
     DRAFT: "En preparación",
+    RETIRED: "Retirado",
     FINISHED: "Finalizada",
     DISABLED: "Cancelada",
     true: "Activa",
@@ -131,40 +140,156 @@ export function PaginationBar({
   pagination,
   onPage,
   onPageChange,
+  mobileLabel = "Ver más resultados",
+  scrollTargetId,
+  scrollOnDesktop = true,
 }: {
   pagination: Pagination;
   onPage?: (page: number) => void;
   onPageChange?: (page: number) => void;
+  mobileLabel?: string;
+  scrollTargetId?: string;
+  scrollOnDesktop?: boolean;
 }) {
   const changePage = onPage ?? onPageChange ?? (() => undefined);
   if (!pagination.total) return null;
+  const selectDesktopPage = (page: number) => {
+    changePage(page);
+    if (
+      scrollOnDesktop &&
+      !navigator.userAgent.toLowerCase().includes("jsdom")
+    ) {
+      window.requestAnimationFrame(() => {
+        const target = scrollTargetId
+          ? document.getElementById(scrollTargetId)
+          : null;
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+        else window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    }
+  };
   return (
     <div className="pagination" aria-label="Paginación">
-      <span>
+      <span className="pagination-summary">
         Página {pagination.page} de {Math.max(1, pagination.pages)} ·{" "}
         {pagination.total} registros
       </span>
-      <div className="flex gap-2">
+      <div className="pagination-desktop-controls">
         <button
-          className="btn-outline"
+          className="btn-outline pagination-arrow"
           disabled={!pagination.has_prev}
-          onClick={() => changePage(pagination.page - 1)}
+          onClick={() => selectDesktopPage(pagination.page - 1)}
           aria-label="Página anterior"
         >
           <ChevronLeft size={18} />
         </button>
+        <div className="pagination-pages" aria-label="Páginas disponibles">
+          {Array.from({ length: Math.max(1, pagination.pages) }, (_, index) => {
+            const page = index + 1;
+            return (
+              <button
+                className={`pagination-page${page === pagination.page ? " active" : ""}`}
+                key={page}
+                disabled={page === pagination.page}
+                onClick={() => selectDesktopPage(page)}
+                aria-label={`Ir a la página ${page}`}
+                aria-current={page === pagination.page ? "page" : undefined}
+              >
+                {page}
+              </button>
+            );
+          })}
+        </div>
         <button
-          className="btn-outline"
+          className="btn-outline pagination-arrow"
           disabled={!pagination.has_next}
-          onClick={() => changePage(pagination.page + 1)}
+          onClick={() => selectDesktopPage(pagination.page + 1)}
           aria-label="Página siguiente"
         >
           <ChevronRight size={18} />
         </button>
       </div>
+      {pagination.has_next && (
+        <button
+          className="btn pagination-mobile-more"
+          onClick={(event) => {
+            event.currentTarget.blur();
+            changePage(pagination.page + 1);
+          }}
+        >
+          {mobileLabel}
+        </button>
+      )}
     </div>
   );
 }
+
+export function useIsMobilePagination() {
+  const getValue = () =>
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(max-width: 760px)").matches
+      : false;
+  const [mobile, setMobile] = useState(getValue);
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const media = window.matchMedia("(max-width: 760px)");
+    const update = () => setMobile(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return mobile;
+}
+
+/* The next page arrives asynchronously from the API, so the accumulated mobile
+   list must be synchronized when that external result changes. */
+/* eslint-disable react-hooks/set-state-in-effect */
+export function useResponsivePaginationItems<T extends { id?: string }>(
+  items: T[],
+  pagination: Pagination,
+  resetKey = "",
+) {
+  const mobile = useIsMobilePagination();
+  const [accumulated, setAccumulated] = useState<T[]>(items);
+  const previousResetKey = useRef(resetKey);
+
+  useEffect(() => {
+    if (previousResetKey.current !== resetKey) {
+      previousResetKey.current = resetKey;
+      setAccumulated(pagination.page <= 1 ? items : []);
+      return;
+    }
+    if (mobile && !items.length && !pagination.total) return;
+    if (!mobile || pagination.page <= 1) {
+      setAccumulated((current) =>
+        current.length === items.length &&
+        current.every((item, index) => item.id === items[index]?.id)
+          ? current
+          : items,
+      );
+      return;
+    }
+    if (!items.length) return;
+    setAccumulated((current) => {
+      const incoming = new Map(
+        items.map((item, index) => [item.id ?? `incoming-${index}`, item]),
+      );
+      const known = new Set(current.map((item) => item.id).filter(Boolean));
+      const updated = current.map((item) =>
+        item.id && incoming.has(item.id) ? incoming.get(item.id)! : item,
+      );
+      for (const item of items) {
+        if (!item.id || !known.has(item.id)) updated.push(item);
+      }
+      const unchanged =
+        updated.length === current.length &&
+        updated.every((item, index) => item === current[index]);
+      return unchanged ? current : updated;
+    });
+  }, [items, mobile, pagination.page, pagination.total, resetKey]);
+
+  return mobile ? accumulated : items;
+}
+/* eslint-enable react-hooks/set-state-in-effect */
 
 export function SearchField({
   value,
@@ -358,12 +483,14 @@ export function Modal({
   onClose,
   wide = false,
   className = "",
+  hideHeader = false,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
   wide?: boolean;
   className?: string;
+  hideHeader?: boolean;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -384,9 +511,11 @@ export function Modal({
         return;
       }
       if (event.key !== "Tab" || !dialogElement) return;
-      const focusable = [...dialogElement.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )].filter((element) => !element.hasAttribute("hidden"));
+      const focusable = [
+        ...dialogElement.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => !element.hasAttribute("hidden"));
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -401,7 +530,9 @@ export function Modal({
     document.addEventListener("keydown", handleKeyboard);
     return () => {
       document.removeEventListener("keydown", handleKeyboard);
-      const index = dialogElement ? openModalStack.lastIndexOf(dialogElement) : -1;
+      const index = dialogElement
+        ? openModalStack.lastIndexOf(dialogElement)
+        : -1;
       if (index >= 0) openModalStack.splice(index, 1);
       if (!openModalStack.length) document.body.classList.remove("modal-open");
       previous?.focus();
@@ -416,17 +547,32 @@ export function Modal({
       <section
         ref={dialog}
         tabIndex={-1}
-        className={`modal ${wide ? "modal-wide" : ""} ${className}`.trim()}
+        className={`modal ${wide ? "modal-wide" : ""} ${hideHeader ? "modal-headerless" : ""} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        <header className="modal-header">
-          <h2 id={titleId}>{title}</h2>
-          <button onClick={onClose} aria-label="Cerrar">
-            <X />
-          </button>
-        </header>
+        {hideHeader ? (
+          <>
+            <h2 id={titleId} className="sr-only">
+              {title}
+            </h2>
+            <button
+              className="modal-floating-close"
+              onClick={onClose}
+              aria-label="Cerrar"
+            >
+              <X />
+            </button>
+          </>
+        ) : (
+          <header className="modal-header">
+            <h2 id={titleId}>{title}</h2>
+            <button onClick={onClose} aria-label="Cerrar">
+              <X />
+            </button>
+          </header>
+        )}
         {children}
       </section>
     </div>,
@@ -543,29 +689,42 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   );
 
   const tone = feedback?.kind === "notice" ? feedback.tone : "warning";
-  const Icon = feedback?.kind === "confirm" ? ShieldQuestion : feedbackIcons[tone];
+  const Icon =
+    feedback?.kind === "confirm" ? ShieldQuestion : feedbackIcons[tone];
 
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      {feedback?.kind === "notice" && createPortal(
-        <aside
-          className={`feedback-toast feedback-${tone}`}
-          role={tone === "error" || tone === "warning" ? "alert" : "status"}
-          aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}
-        >
-          <div className="feedback-toast-icon" aria-hidden="true"><Icon/></div>
-          <div className="feedback-toast-copy">
-            <strong>{feedback.title}</strong>
-            {feedback.message && <p>{feedback.message}</p>}
-          </div>
-          <button type="button" className="feedback-toast-close" onClick={() => close(false)} aria-label="Cerrar notificación">
-            <X/>
-          </button>
-          {feedback.autoClose && <div className="feedback-timeout" aria-hidden="true"/>}
-        </aside>,
-        document.body,
-      )}
+      {feedback?.kind === "notice" &&
+        createPortal(
+          <aside
+            className={`feedback-toast feedback-${tone}`}
+            role={tone === "error" || tone === "warning" ? "alert" : "status"}
+            aria-live={
+              tone === "error" || tone === "warning" ? "assertive" : "polite"
+            }
+          >
+            <div className="feedback-toast-icon" aria-hidden="true">
+              <Icon />
+            </div>
+            <div className="feedback-toast-copy">
+              <strong>{feedback.title}</strong>
+              {feedback.message && <p>{feedback.message}</p>}
+            </div>
+            <button
+              type="button"
+              className="feedback-toast-close"
+              onClick={() => close(false)}
+              aria-label="Cerrar notificación"
+            >
+              <X />
+            </button>
+            {feedback.autoClose && (
+              <div className="feedback-timeout" aria-hidden="true" />
+            )}
+          </aside>,
+          document.body,
+        )}
       {feedback?.kind === "confirm" && (
         <Modal title={feedback.title} onClose={() => close(false)} className="confirm-modal">
           <div className={`feedback-dialog feedback-${tone}`}>
@@ -649,18 +808,118 @@ export function Field({
   label,
   children,
   hint,
+  hintAsHelp = false,
   required = false,
   optional = false,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  hintAsHelp?: boolean;
   required?: boolean;
   optional?: boolean;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpId = useId();
+  const helpContainer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const closeWhenAnotherHelpOpens = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== helpId) {
+        setHelpOpen(false);
+      }
+    };
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (
+        helpOpen &&
+        event.target instanceof Node &&
+        !helpContainer.current?.contains(event.target)
+      ) {
+        setHelpOpen(false);
+      }
+    };
+
+    window.addEventListener(FIELD_HELP_OPEN_EVENT, closeWhenAnotherHelpOpens);
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => {
+      window.removeEventListener(
+        FIELD_HELP_OPEN_EVENT,
+        closeWhenAnotherHelpOpens,
+      );
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+    };
+  }, [helpId, helpOpen]);
+
+  const toggleHelp = () => {
+    if (!helpOpen) {
+      window.dispatchEvent(
+        new CustomEvent<string>(FIELD_HELP_OPEN_EVENT, { detail: helpId }),
+      );
+    }
+    setHelpOpen((current) => !current);
+  };
+
+  const labelContent = (
+    <>
+      {label}
+      {required && (
+        <>
+          <b className="field-required" aria-hidden="true">
+            *
+          </b>
+          <span className="sr-only"> (obligatorio)</span>
+        </>
+      )}
+      {optional && (
+        <small className="field-optional">Dejar vacío si no se tiene</small>
+      )}
+    </>
+  );
+
+  if (hint && hintAsHelp) {
+    return (
+      <div ref={helpContainer} className="field field-with-help">
+        <span className="field-label-row">{labelContent}</span>
+        {children}
+        <div className="field-help-control">
+          <button
+            type="button"
+            className="field-help-button"
+            aria-label="Mostrar ayuda"
+            title={`Ayuda para ${label}`}
+            aria-expanded={helpOpen}
+            onClick={toggleHelp}
+          >
+            <span aria-hidden="true">?</span>
+            Ayuda
+          </button>
+        </div>
+        {helpOpen && (
+          <div
+            className="field-help-card"
+            role="dialog"
+            aria-label={`Ayuda para ${label}`}
+          >
+            <div className="field-help-card-header">
+              <strong>{label}</strong>
+              <button
+                type="button"
+                aria-label="Cerrar ayuda"
+                onClick={() => setHelpOpen(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p>{hint}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <label className="field">
-      <span>{label}{required && <><b className="field-required" aria-hidden="true">*</b><span className="sr-only"> (obligatorio)</span></>}{optional && <small className="field-optional">Dejar vacío si no se tiene</small>}</span>
+      <span className="field-label-row">{labelContent}</span>
       {children}
       {hint && <small>{hint}</small>}
     </label>
