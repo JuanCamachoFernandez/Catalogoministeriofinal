@@ -1,0 +1,274 @@
+.fair-hero {
+  position: relative;
+  min-height: 440px;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background: var(--color-primary);
+  box-shadow: 0 18px 40px rgb(23 50 77 / 0.18);
+}
+.fair-cover {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fair-hero:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgb(10 29 46 / 0.92),
+    rgb(10 29 46 / 0.5) 65%,
+    rgb(10 29 46 / 0.15)
+  );
+}
+.fair-overlay {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  padding: clamp(2rem, 6vw, 5rem);
+  color: #fff;
+}
+.fair-overlay h1 {
+  margin: 0.4rem 0 1rem;
+  font-size: clamp(2.4rem, 6vw, 4.5rem);
+}
+.fair-overlay p {
+  font-size: 1.08rem;
+  color: #edf4f8;
+}
+.fair-form-modal {
+  display: flex;
+  width: min(920px, 100%);
+  max-height: calc(100dvh - 2rem);
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.fair-form-modal .modal-header {
+  flex: none;
+  margin: 0;
+  padding: 1.35rem clamp(1.25rem, 4vw, 2rem);
+  background: linear-gradient(115deg, #fffdf6, #f4ebcd);
+}
+.fair-form-modal .modal-header h2 {
+  font-size: 1.45rem;
+  letter-spacing: -0.025em;
+}
+.fair-form {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 clamp(1.25rem, 4vw, 2rem) 1.6rem;
+  scrollbar-gutter: stable;
+}
+.fair-form-intro {
+  margin: 0 calc(clamp(1.25rem, 4vw, 2rem) * -1) 1.5rem;
+  padding: 1.2rem clamp(1.25rem, 4vw, 2rem);
+  border-bottom: 1px solid #e9dfc2;
+  background: linear-gradient(
+    110deg,
+    rgb(244 238 218/0.72),
+    rgb(237 246 238/0.72)
+  );
+}
+.fair-form-intro span {
+  display: block;
+  color: var(--color-secondary);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.fair-form-intro p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-secondary);
+}
+.fair-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.15rem 1.25rem;
+}
+.fair-field-name,
+.fair-field-description,
+.fair-field-cover,
+.fair-form-dates {
+  grid-column: 1/-1;
+}
+.fair-form-grid .field {
+  gap: 0.48rem;
+}
+.fair-form-grid .field > span:first-child,
+.fair-cover-label {
+  font-size: 0.9rem;
+}
+.fair-form-grid .input {
+  min-height: 48px;
+  border-color: #d9cda8;
+  background: #fffefb;
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s,
+    background 0.18s;
+}
+.fair-form-grid textarea.input {
+  min-height: 108px;
+  resize: vertical;
+}
+.fair-form-grid .input:hover {
+  border-color: #bda95e;
+}
+.fair-form-grid .input:focus {
+  border-color: var(--color-secondary);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgb(23 107 58/0.11);
+}
+.fair-cover-preview-card {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 240px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #e2d7b8;
+  border-radius: 0.75rem;
+  background: #fbf8ef;
+  padding: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  cursor: zoom-in;
+}
+.fair-cover-preview-card:hover img,
+.fair-cover-preview-card:focus-visible img {
+  transform: scale(1.025);
+}
+.fair-cover-preview-card img {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  object-fit: cover;
+  transition: transform 0.2s;
+}
+.fair-cover-upload-row {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.9rem;
+}
+.fair-cover-upload-row > .field {
+  margin: 0;
+}
+.fair-cover-preview-card-small {
+  width: 132px;
+  min-height: 132px;
+  border-radius: 0.65rem;
+}
+.fair-cover-preview-empty {
+  cursor: default;
+  color: #7b756b;
+}
+.fair-cover-preview-card small {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.45rem;
+  border-radius: 999px;
+  background: rgb(12 28 19/0.82);
+  padding: 0.22rem 0.55rem;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+.fair-cover-preview-dialog {
+  width: min(1100px, calc(100% - 1rem));
+}
+.fair-cover-preview-dialog > img {
+  width: 100%;
+  max-height: calc(100dvh - 190px);
+  background: #151713;
+  object-fit: contain;
+}
+.fair-cover-preview-dialog .modal-actions {
+  justify-content: center;
+}
+.fair-cover-preview-dialog .modal-actions .btn {
+  min-width: 120px;
+}
+.fair-form-dates {
+  margin-top: 0.3rem;
+  border-top: 1px solid #e9dfc4;
+  padding-top: 1rem;
+}
+.fair-form-section-title {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: #5a513d;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+.fair-form-dates > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+.fair-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid #e9dfc4;
+  padding-top: 1.2rem;
+}
+.fair-form-actions .btn,
+.fair-form-actions .btn-outline {
+  min-width: 140px;
+}
+.fair-registration-form .fair-registration-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+  padding: 2rem 0 0;
+}
+.fair-registration-form .fair-registration-layout > .registration-section {
+  margin: 0;
+  border: 1px solid #ebe7de;
+  border-radius: 0.85rem;
+  padding: 1.6rem;
+}
+.fair-registration-grid-single {
+  grid-template-columns: 1fr;
+}
+.fair-registration-form
+  .fair-registration-layout
+  > .registration-section:last-child,
+.fair-registration-form
+  .fair-registration-layout
+  > .registration-section:nth-last-child(2) {
+  border-bottom: 1px solid #ebe7de;
+}
+.fair-registration-form .registration-actions {
+  padding-top: 1.5rem;
+}
+@media (max-width: 960px) {
+  .fair-cover-upload-row {
+    grid-template-columns: 1fr;
+  }
+  .fair-cover-preview-card-small {
+    width: 100%;
+    min-height: 180px;
+  }
+  .fair-cover-preview-card {
+    min-height: 200px;
+  }
+}
+@media (max-width: 760px) {
+  .fair-registration-form .fair-registration-layout {
+    grid-template-columns: 1fr;
+    padding-top: 1.5rem;
+  }
+  .fair-registration-form .fair-registration-layout > .registration-section {
+    padding: 1.35rem;
+  }
+}

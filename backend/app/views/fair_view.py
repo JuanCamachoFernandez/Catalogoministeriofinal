@@ -9,7 +9,6 @@ class FairCreateSchema(Schema):
     lugar = fields.String(required=True, validate=validate.Length(min=1, max=200))
     direccion = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=255))
     departamento = fields.String(required=True, validate=validate.Length(min=1, max=80))
-    municipio = fields.String(required=True, validate=validate.Length(min=1, max=100))
     fecha_inicio = fields.Date(required=True)
     fecha_fin = fields.Date(required=True)
     imagen_portada = fields.String(load_default=None, allow_none=True, validate=validate.Length(min=1, max=500))
@@ -36,7 +35,6 @@ class FairUpdateSchema(Schema):
     lugar = fields.String(validate=validate.Length(min=1, max=200))
     direccion = fields.String(allow_none=True, validate=validate.Length(max=255))
     departamento = fields.String(validate=validate.Length(min=1, max=80))
-    municipio = fields.String(validate=validate.Length(min=1, max=100))
     fecha_inicio = fields.Date()
     fecha_fin = fields.Date()
     imagen_portada = fields.String(allow_none=True, validate=validate.Length(min=1, max=500))
@@ -74,7 +72,6 @@ class CanonicalFairCreateSchema(Schema):
     descripcion = fields.String(allow_none=True, validate=validate.Length(max=5000))
     ubicacion = fields.String(required=True, validate=validate.Length(min=1, max=255))
     departamento = fields.String(load_default="Bolivia", validate=validate.Length(min=1, max=80))
-    municipio = fields.String(load_default="No especificado", validate=validate.Length(min=1, max=100))
     fecha_inicio = fields.Date(required=True)
     fecha_fin = fields.Date(required=True)
 
@@ -89,7 +86,6 @@ class CanonicalFairUpdateSchema(Schema):
     descripcion = fields.String(allow_none=True, validate=validate.Length(max=5000))
     ubicacion = fields.String(validate=validate.Length(min=1, max=255))
     departamento = fields.String(validate=validate.Length(min=1, max=80))
-    municipio = fields.String(validate=validate.Length(min=1, max=100))
     fecha_inicio = fields.Date()
     fecha_fin = fields.Date()
 

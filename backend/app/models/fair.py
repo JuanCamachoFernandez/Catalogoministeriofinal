@@ -26,7 +26,6 @@ class Fair(TimestampMixin, db.Model):
     ubicacion = db.Column(db.String(255))
     direccion = db.Column(db.String(255))
     departamento = db.Column(db.String(80), nullable=False, index=True)
-    municipio = db.Column(db.String(100), nullable=False)
     fecha_inicio = db.Column(db.Date, nullable=False)
     fecha_fin = db.Column(db.Date, nullable=False)
     hora_inicio = db.Column(db.Time)
@@ -86,7 +85,10 @@ class Fair(TimestampMixin, db.Model):
     def admin_query(cls, term=None, status=None):
         query = select(cls).where(cls.deleted_at.is_(None))
         if term:
-            query = query.where(cls.nombre.ilike(f"%{term}%"))
+            lookup = f"%{term}%"
+            query = query.where(
+                cls.nombre.ilike(lookup) | cls.ubicacion.ilike(lookup)
+            )
         if status:
             query = query.where(cls.estado == status)
         return query

@@ -391,9 +391,13 @@ def test_recuperacion_se_detiene_si_la_cuenta_deja_de_estar_activa(app, client):
         user = create_user()
         user_id = user.id
 
-    requested = client.post(
-        "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
-    )
+    with patch(
+        "app.controllers.auth_controller.BrevoEmailService.send_password_code",
+        return_value={"sent": True},
+    ):
+        requested = client.post(
+            "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
+        )
     code = requested.json["recovery_code"]
     with app.app_context():
         user = db.session.get(User, user_id)
@@ -411,9 +415,13 @@ def test_recuperacion_se_detiene_si_la_cuenta_deja_de_estar_activa(app, client):
         user = db.session.get(User, user_id)
         user.status = UserStatus.ACTIVE
         db.session.commit()
-    requested = client.post(
-        "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
-    )
+    with patch(
+        "app.controllers.auth_controller.BrevoEmailService.send_password_code",
+        return_value={"sent": True},
+    ):
+        requested = client.post(
+            "/api/auth/forgot-password", json={"email": "admin.prueba@gmail.com"}
+        )
     verified = client.post(
         "/api/auth/verify-recovery-code",
         json={

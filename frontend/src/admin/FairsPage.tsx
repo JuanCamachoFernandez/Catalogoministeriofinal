@@ -1,0 +1,714 @@
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
+import {
+  api,
+  assetUrl,
+  type CanonicalFair,
+  type FairParticipation,
+  type Paged,
+  type ProductiveUnit,
+} from "../api";
+import { BOLIVIA_DEPARTMENTS } from "../boliviaLocations";
+import {
+  ConfirmButton,
+  Empty,
+  ErrorBox,
+  Field,
+  Loading,
+  Modal,
+  PaginationBar,
+  SearchField,
+  StatusBadge,
+  UploadProgress,
+  useFeedback,
+} from "../ui";
+import { message, pageData } from "./adminShared";
+
+type FairDraft = {
+  nombre: string;
+  descripcion: string;
+  ubicacion: string;
+  departamento: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+};
+const emptyFair: FairDraft = {
+  nombre: "",
+  descripcion: "",
+  ubicacion: "",
+  departamento: "",
+  fecha_inicio: "",
+  fecha_fin: "",
+};
+export default function FairsPage() {
+  const [page, setPage] = useState(1);
+  const [q, setQ] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [editing, setEditing] = useState<CanonicalFair | null>(null),
+    [creating, setCreating] = useState(false),
+    [draft, setDraft] = useState(emptyFair),
+    [participants, setParticipants] = useState<CanonicalFair | null>(null),
+    [saving, setSaving] = useState(false),
+    [cover, setCover] = useState<File | null>(null),
+    [coverPreview, setCoverPreview] = useState(""),
+    [showCoverPreview, setShowCoverPreview] = useState(false),
+    [uploadProgress, setUploadProgress] = useState(0);
+  const qc = useQueryClient(),
+    feedback = useFeedback();
+  const list = useQuery({
+      queryKey: ["canonical-fairs", page, q, dateFrom, dateTo],
+      queryFn: () =>
+        api
+          .get<Paged<CanonicalFair>>("/admin/fairs", {
+            params: {
+              page,
+              q: q || undefined,
+              date_from: dateFrom || undefined,
+              date_to: dateTo || undefined,
+            },
+          })
+          .then((r) => r.data),
+    }),
+    data = pageData(list.data);
+  useEffect(
+    () => () => {
+      if (coverPreview.startsWith("blob:")) URL.revokeObjectURL(coverPreview);
+    },
+    [coverPreview],
+  );
+  useEffect(() => {
+    if (creating) {
+      document.body.classList.remove("modal-open");
+    }
+  }, [creating]);
+  const open = (f?: CanonicalFair) => {
+    setEditing(f ?? null);
+    setCreating(!f);
+    setDraft(
+      f
+        ? {
+            nombre: f.nombre,
+            descripcion: f.descripcion ?? "",
+            ubicacion: f.ubicacion,
+            departamento: f.departamento ?? "",
+            fecha_inicio: f.fecha_inicio,
+            fecha_fin: f.fecha_fin,
+          }
+        : emptyFair,
+    );
+    setCover(null);
+    setCoverPreview(assetUrl(f?.imagen_portada));
+    setShowCoverPreview(false);
+    setUploadProgress(0);
+  };
+  const save = async () => {
+    if (draft.fecha_fin < draft.fecha_inicio) {
+      feedback.notify({
+        title: "Revise las fechas",
+        message:
+          "La fecha de finalización no puede ser anterior a la fecha de inicio.",
+        tone: "warning",
+      });
+      return;
+    }
+    if (!editing && !cover) {
+      feedback.error(
+        "Falta la portada",
+        "Seleccione una imagen de portada para crear la feria.",
+      );
+      return;
+    }
+    const wasEditing = Boolean(editing);
+    let createdNow = false;
+    setSaving(true);
+    try {
+      const response = editing
+        ? await api.patch<CanonicalFair>(`/admin/fairs/${editing.id}`, draft)
+        : await api.post<CanonicalFair>("/admin/fairs", draft);
+      if (!editing) {
+        createdNow = true;
+        setEditing(response.data);
+        setCreating(false);
+      }
+      if (cover) {
+        const form = new FormData();
+        form.append("file", cover);
+        await api.post(`/admin/fairs/${response.data.id}/cover`, form, {
+          onUploadProgress: (event) => {
+            if (event.total)
+              setUploadProgress(
+                Math.min(100, Math.round((event.loaded * 100) / event.total)),
+              );
+          },
+        });
+      }
+      await qc.invalidateQueries({ queryKey: ["canonical-fairs"] });
+      setEditing(null);
+      setCreating(false);
+      setCover(null);
+      setCoverPreview("");
+      feedback.success(
+        wasEditing ? "Feria actualizada" : "Feria creada",
+        cover
+          ? "Los datos y la imagen de portada se guardaron correctamente."
+          : "Los cambios se guardaron conservando la portada actual.",
+      );
+    } catch (e) {
+      feedback.error(
+        createdNow ? "Feria creada, portada pendiente" : "No se pudo guardar",
+        createdNow
+          ? `La feria se creó, pero la portada no pudo subirse. Vuelva a guardar para reintentar. ${message(e)}`
+          : message(e),
+      );
+    } finally {
+      setSaving(false);
+      setUploadProgress(0);
+    }
+  };
+  const closeForm = () => {
+    if (saving) return;
+    document.body.classList.remove("modal-open");
+    setEditing(null);
+    setCreating(false);
+    setCover(null);
+    setCoverPreview("");
+    setShowCoverPreview(false);
+    setUploadProgress(0);
+  };
+  const fairForm = (
+    <form
+      className="registration-form fair-registration-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <div className="fair-registration-layout">
+      <section className="registration-section">
+        <div className="registration-section-heading">
+          <span>01</span>
+          <div>
+            <h2>Identidad de la feria</h2>
+            <p>Información principal que se mostrará en el catálogo.</p>
+          </div>
+        </div>
+        <div className="registration-grid fair-registration-grid-single">
+          <Field label="Nombre de la feria">
+            <input
+              className="input"
+              required
+              placeholder="Ej.: Feria Productiva Nacional"
+              value={draft.nombre}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, nombre: e.target.value }))
+              }
+            />
+          </Field>
+          <Field label="Descripción">
+            <textarea
+              className="input"
+              rows={4}
+              placeholder="Cuente brevemente qué encontrarán los visitantes"
+              value={draft.descripcion}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, descripcion: e.target.value }))
+              }
+            />
+          </Field>
+        </div>
+      </section>
+      <section className="registration-section">
+        <div className="registration-section-heading">
+          <span>02</span>
+          <div>
+            <h2>Portada</h2>
+            <p>Seleccione la imagen principal de presentación de la feria.</p>
+          </div>
+        </div>
+        <div className="registration-grid fair-registration-grid-single">
+          <div className="fair-cover-upload-row">
+            {coverPreview ? (
+              <button
+                type="button"
+                className="fair-cover-preview-card fair-cover-preview-card-small"
+                onClick={() => setShowCoverPreview(true)}
+                aria-label="Ampliar imagen de portada"
+                title="Haga clic para ampliar"
+              >
+                <img
+                  src={coverPreview}
+                  alt="Vista previa completa de la portada"
+                />
+              </button>
+            ) : (
+              <div className="fair-cover-preview-card fair-cover-preview-card-small fair-cover-preview-empty">
+                <span>Sin imagen</span>
+              </div>
+            )}
+            <Field
+              label="Imagen de portada"
+              required
+              hint="Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: 10 MB."
+            >
+              <input
+                className="input registration-file"
+                name="cover"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  if (!file) return;
+                  if (
+                    !["image/png", "image/jpeg", "image/webp"].includes(
+                      file.type,
+                    )
+                  ) {
+                    event.target.value = "";
+                    feedback.error(
+                      "Archivo no válido",
+                      "Seleccione una imagen JPG, PNG o WebP.",
+                    );
+                    return;
+                  }
+                  if (file.size > 10 * 1024 * 1024) {
+                    event.target.value = "";
+                    feedback.error(
+                      "Imagen demasiado grande",
+                      "La portada no puede superar los 10 MB.",
+                    );
+                    return;
+                  }
+                  setCover(file);
+                  setCoverPreview(URL.createObjectURL(file));
+                }}
+              />
+            </Field>
+          </div>
+          <UploadProgress value={uploadProgress} />
+        </div>
+      </section>
+      <section className="registration-section">
+        <div className="registration-section-heading">
+          <span>03</span>
+          <div>
+            <h2>Ubicación</h2>
+            <p>Lugar físico y localización administrativa de la feria.</p>
+          </div>
+        </div>
+        <div className="registration-grid fair-registration-grid-single">
+          <Field label="Lugar o dirección">
+            <input
+              className="input"
+              required
+              placeholder="Ej.: Campo Ferial, pabellón central"
+              value={draft.ubicacion}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, ubicacion: e.target.value }))
+              }
+            />
+          </Field>
+          <Field label="Departamento">
+            <select
+              className="input"
+              required
+              value={draft.departamento}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, departamento: e.target.value }))
+              }
+            >
+              <option value="">Seleccione un departamento</option>
+              {BOLIVIA_DEPARTMENTS.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </section>
+      <section className="registration-section">
+        <div className="registration-section-heading">
+          <span>04</span>
+          <div>
+            <h2>Fechas</h2>
+            <p>Defina el período en el que la feria estará vigente.</p>
+          </div>
+        </div>
+        <div className="registration-grid">
+          <Field label="Fecha de inicio">
+            <input
+              className="input"
+              required
+              type="date"
+              value={draft.fecha_inicio}
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  fecha_inicio: e.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Fecha de finalización">
+            <input
+              className="input"
+              required
+              type="date"
+              min={draft.fecha_inicio || undefined}
+              value={draft.fecha_fin}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, fecha_fin: e.target.value }))
+              }
+            />
+          </Field>
+        </div>
+      </section>
+      </div>
+      <footer className="registration-actions">
+        <span>
+          Revise los datos antes de guardar la feria.
+        </span>
+        <button
+          type="button"
+          className="btn-outline"
+          disabled={saving}
+          onClick={closeForm}
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          className="admin-unit-action-button registration-submit"
+          disabled={saving}
+        >
+          {saving
+            ? uploadProgress > 0
+              ? `Subiendo imagen ${uploadProgress}%`
+              : "Guardando…"
+            : editing
+              ? "Guardar cambios"
+              : "Crear feria"}
+        </button>
+      </footer>
+    </form>
+  );
+
+  if (creating) {
+    return (
+      <section className="admin-unit-registration-page">
+        <button
+          type="button"
+          className="back-navigation"
+          onClick={closeForm}
+        >
+          ← Volver al listado
+        </button>
+        <div className="page-heading">
+          <div>
+            <span className="eyebrow">Registrar Feria</span>
+          </div>
+        </div>
+        {fairForm}
+      </section>
+    );
+  }
+
+  return (
+    <section className="admin-page">
+      {" "}
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">Programación</span>
+          <h1>Ferias</h1>
+        </div>
+        <button
+          className="admin-units-create-button"
+          onClick={() => open()}
+        >
+          <Plus aria-hidden="true" />
+          Nueva feria
+        </button>
+      </div>{" "}
+      <div className="toolbar admin-requests-toolbar">
+        <SearchField
+          value={q}
+          onChange={(value) => {
+            setQ(value);
+            setPage(1);
+          }}
+          placeholder="Buscar nombre o lugar de feria..."
+        />
+        <Field label="Desde">
+          <input
+            className="input"
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(event) => {
+              setDateFrom(event.target.value);
+              setPage(1);
+            }}
+          />
+        </Field>
+        <Field label="Hasta">
+          <input
+            className="input"
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(event) => {
+              setDateTo(event.target.value);
+              setPage(1);
+            }}
+          />
+        </Field>
+      </div>{" "}
+      {list.isLoading ? (
+        <Loading />
+      ) : list.error ? (
+        <ErrorBox message={message(list.error)} />
+      ) : !data.items.length ? (
+        <Empty title="No hay ferias" />
+      ) : (
+        <>
+          <div className="table-wrap admin-requests-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Feria</th>
+                  <th>Lugar</th>
+                  <th>Fechas</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((f) => (
+                  <tr key={f.id}>
+                    <td>
+                      <strong>{f.nombre}</strong>
+                      <small>{f.departamento}</small>
+                    </td>
+                    <td>{f.ubicacion}</td>
+                    <td>
+                      {f.fecha_inicio} — {f.fecha_fin}
+                    </td>
+                    <td>
+                      <StatusBadge value={f.estado} />
+                    </td>
+                    <td>
+                      <button
+                        className="btn-small"
+                        disabled={["FINISHED", "DISABLED"].includes(f.estado)}
+                        onClick={() => open(f)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className="btn-small"
+                        onClick={() => setParticipants(f)}
+                      >
+                        Participaciones
+                      </button>
+                      {!["FINISHED", "DISABLED"].includes(f.estado) && (
+                        <>
+                          <ConfirmButton
+                            question="¿Finalizar esta feria?"
+                            onConfirm={async () => {
+                              await api.post(`/admin/fairs/${f.id}/finish`);
+                              await qc.invalidateQueries({
+                                queryKey: ["canonical-fairs"],
+                              });
+                            }}
+                          >
+                            Finalizar
+                          </ConfirmButton>
+                          <ConfirmButton
+                            question="¿Deshabilitar esta feria?"
+                            onConfirm={async () => {
+                              await api.post(`/admin/fairs/${f.id}/disable`);
+                              await qc.invalidateQueries({
+                                queryKey: ["canonical-fairs"],
+                              });
+                            }}
+                          >
+                            Deshabilitar
+                          </ConfirmButton>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar pagination={data.pagination} onPageChange={setPage} />
+        </>
+      )}{" "}
+      {editing && (
+        <Modal
+          title="Editar feria"
+          onClose={closeForm}
+          wide
+          className="fair-form-modal"
+        >
+          {fairForm}
+        </Modal>
+      )}{" "}
+      {showCoverPreview && coverPreview && (
+        <Modal
+          title="Vista previa de la portada"
+          onClose={() => setShowCoverPreview(false)}
+          wide
+          className="image-preview-dialog fair-cover-preview-dialog"
+        >
+          <img src={coverPreview} alt="Imagen de portada completa" />
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowCoverPreview(false)}
+            >
+              OK
+            </button>
+          </div>
+        </Modal>
+      )}{" "}
+      {participants && (
+        <ParticipationsModal
+          fair={participants}
+          onClose={() => setParticipants(null)}
+        />
+      )}{" "}
+    </section>
+  );
+}
+function ParticipationsModal({
+  fair,
+  onClose,
+}: {
+  fair: CanonicalFair;
+  onClose: () => void;
+}) {
+  const [unitId, setUnitId] = useState(""),
+    qc = useQueryClient(),
+    feedback = useFeedback();
+  const list = useQuery({
+    queryKey: ["fair-participations", fair.id],
+    queryFn: () =>
+      api
+        .get<Paged<FairParticipation>>(
+          `/admin/fairs/${fair.id}/participations`,
+          { params: { per_page: 100 } },
+        )
+        .then((r) => r.data.items),
+  });
+  const units = useQuery({
+    queryKey: ["productive-units", "options"],
+    queryFn: () =>
+      api
+        .get<Paged<ProductiveUnit>>("/admin/productive-units", {
+          params: { per_page: 100, estado: "ACTIVE" },
+        })
+        .then((r) => r.data.items),
+  });
+  const act = async (path: string) => {
+    try {
+      await api.post(path);
+      await qc.invalidateQueries({
+        queryKey: ["fair-participations", fair.id],
+      });
+    } catch (e) {
+      feedback.error("No se pudo actualizar", message(e));
+    }
+  };
+  return (
+    <Modal title={`Participaciones: ${fair.nombre}`} onClose={onClose}>
+      <p>
+        Se asigna la Unidad Productiva completa; sus productos publicables se
+        incorporan automáticamente.
+      </p>
+      <div className="toolbar">
+        <select
+          className="input"
+          value={unitId}
+          onChange={(e) => setUnitId(e.target.value)}
+        >
+          <option value="">Seleccione Unidad Productiva</option>
+          {units.data?.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.nombre_comercial}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn"
+          disabled={!unitId}
+          onClick={async () => {
+            await api.post(`/admin/fairs/${fair.id}/participations`, {
+              productive_unit_id: unitId,
+              observaciones: null,
+            });
+            setUnitId("");
+            await qc.invalidateQueries({
+              queryKey: ["fair-participations", fair.id],
+            });
+          }}
+        >
+          Asignar unidad
+        </button>
+      </div>
+      {list.isLoading ? (
+        <Loading />
+      ) : list.data?.length ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Unidad Productiva</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.data.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.nombre_comercial}</td>
+                  <td>
+                    <StatusBadge value={p.estado} />
+                  </td>
+                  <td>
+                    <button
+                      className="btn-small"
+                      onClick={() =>
+                        void act(
+                          `/admin/fairs/${fair.id}/participations/${p.id}/authorize`,
+                        )
+                      }
+                    >
+                      Autorizar
+                    </button>
+                    <button
+                      className="btn-small"
+                      onClick={() =>
+                        void act(
+                          `/admin/fairs/${fair.id}/participations/${p.id}/revoke`,
+                        )
+                      }
+                    >
+                      Revocar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty title="Sin participaciones" />
+      )}
+    </Modal>
+  );
+}

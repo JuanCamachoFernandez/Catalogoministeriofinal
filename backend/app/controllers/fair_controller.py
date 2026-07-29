@@ -148,8 +148,6 @@ def list_fairs():
     query = Fair.admin_query(term, parsed_state)
     if request.args.get("departamento"):
         query = query.where(Fair.departamento == request.args["departamento"])
-    if request.args.get("municipio"):
-        query = query.where(Fair.municipio == request.args["municipio"])
     try:
         date_from = date.fromisoformat(request.args["date_from"]) if request.args.get("date_from") else None
         date_to = date.fromisoformat(request.args["date_to"]) if request.args.get("date_to") else None
@@ -186,7 +184,6 @@ def create_fair():
         data.get("nombre"),
         data.get("lugar"),
         data.get("departamento"),
-        data.get("municipio"),
     )
     if _overlapping_fair(start, end):
         return error("El rango de fechas se superpone con otra feria", 409)
@@ -199,7 +196,6 @@ def create_fair():
         lugar=data["lugar"].strip(),
         direccion=data.get("direccion"),
         departamento=data["departamento"],
-        municipio=data["municipio"],
         fecha_inicio=start,
         fecha_fin=end,
         imagen_portada=data.get("imagen_portada"),
@@ -253,7 +249,6 @@ def update_fair(fair_id):
         "lugar",
         "direccion",
         "departamento",
-        "municipio",
         "imagen_portada",
         "observaciones",
     ):
@@ -514,6 +509,23 @@ def canonical_list_fairs():
             query = query.where(Fair.estado == FeriaStatus(request.args["estado"]))
         except ValueError:
             return error("Estado de feria inválido")
+    try:
+        date_from = (
+            date.fromisoformat(request.args["date_from"])
+            if request.args.get("date_from")
+            else None
+        )
+        date_to = (
+            date.fromisoformat(request.args["date_to"])
+            if request.args.get("date_to")
+            else None
+        )
+    except ValueError:
+        return error("Rango de fechas inválido")
+    if date_from:
+        query = query.where(Fair.fecha_fin >= date_from)
+    if date_to:
+        query = query.where(Fair.fecha_inicio <= date_to)
     return paginate(query.order_by(Fair.fecha_inicio.desc()), canonical_fair_json)
 
 
@@ -529,7 +541,6 @@ def canonical_create_fair():
         ubicacion=data["ubicacion"].strip(),
         lugar=data["ubicacion"].strip(),
         departamento=data["departamento"],
-        municipio=data["municipio"],
         fecha_inicio=data["fecha_inicio"],
         fecha_fin=data["fecha_fin"],
         created_by=current_user().id,
@@ -569,7 +580,7 @@ def canonical_update_fair(fair_id):
         return error("La fecha final no puede ser anterior a la inicial")
     if fair.estado == FeriaStatus.PUBLISHED and start > bolivia_today():
         return error("Una feria publicada no puede regresar a preparación", 409)
-    for key in ("nombre", "descripcion", "departamento", "municipio", "fecha_inicio", "fecha_fin"):
+    for key in ("nombre", "descripcion", "departamento", "fecha_inicio", "fecha_fin"):
         if key in data:
             setattr(fair, key, data[key])
     if "ubicacion" in data:

@@ -645,7 +645,7 @@
   }
 }
 
-/* Perfil pÃºblico del expositor y selecciÃ³n de productos */
+/* Perfil público del expositor y selección de productos */
 .unit-public-header {
   position: relative;
   isolation: isolate;
@@ -827,7 +827,7 @@
   }
 }
 
-/* Filtros persistentes del catÃƒÂ¡logo de expositores */
+/* Filtros persistentes del catálogo de expositores */
 .catalog-filter-status {
   display: flex;
   flex: 1 0 100% !important;
@@ -887,7 +887,7 @@
   background: #edf5ef;
 }
 
-/* Tarjetas e imÃƒÂ¡genes consistentes */
+/* Tarjetas e imágenes consistentes */
 .fair-public-card,
 .exhibitor-card,
 .catalog-product-card {
@@ -1022,7 +1022,7 @@
   transform: scale(1.015);
 }
 
-/* GalerÃƒÂ­a navegable de producto */
+/* Galería navegable de producto */
 .detail-gallery {
   min-width: 0;
 }

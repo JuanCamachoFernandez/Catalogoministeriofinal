@@ -20,6 +20,7 @@ import { assetUrl } from "./api";
 import { useAuth } from "./AuthContext";
 import { FeedbackProvider } from "./ui";
 import { SessionInactivityGuard } from "./SessionInactivityGuard";
+
 const adminNav = [
   ["/admin", "Resumen", LayoutDashboard],
   ["/admin/solicitudes", "Solicitudes", ClipboardList],
@@ -29,11 +30,13 @@ const adminNav = [
   ["/admin/ferias", "Ferias", CalendarDays],
   ["/admin/auditoria", "Auditoría", History],
 ] as const;
+
 const unitNav = [
   ["/unidad-productiva/productos", "Mis productos", Package],
   ["/unidad-productiva/perfil", "Mi Unidad Productiva", UserRound],
   ["/unidad-productiva/sectores", "Mis sectores", Activity],
 ] as const;
+
 export function InstitutionalSeal({ className = "" }: { className?: string }) {
   return (
     <img
@@ -43,6 +46,7 @@ export function InstitutionalSeal({ className = "" }: { className?: string }) {
     />
   );
 }
+
 export function ManagementLayout({
   children,
   area,
@@ -50,21 +54,23 @@ export function ManagementLayout({
   children: React.ReactNode;
   area: "admin" | "productive-unit";
 }) {
-  const [open, setOpen] = useState(false),
-    [collapsed, setCollapsed] = useState(
-      () => localStorage.getItem("catalog_sidebar_collapsed") === "true",
-    );
-  const { user, logout } = useAuth();
-  const navigate = useNavigate(),
-    links = area === "admin" ? adminNav : unitNav;
-  useEffect(
-    () => localStorage.setItem("catalog_sidebar_collapsed", String(collapsed)),
-    [collapsed],
+  const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("catalog_sidebar_collapsed") === "true",
   );
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const links = area === "admin" ? adminNav : unitNav;
+
+  useEffect(() => {
+    localStorage.setItem("catalog_sidebar_collapsed", String(collapsed));
+  }, [collapsed]);
+
   const signOut = async () => {
     await logout();
     navigate("/login", { replace: true });
   };
+
   return (
     <FeedbackProvider>
       <div
@@ -82,7 +88,7 @@ export function ManagementLayout({
             </button>
             <button
               className="sidebar-toggle"
-              onClick={() => setCollapsed((v) => !v)}
+              onClick={() => setCollapsed((value) => !value)}
               aria-label="Alternar barra lateral"
             >
               {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}

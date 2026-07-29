@@ -135,7 +135,12 @@ paths:
     get:
       tags: [Solicitudes]
       summary: Listar solicitudes
-      parameters: [{$ref: '#/components/parameters/Page'}]
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {name: estado, in: query, schema: {type: string}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: date_from, in: query, schema: {type: string, format: date}}
+        - {name: date_to, in: query, schema: {type: string, format: date}}
       responses:
         '200': {description: Página de solicitudes}
   /admin/registration-requests/{requestId}:
