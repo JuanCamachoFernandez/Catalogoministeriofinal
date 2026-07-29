@@ -3,7 +3,7 @@ services:
     name: catalogo-ministerio-api
     runtime: python
     rootDir: backend
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
     preDeployCommand: python -m flask --app run.py db upgrade
     startCommand: gunicorn --bind 0.0.0.0:$PORT run:app
@@ -58,4 +58,4 @@ services:
 
 databases:
   - name: catalogo-ministerio-db
-    plan: basic-256mb
+    plan: free
