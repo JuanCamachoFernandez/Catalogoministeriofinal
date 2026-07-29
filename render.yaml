@@ -1,13 +1,21 @@
 services:
+  # ==========================================================
+  # BACKEND: FLASK
+  # ==========================================================
   - type: web
     name: catalogo-ministerio-api
     runtime: python
     rootDir: backend
     plan: free
+    region: oregon
 
-    buildCommand: pip install -r requirements.txt && python -m flask --app run.py db upgrade
-    startCommand: gunicorn --bind 0.0.0.0:$PORT run:app
+    buildCommand: pip install -r requirements.txt
+
+    # Primero ejecuta las migraciones y después inicia Flask
+    startCommand: python -m flask --app run.py db upgrade && gunicorn --bind 0.0.0.0:$PORT run:app
+
     healthCheckPath: /api/health
+    autoDeployTrigger: commit
 
     envVars:
       - key: PYTHON_VERSION
@@ -20,7 +28,7 @@ services:
       - key: CLAVE_SECRETA_SESIONES
         generateValue: true
 
-      # Base de datos PostgreSQL de Render
+      # Base de datos de Render
       - key: DATABASE_URL
         fromDatabase:
           name: catalogo-ministerio-db
@@ -31,22 +39,25 @@ services:
           name: catalogo-ministerio-db
           property: connectionString
 
-      # Dirección del frontend publicado
+      # Dirección pública del frontend
       - key: DIRECCION_INTERFAZ_WEB
         value: https://catalogo-ministerio-web.onrender.com
 
       - key: ORIGENES_PERMITIDOS
         value: https://catalogo-ministerio-web.onrender.com
 
+      # Archivos cargados
       - key: CARPETA_CARGAS
         value: /opt/render/project/src/backend/uploads
 
       - key: TAMANO_MAXIMO_CONTENIDO
         value: "10485760"
 
+      # Memoria temporal
       - key: SEGUNDOS_MEMORIA_TEMPORAL_PUBLICA
         value: "60"
 
+      # Seguridad
       - key: LIMITE_INTENTOS_FALLIDOS
         value: "5"
 
@@ -61,7 +72,7 @@ services:
         value: juan.camacho
 
       - key: NOMBRES_ADMINISTRADOR_INICIAL
-        value: "Juan Sebastian"
+        value: Juan Sebastian
 
       - key: APELLIDO_PATERNO_ADMINISTRADOR_INICIAL
         value: Camacho
@@ -72,19 +83,54 @@ services:
       - key: CORREO_ADMINISTRADOR_INICIAL
         value: camachofernandez@gmail.com
 
-      # Se coloca manualmente en Render
+      # Agregar manualmente en Render
       - key: CONTRASENA_ADMINISTRADOR_INICIAL
         sync: false
 
-      # Brevo
+      # Configuración de Brevo
       - key: CLAVE_BREVO
         sync: false
 
       - key: CORREO_REMITENTE_BREVO
-        sync: false
+        value: microempresa.saas2026@gmail.com
 
       - key: NOMBRE_REMITENTE_BREVO
         value: Ministerio de Desarrollo Productivo
 
       - key: ENVIO_CORREO_HABILITADO
         value: "true"
+
+  # ==========================================================
+  # FRONTEND: REACT + VITE
+  # ==========================================================
+  - type: web
+    name: catalogo-ministerio-web
+    runtime: static
+    rootDir: frontend
+
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    autoDeployTrigger: commit
+
+    envVars:
+      - key: VITE_DIRECCION_SERVICIO
+        value: https://catalogo-ministerio-api.onrender.com/api
+
+      - key: VITE_NOMBRE_APLICACION
+        value: Catalogo Digital de Ferias
+
+      - key: VITE_CODIGO_PAIS_PREDETERMINADO
+        value: "591"
+
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+# ==========================================================
+# BASE DE DATOS: POSTGRESQL
+# ==========================================================
+databases:
+  - name: catalogo-ministerio-db
+    plan: free
+    region: oregon
