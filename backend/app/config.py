@@ -7,6 +7,18 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def database_uri() -> str:
+    uri = os.getenv("DIRECCION_BASE_DATOS") or os.getenv("DATABASE_URL")
+    if not uri:
+        return "postgresql+psycopg://catalogo:catalogo@localhost:5432/catalogo_ferias"
+    if uri.startswith("postgres://"):
+        return uri.replace("postgres://", "postgresql+psycopg://", 1)
+    if uri.startswith("postgresql://"):
+        return uri.replace("postgresql://", "postgresql+psycopg://", 1)
+    return uri
+
+
 class Config:
     # Flask y sus extensiones exigen estas claves internas; sus variables de
     # entorno, que son las que configura el usuario, se mantienen en español.
@@ -19,10 +31,7 @@ class Config:
     DIAS_RETENCION_SOLICITUDES_RECHAZADAS = int(
         os.getenv("DIAS_RETENCION_SOLICITUDES_RECHAZADAS", 30)
     )
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DIRECCION_BASE_DATOS",
-        "postgresql+psycopg://catalogo:catalogo@localhost:5432/catalogo_ferias",
-    )
+    SQLALCHEMY_DATABASE_URI = database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     DIRECCION_INTERFAZ_WEB = os.getenv("DIRECCION_INTERFAZ_WEB", "http://localhost:5173")
     ORIGENES_PERMITIDOS = os.getenv("ORIGENES_PERMITIDOS", "http://localhost:5173").split(",")

@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: catalogo-ministerio-api
+    runtime: python
+    rootDir: backend
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: python -m flask --app run.py db upgrade
+    startCommand: gunicorn --bind 0.0.0.0:$PORT run:app
+    healthCheckPath: /api/health
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/backend/uploads
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: CLAVE_SECRETA_APLICACION
+        generateValue: true
+      - key: CLAVE_SECRETA_SESIONES
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: catalogo-ministerio-db
+          property: connectionString
+      - key: CARPETA_CARGAS
+        value: /opt/render/project/src/backend/uploads
+      - key: DIRECCION_INTERFAZ_WEB
+        value: https://catalogo-ministerio-web.onrender.com
+      - key: ORIGENES_PERMITIDOS
+        value: https://catalogo-ministerio-web.onrender.com
+      - key: ENVIO_CORREO_HABILITADO
+        value: "false"
+      - key: CLAVE_BREVO
+        sync: false
+      - key: CORREO_REMITENTE_BREVO
+        sync: false
+      - key: NOMBRE_REMITENTE_BREVO
+        value: Catalogo Digital de Ferias
+
+  - type: web
+    name: catalogo-ministerio-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_DIRECCION_SERVICIO
+        value: https://catalogo-ministerio-api.onrender.com/api
+      - key: VITE_NOMBRE_APLICACION
+        value: Catalogo Digital de Ferias
+      - key: VITE_CODIGO_PAIS_PREDETERMINADO
+        value: "591"
+
+databases:
+  - name: catalogo-ministerio-db
+    plan: basic-256mb
