@@ -5,13 +5,9 @@ services:
     rootDir: backend
     plan: free
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: python -m flask --app run.py db upgrade
     startCommand: gunicorn --bind 0.0.0.0:$PORT run:app
     healthCheckPath: /api/health
-    disk:
-      name: uploads
-      mountPath: /opt/render/project/src/backend/uploads
-      sizeGB: 1
+    
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
