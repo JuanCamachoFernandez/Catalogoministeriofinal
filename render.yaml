@@ -4,54 +4,87 @@ services:
     runtime: python
     rootDir: backend
     plan: free
+
     buildCommand: pip install -r requirements.txt && python -m flask --app run.py db upgrade
     startCommand: gunicorn --bind 0.0.0.0:$PORT run:app
     healthCheckPath: /api/health
-    
+
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+
+      # Render genera estas claves automáticamente
       - key: CLAVE_SECRETA_APLICACION
         generateValue: true
+
       - key: CLAVE_SECRETA_SESIONES
         generateValue: true
+
+      # Base de datos PostgreSQL de Render
       - key: DATABASE_URL
         fromDatabase:
           name: catalogo-ministerio-db
           property: connectionString
-      - key: CARPETA_CARGAS
-        value: /opt/render/project/src/backend/uploads
+
+      - key: DIRECCION_BASE_DATOS
+        fromDatabase:
+          name: catalogo-ministerio-db
+          property: connectionString
+
+      # Dirección del frontend publicado
       - key: DIRECCION_INTERFAZ_WEB
         value: https://catalogo-ministerio-web.onrender.com
+
       - key: ORIGENES_PERMITIDOS
         value: https://catalogo-ministerio-web.onrender.com
-      - key: ENVIO_CORREO_HABILITADO
-        value: "false"
+
+      - key: CARPETA_CARGAS
+        value: /opt/render/project/src/backend/uploads
+
+      - key: TAMANO_MAXIMO_CONTENIDO
+        value: "10485760"
+
+      - key: SEGUNDOS_MEMORIA_TEMPORAL_PUBLICA
+        value: "60"
+
+      - key: LIMITE_INTENTOS_FALLIDOS
+        value: "5"
+
+      - key: MINUTOS_BLOQUEO
+        value: "15"
+
+      - key: DIAS_RETENCION_SOLICITUDES_RECHAZADAS
+        value: "30"
+
+      # Administrador inicial
+      - key: USUARIO_ADMINISTRADOR_INICIAL
+        value: juan.camacho
+
+      - key: NOMBRES_ADMINISTRADOR_INICIAL
+        value: "Juan Sebastian"
+
+      - key: APELLIDO_PATERNO_ADMINISTRADOR_INICIAL
+        value: Camacho
+
+      - key: APELLIDO_MATERNO_ADMINISTRADOR_INICIAL
+        value: Fernandez
+
+      - key: CORREO_ADMINISTRADOR_INICIAL
+        value: camachofernandez@gmail.com
+
+      # Se coloca manualmente en Render
+      - key: CONTRASENA_ADMINISTRADOR_INICIAL
+        sync: false
+
+      # Brevo
       - key: CLAVE_BREVO
         sync: false
+
       - key: CORREO_REMITENTE_BREVO
         sync: false
+
       - key: NOMBRE_REMITENTE_BREVO
-        value: Catalogo Digital de Ferias
+        value: Ministerio de Desarrollo Productivo
 
-  - type: web
-    name: catalogo-ministerio-web
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_DIRECCION_SERVICIO
-        value: https://catalogo-ministerio-api.onrender.com/api
-      - key: VITE_NOMBRE_APLICACION
-        value: Catalogo Digital de Ferias
-      - key: VITE_CODIGO_PAIS_PREDETERMINADO
-        value: "591"
-
-databases:
-  - name: catalogo-ministerio-db
-    plan: free
+      - key: ENVIO_CORREO_HABILITADO
+        value: "true"
