@@ -104,6 +104,10 @@ services:
       - key: ENVIO_CORREO_HABILITADO
         value: "true"
 
+      # Configuración de Cloudinary
+      - key: CLOUDINARY_URL
+        sync: false
+
   # ==========================================================
   # FRONTEND: REACT + VITE
   # ==========================================================
