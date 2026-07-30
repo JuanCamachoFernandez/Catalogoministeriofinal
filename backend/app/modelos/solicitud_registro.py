@@ -26,6 +26,7 @@ class RegistrationRequest(TimestampMixin, db.Model):
     tiktok_url = db.Column(db.String(500))
     resena_comercial = db.Column(db.Text, nullable=False)
     logo_url = db.Column(db.String(500))
+    logo_public_id = db.Column("identificador_logo_cloudinary", db.String(500), nullable=True)
     estado = db.Column(
         db.Enum(RegistrationStatus, name="estado_solicitud_registro"),
         nullable=False,

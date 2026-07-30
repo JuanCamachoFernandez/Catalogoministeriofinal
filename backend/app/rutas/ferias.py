@@ -1,11 +1,9 @@
 from datetime import date, datetime, timezone
-from pathlib import Path
-import os
 import uuid
 
 from flask import Blueprint, request
 from sqlalchemy import select
-
+from sqlalchemy.exc import SQLAlchemyError
 from ..extensiones import db
 from ..modelos import (
     AssignmentStatus,
@@ -43,10 +41,11 @@ from ..esquemas.ferias import (
 )
 from ..servicios import (
     audit,
+    delete_cloudinary_upload,
     delete_managed_upload,
     invalidate_public_cache,
     require_managed_upload,
-    save_upload,
+    upload_to_cloudinary,
 )
 
 from ..autenticacion.decoradores import roles
@@ -58,23 +57,79 @@ from ..autenticacion.permisos import (
 fair_bp = Blueprint("fairs", __name__)
 
 
+def _delete_fair_upload(url, public_id):
+    if public_id:
+        delete_cloudinary_upload(public_id)
+    elif url:
+        delete_managed_upload(url, "ferias")
+
+
 def validate_cover_reference(value):
     if not value:
         return
-    require_managed_upload(value, "ferias")
+
+    # Compatibilidad con imágenes locales antiguas.
+    if value.startswith("/uploads/"):
+        require_managed_upload(value, "ferias")
+        return
+
+    parsed = urlparse(value)
+
+    is_cloudinary = (
+        parsed.scheme == "https"
+        and parsed.netloc == "res.cloudinary.com"
+        and "/image/upload/" in parsed.path
+        and "/catalogo-ministerio/ferias/" in parsed.path
+    )
+
+    if not is_cloudinary:
+        raise ValueError("La imagen de portada debe pertenecer a Cloudinary")
 
 
 def cleanup_fair_images(fair):
-    urls = [fair.imagen_portada] if fair.imagen_portada else []
+    uploads = []
+
+    if fair.imagen_portada or fair.imagen_portada_public_id:
+        uploads.append(
+            {
+                "url": fair.imagen_portada,
+                "public_id": fair.imagen_portada_public_id,
+            }
+        )
+
     images = db.session.scalars(
-        select(FairImage).where(FairImage.fair_id == fair.id)
+        select(FairImage).where( FairImage.fair_id == fair.id)
     ).all()
-    urls.extend(image.url for image in images)
+
+    uploads.extend(
+        {
+            "url": image.url,
+            "public_id": image.public_id,
+        }
+        for image in images
+    )
+
     for image in images:
         db.session.delete(image)
-    fair.imagen_portada = None
-    return list(dict.fromkeys(url for url in urls if url))
 
+    fair.imagen_portada = None
+    fair.imagen_portada_public_id = None
+
+    unique_uploads = []
+    seen = set()
+
+    for upload in uploads:
+        key = (upload["url"], upload["public_id"],)
+
+        if key not in seen:
+            seen.add(key)
+            unique_uploads.append(upload)
+
+    return unique_uploads
+
+def delete_fair_uploads(uploads):
+    for upload in uploads:
+        _delete_fair_upload(upload.get("url"), upload.get("public_id"))
 
 def sync_fair_lifecycle(today=None):
     today = today or bolivia_today()
@@ -102,8 +157,7 @@ def sync_fair_lifecycle(today=None):
         changed = True
     if changed:
         db.session.commit()
-        for url in files_to_delete:
-            delete_managed_upload(url, "ferias")
+        delete_fair_uploads(files_to_delete)
         invalidate_public_cache()
     return changed
 
@@ -181,9 +235,10 @@ def create_fair():
     data = validated_json()
     try:
         start, end = parse_fair_dates(data)
-        validate_cover_reference(data.get("imagen_portada"))
     except ValueError as exc:
         return error(str(exc))
+    if data.get("imagen_portada"):
+        return error("La portada debe cargarse mediante el endpoint de imagen", 400)
     required = (
         data.get("nombre"),
         data.get("lugar"),
@@ -202,7 +257,6 @@ def create_fair():
         departamento=data["departamento"],
         fecha_inicio=start,
         fecha_fin=end,
-        imagen_portada=data.get("imagen_portada"),
         observaciones=data.get("observaciones"),
         created_by=current_user().id,
     )
@@ -238,13 +292,14 @@ def update_fair(fair_id):
         return error("Use la finalización manual para cerrar la feria")
     if _overlapping_fair(start, end, fair.id):
         return error("El rango de fechas se superpone con otra feria", 409)
-    old_cover = None
-    if "imagen_portada" in data and data.get("imagen_portada") != fair.imagen_portada:
-        try:
-            validate_cover_reference(data.get("imagen_portada"))
-        except ValueError as exc:
-            return error(str(exc))
-        old_cover = fair.imagen_portada
+    if (
+        "imagen_portada" in data
+        and data.get("imagen_portada") != fair.imagen_portada
+    ):
+        return error(
+            "La portada debe modificarse mediante la opción de carga de imagen",
+            400,
+        )
     fair.fecha_inicio = start
     fair.fecha_fin = end
     for field in (
@@ -253,7 +308,6 @@ def update_fair(fair_id):
         "lugar",
         "direccion",
         "departamento",
-        "imagen_portada",
         "observaciones",
     ):
         if field in data:
@@ -264,8 +318,6 @@ def update_fair(fair_id):
     fair.visible_publicamente = fair.estado == FeriaStatus.PUBLISHED
     audit("EDITAR", "Feria", fair.id, f"Feria actualizada: {fair.nombre}")
     db.session.commit()
-    if old_cover:
-        delete_managed_upload(old_cover, "ferias")
     invalidate_public_cache()
     return fair_json(fair)
 
@@ -288,14 +340,13 @@ def change_fair_status(fair_id):
         return error("La publicación de ferias se determina automáticamente por fechas")
     fair.estado = status
     fair.visible_publicamente = False
-    urls = cleanup_fair_images(fair)
+    uploads = cleanup_fair_images(fair)
     audit(
         "CAMBIAR_ESTADO", "Feria", fair.id,
         f"Estado de {fair.nombre} cambiado a {status.value}",
     )
     db.session.commit()
-    for url in urls:
-        delete_managed_upload(url, "ferias")
+    delete_fair_uploads(uploads)
     invalidate_public_cache()
     return fair_json(fair)
 
@@ -326,29 +377,47 @@ def list_fair_images(fair_id):
 @roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
 def add_fair_image(fair_id):
     sync_fair_lifecycle()
+
     fair = db.session.get(Fair, fair_id)
+
     if not fair or fair.deleted_at:
         return error("Feria no encontrada", 404)
+
     if fair.terminal:
-        return error("No se pueden agregar imágenes a una feria terminal", 409)
+        return error("No se pueden agregar imágenes a una feria terminal", 409,)
+
     try:
-        url = save_upload(request.files.get("file"), "ferias")
+        uploaded = upload_to_cloudinary( request.files.get("file"), "ferias",)
     except ValueError as exc:
         return error(str(exc))
-    if not url:
+
+    if not uploaded:
         return error("Debe enviar una imagen")
+
     image = FairImage(
         fair_id=fair.id,
-        filename=os.path.basename(url),
-        url=url,
+        filename=uploaded["filename"],
+        url=uploaded["url"],
+        public_id=uploaded["public_id"],
         alt_text=request.form.get("alt_text"),
-        display_order=int(request.form.get("display_order") or 0),
+        display_order=int(
+            request.form.get("display_order") or 0
+        ),
     )
+
     db.session.add(image)
-    audit("AGREGAR_IMAGEN", "Feria", fair.id, f"Imagen agregada a la feria {fair.nombre}")
-    db.session.commit()
+
+    audit("AGREGAR_IMAGEN", "Feria", fair.id, f"Imagen agregada a la feria {fair.nombre}",)
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        _delete_fair_upload(uploaded["url"], uploaded["public_id"])
+        return error("No fue posible guardar la imagen", 409)
     invalidate_public_cache()
-    return {"id": str(image.id), "url": image.url}, 201
+
+    return {"id": str(image.id), "url": image.url,}, 201
 
 
 @fair_bp.delete("/fair-images/<uuid:image_id>")
@@ -361,10 +430,11 @@ def delete_fair_image(image_id):
     if fair.terminal:
         return error("La feria es inmutable", 409)
     url = image.url
+    public_id = image.public_id
     db.session.delete(image)
     audit("ELIMINAR_IMAGEN", "Feria", fair.id, f"Imagen eliminada de la feria {fair.nombre}")
     db.session.commit()
-    delete_managed_upload(url, "ferias")
+    _delete_fair_upload(url, public_id)
     invalidate_public_cache()
     return "", 204
 
@@ -607,16 +677,12 @@ def _terminal_fair(fair_id, status):
     now_value = datetime.now(timezone.utc)
     fair.estado = status
     fair.visible_publicamente = False
-    now_value = datetime.now(timezone.utc)
     fair.disabled_at = now_value if status == FeriaStatus.DISABLED else None
     fair.finished_at = now_value if status == FeriaStatus.FINISHED else None
-    fair.disabled_at = now_value if status == FeriaStatus.DISABLED else None
-    fair.finished_at = now_value if status == FeriaStatus.FINISHED else None
-    urls = cleanup_fair_images(fair)
+    uploads = cleanup_fair_images(fair)
     audit("CAMBIAR_ESTADO", "Fair", fair.id)
     db.session.commit()
-    for url in urls:
-        delete_managed_upload(url, "ferias")
+    delete_fair_uploads(uploads)
     invalidate_public_cache()
     return canonical_fair_json(fair)
 
@@ -656,29 +722,47 @@ def canonical_finish_fair(fair_id):
 @roles(*ROLES_ADMINISTRACION_COMPLETA)
 def canonical_upload_cover(fair_id):
     fair = db.session.get(Fair, fair_id)
+
     if not fair or fair.deleted_at:
         return error("Feria no encontrada", 404)
+
     if fair.terminal:
         return error("Una feria terminal es inmutable", 409)
+
     try:
-        url = save_upload(request.files.get("file"), "ferias")
+        uploaded = upload_to_cloudinary(request.files.get("file"), "ferias",)
     except ValueError as exc:
         return error(str(exc))
-    if not url:
+
+    if not uploaded:
         return error("Debe enviar una imagen")
-    previous = fair.imagen_portada
-    fair.imagen_portada = url
+
+    previous_url = fair.imagen_portada
+    previous_public_id = fair.imagen_portada_public_id
+
+    fair.imagen_portada = uploaded["url"]
+    fair.imagen_portada_public_id = uploaded["public_id"]
+
     audit(
         "AGREGAR_IMAGEN",
         "Fair",
         fair.id,
-        before={"imagen_portada": previous},
-        after={"imagen_portada": url},
+        before={"imagen_portada": previous_url},
+        after={"imagen_portada": fair.imagen_portada},
     )
-    db.session.commit()
-    delete_managed_upload(previous, "ferias")
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        _delete_fair_upload(uploaded["url"], uploaded["public_id"])
+        return error("No fue posible guardar la portada", 409)
+
+    _delete_fair_upload(previous_url, previous_public_id)
+
     invalidate_public_cache()
-    return {"imagen_portada": url}, 201
+
+    return {"imagen_portada": fair.imagen_portada}, 201
 
 
 @fair_bp.delete("/admin/fairs/<uuid:fair_id>/cover")
@@ -689,17 +773,20 @@ def canonical_delete_cover(fair_id):
         return error("Feria no encontrada", 404)
     if fair.terminal:
         return error("Una feria terminal es inmutable", 409)
-    previous = fair.imagen_portada
+    previous_url = fair.imagen_portada
+    previous_public_id = fair.imagen_portada_public_id
+
     fair.imagen_portada = None
+    fair.imagen_portada_public_id = None
     audit(
         "ELIMINAR_IMAGEN",
         "Fair",
         fair.id,
-        before={"imagen_portada": previous},
+        before={"imagen_portada": previous_url},
         after={"imagen_portada": None},
     )
     db.session.commit()
-    delete_managed_upload(previous, "ferias")
+    _delete_fair_upload(previous_url, previous_public_id)
     invalidate_public_cache()
     return {"message": "Portada eliminada"}
 

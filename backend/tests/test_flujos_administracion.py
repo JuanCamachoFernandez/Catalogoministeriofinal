@@ -1,6 +1,7 @@
 from datetime import timedelta
 from io import BytesIO
 
+from PIL import Image
 from openpyxl import load_workbook
 
 from app.extensiones import db
@@ -44,6 +45,13 @@ def admin_token(client):
 
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+def _png_file(name="imagen.png", color="green"):
+    stream = BytesIO()
+    Image.new("RGB", (8, 8), color).save(stream, format="PNG")
+    stream.seek(0)
+    return stream, name
 
 
 def test_administrador_edita_su_propio_perfil(app, client):
@@ -315,6 +323,13 @@ def test_expositor_usa_documento_e_iniciales_como_contrasena(app, client):
         db.session.add(exhibitor_type)
         db.session.commit()
         type_id = exhibitor_type.id
+    upload = client.post(
+        "/api/uploads",
+        headers=auth(token),
+        data={"folder": "logos", "file": _png_file("logo.png")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 201
 
     response = client.post(
         "/api/exhibitors",
@@ -330,7 +345,7 @@ def test_expositor_usa_documento_e_iniciales_como_contrasena(app, client):
             "telefono_whatsapp": "71234567",
             "departamento": "La Paz",
             "municipio": "La Paz",
-            "logo": "https://imagenes.example/logo.png",
+            "logo": upload.json["url"],
             "type_ids": [str(type_id)],
         },
     )
@@ -339,7 +354,7 @@ def test_expositor_usa_documento_e_iniciales_como_contrasena(app, client):
     assert response.json["temporary_password"] == "4455667ML"
     assert response.json["data"]["apellido_paterno_responsable"] == "López"
     assert response.json["data"]["apellido_materno_responsable"] == "Quispe"
-    assert response.json["data"]["logo"] == "https://imagenes.example/logo.png"
+    assert response.json["data"]["logo"] == upload.json["url"]
     unchanged_exhibitor = response.json["data"]
     unchanged_update = client.patch(
         f"/api/exhibitors/{response.json['data']['id']}",

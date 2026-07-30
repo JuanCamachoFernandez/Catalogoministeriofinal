@@ -30,6 +30,7 @@ class ProductiveUnit(TimestampMixin, db.Model):
     tiktok_url = db.Column(db.String(500))
     resena_comercial = db.Column(db.Text, nullable=False)
     logo_url = db.Column(db.String(500))
+    logo_public_id = db.Column("identificador_logo_cloudinary", db.String(500), nullable=True)
     estado = db.Column(
         db.Enum(ProductiveUnitStatus, name="estado_unidad_productiva"),
         nullable=False,

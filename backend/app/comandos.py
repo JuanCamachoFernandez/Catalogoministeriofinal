@@ -205,7 +205,12 @@ def registrar_comandos(app):
     @with_appcontext
     def cleanup_registration_uploads():
         """Elimina solamente logotipos huérfanos del directorio de solicitudes."""
-        from .servicios import audit, delete_managed_upload, managed_upload_path
+        from .servicios import (
+            audit,
+            delete_cloudinary_upload,
+            delete_managed_upload,
+            managed_upload_path,
+        )
 
         retention_days = app.config["DIAS_RETENCION_SOLICITUDES_RECHAZADAS"]
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
@@ -218,8 +223,12 @@ def registrar_comandos(app):
         ).all()
         expired_removed = 0
         for registration in expired_requests:
-            delete_managed_upload(registration.logo_url, "solicitudes")
+            if registration.logo_public_id:
+                delete_cloudinary_upload(registration.logo_public_id)
+            else:
+                delete_managed_upload(registration.logo_url, "solicitudes")
             registration.logo_url = None
+            registration.logo_public_id = None
             expired_removed += 1
 
         referenced = {

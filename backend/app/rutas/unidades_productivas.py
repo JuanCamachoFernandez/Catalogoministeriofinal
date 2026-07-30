@@ -1,11 +1,9 @@
 from datetime import datetime, timezone
-from pathlib import Path
-import shutil
 from uuid import UUID
 
 from flask import Blueprint, current_app, request
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from ..extensiones import db
 from ..modelos import (
@@ -34,11 +32,12 @@ from ..esquemas.unidades_productivas import (
 )
 from ..servicios import (
     audit,
+    delete_cloudinary_upload,
     delete_managed_upload,
     invalidate_public_cache,
-    require_managed_upload,
-    save_upload,
     unique_username,
+    upload_to_cloudinary,
+    validate_image_reference,
 )
 from .solicitudes_registro import (
     _send_credentials,
@@ -54,6 +53,13 @@ from ..autenticacion.permisos import (
     ROLES_RESPONSABLES_UNIDAD,
 )
 productive_unit_bp = Blueprint("productive_units", __name__)
+
+
+def _delete_unit_logo(url, public_id):
+    if public_id:
+        delete_cloudinary_upload(public_id)
+    elif url:
+        delete_managed_upload(url, "unidades_productivas")
 
 
 def current_productive_unit():
@@ -176,7 +182,7 @@ def create_productive_unit():
     try:
         sectors = _validated_sector_rows(data["sectores"])
         if logo_url:
-            require_managed_upload(logo_url, "solicitudes")
+            validate_image_reference(logo_url, "solicitudes")
     except ValueError as exc:
         return error(str(exc))
 
@@ -201,6 +207,7 @@ def create_productive_unit():
             tiktok_url=(data.get("tiktok_url") or "").strip() or None,
             resena_comercial=data["resena_comercial"].strip(),
             logo_url=logo_url,
+            logo_public_id=None,
             estado=RegistrationStatus.APPROVED,
             fecha_revision=datetime.now(timezone.utc),
             reviewed_by=current_user().id,
@@ -252,11 +259,13 @@ def create_productive_unit():
             instagram_url=request_item.instagram_url,
             tiktok_url=request_item.tiktok_url,
             resena_comercial=request_item.resena_comercial,
-            logo_url=logo_transfer[2] if logo_transfer else None,
+            logo_url=logo_transfer["url"] if logo_transfer else None,
+            logo_public_id=logo_transfer["public_id"] if logo_transfer else None,
             estado=ProductiveUnitStatus.ACTIVE,
             fecha_aprobacion=datetime.now(timezone.utc),
         )
-        request_item.logo_url = logo_transfer[2] if logo_transfer else None
+        request_item.logo_url = logo_transfer["url"] if logo_transfer else None
+        request_item.logo_public_id = logo_transfer["public_id"] if logo_transfer else None
         db.session.add(unit)
         db.session.flush()
         db.session.add_all(
@@ -265,14 +274,10 @@ def create_productive_unit():
         )
         audit("CREAR_UNIDAD_PRODUCTIVA", "ProductiveUnit", unit.id)
         db.session.commit()
-    except (IntegrityError, OSError, ValueError):
+    except IntegrityError:
         db.session.rollback()
-        if logo_transfer and logo_transfer[1].is_file():
-            logo_transfer[1].unlink()
         current_app.logger.exception("No fue posible crear la Unidad Productiva")
         return error("No fue posible crear la Unidad Productiva", 409)
-    if logo_transfer and logo_transfer[0].is_file():
-        logo_transfer[0].unlink()
     _send_credentials(request_item, user, password)
     invalidate_public_cache()
     return productive_unit_json(unit), 201
@@ -464,24 +469,34 @@ def upload_own_unit_logo():
     if not item or item.estado != ProductiveUnitStatus.ACTIVE:
         return error("La Unidad Productiva no permite modificaciones", 403)
     try:
-        new_url = save_upload(request.files.get("file"), "unidades_productivas")
+        uploaded = upload_to_cloudinary(
+            request.files.get("file"),
+            "unidades_productivas",
+        )
     except ValueError as exc:
         return error(str(exc))
-    if not new_url:
+    if not uploaded:
         return error("La imagen es obligatoria")
     previous = item.logo_url
-    item.logo_url = new_url
+    previous_public_id = item.logo_public_id
+    item.logo_url = uploaded["url"]
+    item.logo_public_id = uploaded["public_id"]
     audit(
         "AGREGAR_IMAGEN",
         "ProductiveUnit",
         item.id,
         before={"logo_url": previous},
-        after={"logo_url": new_url},
+        after={"logo_url": item.logo_url},
     )
-    db.session.commit()
-    delete_managed_upload(previous, "unidades_productivas")
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        _delete_unit_logo(uploaded["url"], uploaded["public_id"])
+        return error("No fue posible guardar el logotipo", 409)
+    _delete_unit_logo(previous, previous_public_id)
     invalidate_public_cache()
-    return {"logo_url": new_url}, 201
+    return {"logo_url": item.logo_url}, 201
 
 
 @productive_unit_bp.delete("/productive-unit/logo")
@@ -491,7 +506,9 @@ def delete_own_unit_logo():
     if not item:
         return error("Unidad Productiva no encontrada", 404)
     previous = item.logo_url
+    previous_public_id = item.logo_public_id
     item.logo_url = None
+    item.logo_public_id = None
     audit(
         "ELIMINAR_IMAGEN",
         "ProductiveUnit",
@@ -500,6 +517,6 @@ def delete_own_unit_logo():
         after={"logo_url": None},
     )
     db.session.commit()
-    delete_managed_upload(previous, "unidades_productivas")
+    _delete_unit_logo(previous, previous_public_id)
     invalidate_public_cache()
     return {"message": "Logotipo eliminado"}

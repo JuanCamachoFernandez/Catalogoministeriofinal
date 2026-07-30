@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
-import os
 import uuid
 
 from flask import Blueprint, request
+from marshmallow import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from ..extensiones import db
 from ..modelos import (
@@ -29,11 +30,12 @@ from ..esquemas.productos import (
 )
 from ..servicios import (
     audit,
+    delete_cloudinary_upload,
     delete_managed_upload,
     invalidate_public_cache,
     product_from_payload,
-    require_managed_upload,
-    save_upload,
+    upload_to_cloudinary,
+    validate_image_reference,
 )
 
 from ..autenticacion.decoradores import roles
@@ -47,6 +49,17 @@ from ..autenticacion.permisos import (
 )
 product_bp = Blueprint("products", __name__)
 MAX_PRODUCTIVE_UNIT_PRODUCTS = 15
+
+
+def _delete_product_upload(url, public_id):
+    if public_id:
+        delete_cloudinary_upload(public_id)
+    elif url:
+        delete_managed_upload(url, "productos")
+
+
+def _product_image_payload():
+    return request.get_json(silent=True) or {}
 
 
 def productive_product_or_404(product_id, unit_id=None):
@@ -115,7 +128,7 @@ def validate_product_references(product):
 
 
 def add_product_image(product):
-    payload = request.get_json(silent=True) or {}
+    payload = _product_image_payload()
     alt_text = (request.form.get("alt_text") or payload.get("alt_text") or "").strip()
     if not alt_text:
         return error("El texto alternativo es obligatorio")
@@ -126,10 +139,18 @@ def add_product_image(product):
     ).all()
     display_order = len(existing_images)
     try:
-        url = save_upload(request.files.get("file"), "productos")
-        if not url:
+        uploaded = upload_to_cloudinary(request.files.get("file"), "productos",)
+
+        if uploaded:
+            url = uploaded["url"]
+            public_id = uploaded["public_id"]
+            filename = uploaded["filename"]
+        else:
             url = payload.get("url")
-            require_managed_upload(url, "productos")
+            validate_image_reference(url, "productos")
+            public_id = None
+            filename = url.rsplit("/", 1)[-1].split("?", 1)[0]
+
     except ValueError as exc:
         return error(str(exc))
     is_cover_value = request.form.get("is_cover")
@@ -142,8 +163,9 @@ def add_product_image(product):
         is_cover = True
     image = ProductImage(
         product_id=product.id,
-        filename=os.path.basename(url),
+        filename=filename,
         url=url,
+        public_id=public_id,
         alt_text=alt_text,
         is_cover=is_cover,
         display_order=display_order,
@@ -153,7 +175,13 @@ def add_product_image(product):
             other.is_cover = False
     db.session.add(image)
     audit("AGREGAR_IMAGEN", "Producto", product.id, "Imagen agregada")
-    db.session.commit()
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        if uploaded:
+            _delete_product_upload(uploaded["url"], uploaded["public_id"])
+        return error("No fue posible guardar la imagen", 409)
     invalidate_public_cache()
     return {
         "id": str(image.id),
@@ -165,17 +193,37 @@ def add_product_image(product):
 
 def delete_product_record(product):
     images = db.session.scalars(
-        select(ProductImage).where(ProductImage.product_id == product.id)
+        select(ProductImage).where(
+            ProductImage.product_id == product.id
+        )
     ).all()
-    urls = [image.url for image in images]
+
+    uploads = [
+        {
+            "url": image.url,
+            "public_id": image.public_id,
+        }
+        for image in images
+    ]
+
     for image in images:
         db.session.delete(image)
+
     product.deleted_at = datetime.now(timezone.utc)
     product.estado = ProductStatus.DELETED
-    audit("ELIMINAR", "Producto", product.id, "Eliminación lógica")
+
+    audit(
+        "ELIMINAR",
+        "Producto",
+        product.id,
+        "Eliminación lógica",
+    )
+
     db.session.commit()
-    for url in urls:
-        delete_managed_upload(url, "productos")
+
+    for upload in uploads:
+        _delete_product_upload(upload["url"], upload["public_id"])
+
     invalidate_public_cache()
 
 
@@ -367,6 +415,7 @@ def delete_product_image(image_id):
     if product.exhibitor_id != user.exhibitor.id:
         return error("No autorizado", 403)
     url = image.url
+    public_id = image.public_id
     db.session.delete(image)
     db.session.flush()
     remaining_images = db.session.scalars(
@@ -380,7 +429,7 @@ def delete_product_image(image_id):
         remaining_images[0].is_cover = True
     audit("ELIMINAR_IMAGEN", "Producto", product.id, f"Imagen eliminada del producto {product.nombre}")
     db.session.commit()
-    delete_managed_upload(url, "productos")
+    _delete_product_upload(url, public_id)
     invalidate_public_cache()
     return "", 204
 
@@ -479,7 +528,19 @@ def delete_productive_product(product_id):
     if not product:
         return error("Producto no encontrado", 404)
     # Keep the managed file paths until the permanent database deletion commits.
-    urls = db.session.scalars(select(ProductImage.url).where(ProductImage.product_id == product.id)).all()
+    images = db.session.scalars(
+        select(ProductImage).where(
+            ProductImage.product_id == product.id
+        )
+    ).all()
+
+    uploads = [
+        {
+            "url": image.url,
+            "public_id": image.public_id,
+        }
+        for image in images
+    ]
     db.session.execute(db.delete(ProductImage).where(ProductImage.product_id == product.id))
     audit(
         "ELIMINAR_PERMANENTE",
@@ -489,8 +550,8 @@ def delete_productive_product(product_id):
     )
     db.session.delete(product)
     db.session.commit()
-    for url in urls:
-        delete_managed_upload(url, "productos")
+    for upload in uploads:
+        _delete_product_upload(upload["url"], upload["public_id"])
     invalidate_public_cache()
     return "", 204
 
@@ -573,21 +634,49 @@ def add_own_productive_product_image(product_id):
 
 @product_bp.patch("/productive-unit/products/<uuid:product_id>/images/<uuid:image_id>")
 @roles(*ROLES_RESPONSABLES_UNIDAD)
-@validate_json(ProductImageUpdateSchema())
 def update_own_productive_product_image(product_id, image_id):
     product, image = _own_product_image_context(product_id, image_id)
     if not image:
         return error("Imagen no encontrada", 404)
-    data = validated_json()
+    if request.files:
+        data = {}
+        if "alt_text" in request.form:
+            data["alt_text"] = request.form.get("alt_text")
+        if "display_order" in request.form:
+            data["display_order"] = request.form.get("display_order")
+        if "is_cover" in request.form:
+            data["is_cover"] = request.form.get("is_cover")
+        try:
+            data = ProductImageUpdateSchema().load(data)
+        except ValidationError as exc:
+            message = "; ".join(
+                value for values in exc.messages.values() for value in values
+            )
+            return error(message)
+    else:
+        try:
+            data = ProductImageUpdateSchema().load(request.get_json(silent=True) or {})
+        except ValidationError as exc:
+            message = "; ".join(
+                value for values in exc.messages.values() for value in values
+            )
+            return error(message)
     previous_url = None
+    previous_public_id = None
+    uploaded = None
+
     if request.files.get("file"):
         try:
-            new_url = save_upload(request.files["file"], "productos")
+            uploaded = upload_to_cloudinary(request.files["file"], "productos")
         except ValueError as exc:
             return error(str(exc))
+
         previous_url = image.url
-        image.url = new_url
-        image.filename = os.path.basename(new_url)
+        previous_public_id = image.public_id
+
+        image.url = uploaded["url"]
+        image.public_id = uploaded["public_id"]
+        image.filename = uploaded["filename"]
     if "alt_text" in data:
         image.alt_text = data["alt_text"]
     if "display_order" in data:
@@ -609,9 +698,14 @@ def update_own_productive_product_image(product_id, image_id):
         product.id,
         after={"image_id": str(image.id), "display_order": image.display_order},
     )
-    db.session.commit()
-    if previous_url:
-        delete_managed_upload(previous_url, "productos")
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        if uploaded:
+            _delete_product_upload(uploaded["url"], uploaded["public_id"])
+        return error("No fue posible actualizar la imagen", 409)
+    _delete_product_upload(previous_url, previous_public_id)
     invalidate_public_cache()
     return productive_product_json(product)
 
@@ -625,6 +719,7 @@ def delete_own_productive_product_image(product_id, image_id):
     if product.estado in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK):
         product.estado = ProductStatus.DRAFT
     url = image.url
+    public_id = image.public_id
     db.session.delete(image)
     db.session.flush()
     remaining = db.session.scalars(select(ProductImage).where(ProductImage.product_id == product.id).order_by(ProductImage.display_order)).all()
@@ -639,7 +734,7 @@ def delete_own_productive_product_image(product_id, image_id):
         before={"image_id": str(image.id), "url": url},
     )
     db.session.commit()
-    delete_managed_upload(url, "productos")
+    _delete_product_upload(url, public_id)
     invalidate_public_cache()
     return "", 204
 

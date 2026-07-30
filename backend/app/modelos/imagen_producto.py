@@ -15,6 +15,7 @@ class ProductImage(db.Model):
     )
     filename = db.Column("nombre_archivo", db.String(255), nullable=False)
     url = db.Column("direccion_url", db.String(500), nullable=False)
+    public_id = db.Column("identificador_cloudinary", db.String(500), nullable=True)
     alt_text = db.Column("texto_alternativo", db.String(255))
     is_cover = db.Column("es_portada", db.Boolean, default=False, nullable=False)
     display_order = db.Column("orden_visualizacion", db.Integer, default=0, nullable=False)

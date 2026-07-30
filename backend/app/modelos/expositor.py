@@ -29,6 +29,7 @@ class Exhibitor(TimestampMixin, db.Model):
     descripcion_productos = db.Column(db.Text)
     nombre_tipo_expositor = db.Column(db.String(200))
     logo = db.Column(db.String(500))
+    logo_public_id = db.Column("identificador_logo_cloudinary", db.String(500), nullable=True)
     estado = db.Column(
         db.Enum(UserStatus, name="estado_expositor"),
         nullable=False,

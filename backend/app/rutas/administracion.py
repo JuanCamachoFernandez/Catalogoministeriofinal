@@ -31,9 +31,11 @@ from .autenticacion import strong_password
 from ..servicios import (
     audit,
     audit_description,
+    cloudinary_public_id_from_url,
+    delete_cloudinary_upload,
     delete_managed_upload,
     invalidate_public_cache,
-    require_managed_upload,
+    validate_image_reference,
     unique_username,
 )
 
@@ -46,6 +48,13 @@ from ..autenticacion.permisos import (
     ROLES_SUPERADMIN,
 )
 admin_bp = Blueprint("admin", __name__)
+
+
+def _delete_profile_photo(url, public_id):
+    if public_id:
+        delete_cloudinary_upload(public_id)
+    elif url:
+        delete_managed_upload(url, "perfiles")
 
 
 def ensure_admin_unit(value):
@@ -121,18 +130,25 @@ def update_own_admin_profile():
             value = ensure_admin_unit(data.get(field)) if field == "unidad" else data.get(field)
             setattr(profile, field, value)
     old_photo = None
+    old_photo_public_id = None
     if "foto_perfil" in data and data.get("foto_perfil") != user.foto_perfil:
         try:
             if data.get("foto_perfil"):
-                require_managed_upload(data["foto_perfil"], "perfiles")
+                validate_image_reference(data["foto_perfil"], "perfiles")
         except ValueError as exc:
             return error(str(exc))
         old_photo = user.foto_perfil
+        old_photo_public_id = user.foto_perfil_public_id
         user.foto_perfil = data.get("foto_perfil")
+        user.foto_perfil_public_id = (
+            cloudinary_public_id_from_url(data["foto_perfil"], "perfiles")
+            if data.get("foto_perfil")
+            else None
+        )
     audit("EDITAR", "Perfil", user.id, f"Perfil actualizado por {user.username}")
     db.session.commit()
     if old_photo:
-        delete_managed_upload(old_photo, "perfiles")
+        _delete_profile_photo(old_photo, old_photo_public_id)
     return admin_user_json(user)
 
 

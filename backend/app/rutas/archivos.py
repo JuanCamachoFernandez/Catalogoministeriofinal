@@ -2,7 +2,7 @@ from flask import Blueprint, request
 
 from ..modelos import Role
 from ..esquemas import error
-from ..servicios import save_upload
+from ..servicios import upload_to_cloudinary
 
 from ..autenticacion.decoradores import roles
 from ..autenticacion.sesiones import current_user
@@ -22,9 +22,9 @@ def upload_file():
     if folder not in allowed[current_user().role]:
         return error("No autorizado para esta carpeta", 403)
     try:
-        url = save_upload(request.files.get("file"), folder)
+        uploaded = upload_to_cloudinary(request.files.get("file"), folder)
     except ValueError as exc:
         return error(str(exc))
-    if not url:
+    if not uploaded:
         return error("Debe enviar un archivo")
-    return {"url": url}, 201
+    return {"url": uploaded["url"]}, 201

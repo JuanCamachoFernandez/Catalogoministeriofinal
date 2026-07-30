@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
 import uuid
-from urllib.parse import urlparse
 import unicodedata
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, request
 from sqlalchemy import func, select
 
 from ..extensiones import db
@@ -26,20 +25,19 @@ from ..esquemas.expositores import (
 )
 from ..servicios import (
     audit,
+    cloudinary_public_id_from_url,
+    delete_cloudinary_upload,
     delete_managed_upload,
     invalidate_public_cache,
-    require_managed_upload,
     unique_username,
+    validate_image_reference,
 )
 
 
 def validate_logo_reference(value):
     if not value:
         return
-    parsed = urlparse(value)
-    if parsed.scheme in ("http", "https") and parsed.netloc:
-        return
-    require_managed_upload(value, "logos")
+    validate_image_reference(value, "logos")
 
 from ..autenticacion.decoradores import roles
 from ..autenticacion.sesiones import current_user
@@ -48,6 +46,13 @@ from ..autenticacion.permisos import (
     ROLES_EXPOSITOR,
 )
 exhibitor_bp = Blueprint("exhibitors", __name__)
+
+
+def _delete_exhibitor_logo(url, public_id):
+    if public_id:
+        delete_cloudinary_upload(public_id)
+    elif url:
+        delete_managed_upload(url, "logos")
 
 
 def update_exhibitor_fields(exhibitor, data):
@@ -72,10 +77,12 @@ def update_exhibitor_fields(exhibitor, data):
     if "tipo_documento" in data:
         exhibitor.tipo_documento = DocumentType(data.get("tipo_documento"))
     old_logo = None
+    old_logo_public_id = None
     if "logo" in data and data.get("logo") != exhibitor.logo:
         if data.get("logo"):
             validate_logo_reference(data.get("logo"))
         old_logo = exhibitor.logo
+        old_logo_public_id = exhibitor.logo_public_id
     for field in (
         "nombre_comercial",
         "numero_documento",
@@ -92,12 +99,18 @@ def update_exhibitor_fields(exhibitor, data):
     ):
         if field in data:
             setattr(exhibitor, field, data.get(field))
+    if "logo" in data:
+        exhibitor.logo_public_id = (
+            cloudinary_public_id_from_url(data["logo"], "logos")
+            if data.get("logo")
+            else None
+        )
     if data.get("apellido_paterno_responsable"):
         exhibitor.apellido_responsable = data["apellido_paterno_responsable"]
         exhibitor.user.last_name = data["apellido_paterno_responsable"]
     if data.get("nombre_responsable"):
         exhibitor.user.first_name = data["nombre_responsable"]
-    return old_logo
+    return old_logo, old_logo_public_id
 
 
 def normalized_type_name(value):
@@ -263,6 +276,7 @@ def create_exhibitor():
         descripcion_productos=data.get("descripcion_productos"),
         nombre_tipo_expositor=type_specific_name,
         logo=data.get("logo"),
+        logo_public_id=cloudinary_public_id_from_url(data.get("logo"), "logos"),
         estado=UserStatus.ACTIVE,
     )
     db.session.add(exhibitor)
@@ -306,7 +320,7 @@ def update_exhibitor(exhibitor_id):
                 selected_type,
                 data.get("nombre_tipo_expositor", exhibitor.nombre_tipo_expositor),
             )
-        old_logo = update_exhibitor_fields(exhibitor, data)
+        old_logo, old_logo_public_id = update_exhibitor_fields(exhibitor, data)
         if "type_ids" in data:
             db.session.execute(
                 db.delete(ExhibitorTypeLink).where(
@@ -326,7 +340,7 @@ def update_exhibitor(exhibitor_id):
     )
     db.session.commit()
     if old_logo:
-        delete_managed_upload(old_logo, "logos")
+        _delete_exhibitor_logo(old_logo, old_logo_public_id)
     invalidate_public_cache()
     return exhibitor_json(exhibitor)
 
@@ -405,12 +419,12 @@ def update_own_profile():
         }
     }
     try:
-        old_logo = update_exhibitor_fields(exhibitor, allowed)
+        old_logo, old_logo_public_id = update_exhibitor_fields(exhibitor, allowed)
     except ValueError as exc:
         return error(str(exc))
     audit("EDITAR", "Expositor", exhibitor.id, "Perfil actualizado por expositor")
     db.session.commit()
     if old_logo:
-        delete_managed_upload(old_logo, "logos")
+        _delete_exhibitor_logo(old_logo, old_logo_public_id)
     invalidate_public_cache()
     return exhibitor_json(exhibitor)

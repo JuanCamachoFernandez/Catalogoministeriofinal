@@ -1,9 +1,6 @@
 from datetime import date, datetime, timezone
 import secrets
 import string
-from pathlib import Path
-import shutil
-import uuid
 
 from flask import Blueprint, current_app, request
 from sqlalchemy import func, select
@@ -37,7 +34,15 @@ from ..esquemas.solicitudes_registro import (
     RegistrationRequestSchema,
     RejectRegistrationRequestSchema,
 )
-from ..servicios import audit, require_managed_upload, save_upload, unique_username
+from ..servicios import (
+    audit,
+    cloudinary_public_id_from_url,
+    delete_cloudinary_upload,
+    delete_managed_upload,
+    unique_username,
+    upload_to_cloudinary,
+    validate_image_reference,
+)
 
 from ..autenticacion.decoradores import roles
 from ..autenticacion.sesiones import current_user
@@ -72,23 +77,29 @@ def _validated_sector_rows(items):
 @registration_bp.post("/registration-requests/logo")
 def upload_registration_logo():
     try:
-        url = save_upload(request.files.get("file"), "solicitudes")
+        uploaded = upload_to_cloudinary(request.files.get("file"), "solicitudes")
     except ValueError as exc:
         return error(str(exc))
-    if not url:
+    if not uploaded:
         return error("Debe enviar una imagen")
-    return {"logo_url": url, "url": url}, 201
+    return {
+        "logo_url": uploaded["url"],
+        "url": uploaded["url"],
+    }, 201
 
 
 @registration_bp.post("/registration-requests/products/image")
 def upload_registration_product_image():
     try:
-        url = save_upload(request.files.get("file"), "solicitudes")
+        uploaded = upload_to_cloudinary(request.files.get("file"), "solicitudes")
     except ValueError as exc:
         return error(str(exc))
-    if not url:
+    if not uploaded:
         return error("Debe enviar una imagen")
-    return {"imagen_url": url, "url": url}, 201
+    return {
+        "imagen_url": uploaded["url"],
+        "url": uploaded["url"],
+    }, 201
 
 
 @registration_bp.post("/registration-requests")
@@ -98,7 +109,7 @@ def create_registration_request():
     email = data["correo_electronico"].lower().strip()
     nit = _clean(data.get("nit")) or None
     try:
-        require_managed_upload(data["logo_url"], "solicitudes")
+        validate_image_reference(data["logo_url"], "solicitudes")
     except ValueError as exc:
         return error(str(exc))
     if db.session.scalar(
@@ -129,7 +140,7 @@ def create_registration_request():
         sectors = _validated_sector_rows(data.pop("sectores"))
         products = data.pop("productos")
         for product in products:
-            require_managed_upload(product["imagen_url"], "solicitudes")
+            validate_image_reference(product["imagen_url"], "solicitudes")
         item = RegistrationRequest(
             **{
                 key: _clean(value)
@@ -138,6 +149,7 @@ def create_registration_request():
             },
             correo_electronico=email,
             nit=nit,
+            logo_public_id=cloudinary_public_id_from_url(data["logo_url"], "solicitudes"),
             estado=RegistrationStatus.PENDING,
         )
         db.session.add(item)
@@ -256,40 +268,43 @@ def _send_credentials(item, user, password):
 def _stage_request_logo(item):
     if not item.logo_url:
         return None
-    source = require_managed_upload(item.logo_url, "solicitudes")
-    target_folder = Path(current_app.config["CARPETA_CARGAS"]) / "unidades_productivas"
-    target_folder.mkdir(parents=True, exist_ok=True)
-    target = target_folder / f"{uuid.uuid4().hex}{source.suffix.lower()}"
-    shutil.copy2(source, target)
-    return source, target, f"/uploads/unidades_productivas/{target.name}"
+    return {
+        "url": item.logo_url,
+        "public_id": item.logo_public_id
+        or cloudinary_public_id_from_url(item.logo_url, "solicitudes"),
+    }
 
 
 def _stage_request_product_image(image_url):
-    source = require_managed_upload(image_url, "solicitudes")
-    target_folder = Path(current_app.config["CARPETA_CARGAS"]) / "productos"
-    target_folder.mkdir(parents=True, exist_ok=True)
-    target = target_folder / f"{uuid.uuid4().hex}{source.suffix.lower()}"
-    shutil.copy2(source, target)
-    return source, target, f"/uploads/productos/{target.name}"
+    return {
+        "url": image_url,
+        "public_id": cloudinary_public_id_from_url(image_url, "solicitudes"),
+    }
+
+
+def _delete_image_reference(url, public_id, folder):
+    if public_id:
+        delete_cloudinary_upload(public_id)
+    elif url:
+        delete_managed_upload(url, folder)
 
 
 def _delete_request_media(item):
     if item.logo_url:
-        try:
-            require_managed_upload(item.logo_url, "solicitudes").unlink(missing_ok=True)
-        except ValueError:
-            pass
+        _delete_image_reference(item.logo_url, item.logo_public_id, "solicitudes")
         item.logo_url = None
+        item.logo_public_id = None
     products = db.session.scalars(
         select(RegistrationRequestProduct).where(
             RegistrationRequestProduct.registration_request_id == item.id
         )
     ).all()
     for product in products:
-        try:
-            require_managed_upload(product.imagen_url, "solicitudes").unlink(missing_ok=True)
-        except ValueError:
-            pass
+        _delete_image_reference(
+            product.imagen_url,
+            cloudinary_public_id_from_url(product.imagen_url, "solicitudes"),
+            "solicitudes",
+        )
         db.session.delete(product)
 
 
@@ -355,7 +370,9 @@ def approve_registration_request(request_id):
     try:
         logo_transfer = _stage_request_logo(item)
         for requested_product in request_products:
-            product_transfers.append((requested_product, _stage_request_product_image(requested_product.imagen_url)))
+            product_transfers.append(
+                (requested_product, _stage_request_product_image(requested_product.imagen_url))
+            )
         db.session.add(user)
         db.session.flush()
         unit = ProductiveUnit(
@@ -377,7 +394,8 @@ def approve_registration_request(request_id):
             instagram_url=item.instagram_url,
             tiktok_url=item.tiktok_url,
             resena_comercial=item.resena_comercial,
-            logo_url=logo_transfer[2] if logo_transfer else None,
+            logo_url=logo_transfer["url"] if logo_transfer else None,
+            logo_public_id=logo_transfer["public_id"] if logo_transfer else None,
             estado=ProductiveUnitStatus.ACTIVE,
             fecha_aprobacion=datetime.now(timezone.utc),
         )
@@ -413,37 +431,29 @@ def approve_registration_request(request_id):
             db.session.add(
                 ProductImage(
                     product_id=product.id,
-                    filename=Path(transfer[2]).name,
-                    url=transfer[2],
+                    filename=requested_product.imagen_url.rsplit("/", 1)[-1].split("?", 1)[0],
+                    url=transfer["url"],
+                    public_id=transfer["public_id"],
                     alt_text=f"Imagen de {requested_product.nombre_comercial}",
                     is_cover=True,
                     display_order=0,
                 )
             )
-            requested_product.imagen_url = transfer[2]
+            requested_product.imagen_url = transfer["url"]
         item.estado = RegistrationStatus.APPROVED
         item.fecha_revision = datetime.now(timezone.utc)
         item.reviewed_by = current_user().id
         item.observaciones = validated_json().get("observaciones")
         item.notification_status = NotificationStatus.PENDING
         if logo_transfer:
-            item.logo_url = logo_transfer[2]
+            item.logo_url = logo_transfer["url"]
+            item.logo_public_id = logo_transfer["public_id"]
         audit("APROBAR_SOLICITUD", "RegistrationRequest", item.id)
         db.session.commit()
-    except (IntegrityError, OSError, ValueError) as exc:
+    except IntegrityError:
         db.session.rollback()
-        if logo_transfer and logo_transfer[1].is_file():
-            logo_transfer[1].unlink()
-        for _, transfer in product_transfers:
-            if transfer[1].is_file():
-                transfer[1].unlink()
         current_app.logger.warning("No fue posible aprobar la solicitud %s", item.id)
         return error("No fue posible aprobar la solicitud", 409)
-    if logo_transfer and logo_transfer[0].is_file():
-        logo_transfer[0].unlink()
-    for _, transfer in product_transfers:
-        if transfer[0].is_file():
-            transfer[0].unlink()
     _send_credentials(item, user, password)
     return registration_request_json(item)
 

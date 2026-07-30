@@ -32,6 +32,7 @@ class Fair(TimestampMixin, db.Model):
     hora_fin = db.Column(db.Time)
     fecha_limite_registro = db.Column(db.Date)
     imagen_portada = db.Column(db.String(500), nullable=True)
+    imagen_portada_public_id = db.Column("identificador_portada_cloudinary", db.String(500), nullable=True)
     observaciones = db.Column(db.Text)
     estado = db.Column(
         db.Enum(FeriaStatus, name="estado_feria"),
@@ -105,6 +106,7 @@ class FairImage(db.Model):
     )
     filename = db.Column("nombre_archivo", db.String(255), nullable=False)
     url = db.Column("direccion_url", db.String(500), nullable=False)
+    public_id = db.Column("identificador_cloudinary", db.String(500), nullable=True)
     alt_text = db.Column("texto_alternativo", db.String(255))
     is_cover = db.Column("es_portada", db.Boolean, default=False)
     display_order = db.Column("orden_visualizacion", db.Integer, default=0)

@@ -21,6 +21,7 @@ class User(TimestampMixin, db.Model):
     apellido_materno = db.Column(db.String(100))
     phone = db.Column("celular", db.String(15))
     foto_perfil = db.Column(db.String(500))
+    foto_perfil_public_id = db.Column("identificador_foto_cloudinary", db.String(500), nullable=True)
     status = db.Column(
         "estado",
         db.Enum(UserStatus, name="estado_usuario"),
