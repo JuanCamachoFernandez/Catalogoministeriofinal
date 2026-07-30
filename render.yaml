@@ -21,6 +21,10 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
 
+      # Activa la validación estricta de secretos y conexión de producción
+      - key: ENTORNO_APLICACION
+        value: produccion
+
       # Render genera estas claves automáticamente
       - key: CLAVE_SECRETA_APLICACION
         generateValue: true

@@ -5,7 +5,7 @@
 Desde `backend`, con PostgreSQL y las migraciones actualizadas:
 
 ```powershell
-$env:PYTHONPATH='.'; .\.venv\Scripts\python.exe scripts\seed_qa_requests.py
+.\.venv\Scripts\python.exe -m scripts.sembrar_solicitudes_qa
 ```
 
 El script es idempotente: si los correos `qa.pendiente@gmail.com`,

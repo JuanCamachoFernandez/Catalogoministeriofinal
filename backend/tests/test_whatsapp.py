@@ -1,7 +1,7 @@
 from datetime import timedelta
 from urllib.parse import unquote
-from app.extensions import db
-from app.models import (
+from app.extensiones import db
+from app.modelos import (
     AssignmentStatus, Category, DocumentType, Exhibitor, Fair,
     FairExhibitor, FeriaStatus, Product, ProductStatus, Role, User, UserStatus,
     bolivia_today,

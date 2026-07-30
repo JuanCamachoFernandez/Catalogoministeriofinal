@@ -2,8 +2,8 @@ import os
 os.environ.setdefault("DIRECCION_BASE_DATOS", "sqlite+pysqlite:///:memory:")
 import pytest
 from app import create_app
-from app.config import Config
-from app.extensions import db
+from app.configuracion import Config
+from app.extensiones import db
 
 class TestConfig(Config):
     TESTING=True

@@ -1,0 +1,689 @@
+from datetime import datetime, timedelta, timezone
+
+from flask import Blueprint, request
+from sqlalchemy import func, select
+
+from ..extensiones import db
+from ..modelos import (
+    AdminProfile,
+    AdminUnit,
+    AssignmentStatus,
+    Audit,
+    Exhibitor,
+    Fair,
+    FairExhibitor,
+    FairParticipation,
+    FeriaStatus,
+    Product,
+    ProductStatus,
+    ProductiveUnit,
+    ProductiveUnitStatus,
+    RegistrationRequest,
+    RegistrationStatus,
+    Role,
+    User,
+    UserStatus,
+)
+from ..utilidades import document_initial_password, valid_gmail
+from ..esquemas import admin_user_json, error, paginate, validate_json, validated_json
+from ..esquemas.administracion import AdminCreateSchema, AdminUpdateSchema, UserStatusSchema
+from .autenticacion import strong_password
+from ..servicios import (
+    audit,
+    audit_description,
+    delete_managed_upload,
+    invalidate_public_cache,
+    require_managed_upload,
+    unique_username,
+)
+
+from ..autenticacion.decoradores import roles
+from ..autenticacion.sesiones import current_user
+from ..autenticacion.permisos import (
+    ROLES_ADMINISTRACION_COMPLETA,
+    ROLES_ADMINISTRACION_CUENTAS,
+    ROLES_ADMINISTRACION_INSTITUCIONAL,
+    ROLES_SUPERADMIN,
+)
+admin_bp = Blueprint("admin", __name__)
+
+
+def ensure_admin_unit(value):
+    name = (value or "").strip()
+    if not name:
+        return None
+    existing = db.session.scalar(
+        select(AdminUnit).where(func.lower(AdminUnit.nombre) == name.lower())
+    )
+    if existing:
+        return existing.nombre
+    db.session.add(AdminUnit(nombre=name))
+    return name
+
+
+@admin_bp.get("/admin/units")
+@roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
+def list_admin_units():
+    units = db.session.scalars(select(AdminUnit).order_by(AdminUnit.nombre)).all()
+    return {"items": [{"id": str(item.id), "nombre": item.nombre} for item in units]}
+
+
+@admin_bp.get("/admin/profile")
+@roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
+def own_admin_profile():
+    return admin_user_json(current_user())
+
+
+@admin_bp.patch("/admin/profile")
+@roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
+@validate_json(AdminUpdateSchema())
+def update_own_admin_profile():
+    user = current_user()
+    data = validated_json()
+    if "email" in data:
+        email = (data.get("email") or "").lower().strip()
+        if not valid_gmail(email):
+            return error("El correo debe ser una dirección @gmail.com válida")
+        duplicate = db.session.scalar(
+            select(User.id).where(User.email == email, User.id != user.id)
+        )
+        if duplicate:
+            return error("El Gmail ya está registrado", 409)
+        user.email = email
+    if "apellido_paterno" not in data:
+        data["apellido_paterno"] = data.get("paternal_last_name") or data.get("last_name")
+    if "apellido_materno" not in data and "maternal_last_name" in data:
+        data["apellido_materno"] = data["maternal_last_name"]
+    for field in ("first_name", "apellido_paterno", "apellido_materno", "phone"):
+        if field in data:
+            setattr(user, field, data.get(field))
+    if data.get("apellido_paterno"):
+        user.last_name = data["apellido_paterno"]
+    profile = user.admin_profile
+    if not profile:
+        profile = AdminProfile(user_id=user.id)
+        db.session.add(profile)
+    if "numero_documento" in data:
+        numero_documento = (data.get("numero_documento") or "").strip()
+        duplicate = db.session.scalar(
+            select(AdminProfile.id).where(
+                AdminProfile.numero_documento == numero_documento,
+                AdminProfile.user_id != user.id,
+            )
+        ) or db.session.scalar(
+            select(Exhibitor.id).where(Exhibitor.numero_documento == numero_documento)
+        )
+        if duplicate:
+            return error("El número de documento ya está registrado", 409)
+        profile.numero_documento = numero_documento
+    for field in ("cargo", "unidad", "observaciones"):
+        if field in data:
+            value = ensure_admin_unit(data.get(field)) if field == "unidad" else data.get(field)
+            setattr(profile, field, value)
+    old_photo = None
+    if "foto_perfil" in data and data.get("foto_perfil") != user.foto_perfil:
+        try:
+            if data.get("foto_perfil"):
+                require_managed_upload(data["foto_perfil"], "perfiles")
+        except ValueError as exc:
+            return error(str(exc))
+        old_photo = user.foto_perfil
+        user.foto_perfil = data.get("foto_perfil")
+    audit("EDITAR", "Perfil", user.id, f"Perfil actualizado por {user.username}")
+    db.session.commit()
+    if old_photo:
+        delete_managed_upload(old_photo, "perfiles")
+    return admin_user_json(user)
+
+
+@admin_bp.delete("/admin/units/<uuid:unit_id>")
+@roles(*ROLES_SUPERADMIN)
+def delete_admin_unit(unit_id):
+    unit = db.session.get(AdminUnit, unit_id)
+    if not unit:
+        return error("Unidad no encontrada", 404)
+    db.session.delete(unit)
+    audit("ELIMINAR", "Unidad", unit.id, f"Unidad eliminada: {unit.nombre}")
+    db.session.commit()
+    return "", 204
+
+
+@admin_bp.get("/admin/dashboard")
+@roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
+def admin_dashboard():
+    from .ferias import sync_fair_lifecycle
+    from ..modelos.feria import bolivia_today
+
+    sync_fair_lifecycle()
+    today = bolivia_today()
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    count = lambda model, *conditions: db.session.scalar(
+        select(func.count()).select_from(model).where(*conditions)
+    ) or 0
+    hidden_dashboard_actions = {
+        "INICIAR_SESION",
+        "CERRAR_SESION",
+        "REAUTENTICAR",
+        "RENOVAR_SESION",
+        "SESION_CADUCADA",
+        "INTENTO_FALLIDO",
+    }
+    audits = db.session.scalars(
+        select(Audit)
+        .where(Audit.accion.notin_(hidden_dashboard_actions))
+        .order_by(Audit.created_at.desc())
+        .limit(8)
+    ).all()
+    audit_users = {
+        item.user_id: db.session.get(User, item.user_id)
+        for item in audits
+        if item.user_id
+    }
+    next_fair = db.session.scalar(
+        select(Fair)
+        .where(
+            Fair.deleted_at.is_(None),
+            Fair.fecha_fin >= today,
+            Fair.estado.notin_([FeriaStatus.DISABLED, FeriaStatus.FINISHED]),
+        )
+        .order_by(Fair.fecha_inicio.asc())
+        .limit(1)
+    )
+    units_by_department = db.session.execute(
+        select(ProductiveUnit.departamento, func.count(ProductiveUnit.id))
+        .where(ProductiveUnit.deleted_at.is_(None))
+        .group_by(ProductiveUnit.departamento)
+        .order_by(func.count(ProductiveUnit.id).desc(), ProductiveUnit.departamento.asc())
+    ).all()
+    return {
+        "stats": {
+            "ferias": count(Fair, Fair.deleted_at.is_(None)),
+            "ferias_publicadas": count(
+                Fair, Fair.estado == FeriaStatus.PUBLISHED, Fair.deleted_at.is_(None)
+            ),
+            "expositores": count(Exhibitor, Exhibitor.deleted_at.is_(None)),
+            "expositores_activos": count(
+                Exhibitor,
+                Exhibitor.estado == UserStatus.ACTIVE,
+                Exhibitor.deleted_at.is_(None),
+            ),
+            "productos": count(Product, Product.deleted_at.is_(None)),
+            "productos_disponibles": count(
+                Product,
+                Product.estado == ProductStatus.AVAILABLE,
+                Product.deleted_at.is_(None),
+            ),
+            "productos_sin_stock": count(
+                Product,
+                Product.estado == ProductStatus.OUT_OF_STOCK,
+                Product.deleted_at.is_(None),
+            ),
+            "asignaciones_pendientes": count(
+                FairExhibitor, FairExhibitor.estado == AssignmentStatus.PENDING
+            ),
+            "unidades_productivas": count(
+                ProductiveUnit, ProductiveUnit.deleted_at.is_(None)
+            ),
+            "unidades_productivas_activas": count(
+                ProductiveUnit,
+                ProductiveUnit.estado == ProductiveUnitStatus.ACTIVE,
+                ProductiveUnit.deleted_at.is_(None),
+            ),
+            "solicitudes_pendientes": count(
+                RegistrationRequest,
+                RegistrationRequest.estado == RegistrationStatus.PENDING,
+            ),
+            "solicitudes_ultimos_30_dias": count(
+                RegistrationRequest,
+                RegistrationRequest.created_at >= thirty_days_ago,
+            ),
+            "participaciones_pendientes": count(
+                FairParticipation,
+                FairParticipation.estado == AssignmentStatus.PENDING,
+            ),
+        },
+        "proxima_feria": (
+            {
+                "id": str(next_fair.id),
+                "nombre": next_fair.nombre,
+                "ubicacion": next_fair.ubicacion or next_fair.lugar,
+                "fecha_inicio": next_fair.fecha_inicio.isoformat(),
+                "fecha_fin": next_fair.fecha_fin.isoformat(),
+                "estado": next_fair.estado.value,
+                "en_curso": next_fair.fecha_inicio <= today <= next_fair.fecha_fin,
+                "dias_restantes": (
+                    (next_fair.fecha_fin - today).days
+                    if next_fair.fecha_inicio <= today <= next_fair.fecha_fin
+                    else (next_fair.fecha_inicio - today).days
+                ),
+            }
+            if next_fair
+            else None
+        ),
+        "unidades_por_departamento": [
+            {"departamento": department, "cantidad": amount}
+            for department, amount in units_by_department
+        ],
+        "recent_audits": [
+            {
+                "id": str(item.id),
+                "accion": item.accion,
+                "entidad": item.entidad,
+                "descripcion": item.descripcion or audit_description(item.accion, item.entidad),
+                "usuario": (
+                    audit_users[item.user_id].username
+                    if item.user_id and audit_users.get(item.user_id)
+                    else "Sistema"
+                ),
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in audits
+        ],
+    }
+
+
+@admin_bp.get("/admin/users")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+def list_admin_users():
+    term = request.args.get("q", "").strip()
+    query = User.admin_query(term)
+    if request.args.get("status") in {item.value for item in UserStatus}:
+        query = query.where(User.status == UserStatus(request.args["status"]))
+    if request.args.get("role") in {
+        Role.SUPERADMIN.value,
+        Role.ADMIN_VICEMINISTERIO.value,
+        Role.ADMIN.value,
+        Role.PRODUCTIVE_UNIT_RESPONSIBLE.value,
+    }:
+        query = query.where(User.role == Role(request.args["role"]))
+    if request.args.get("unit"):
+        query = query.join(AdminProfile).where(AdminProfile.unidad == request.args["unit"])
+    return paginate(query.order_by(User.created_at.desc()), admin_user_json)
+
+
+@admin_bp.get("/admin/users/<uuid:user_id>")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+def get_admin_user(user_id):
+    user = db.session.get(User, user_id)
+    if not user or user.deleted_at or user.role == Role.EXPOSITOR:
+        return error("Administrador no encontrado", 404)
+    return admin_user_json(user)
+
+
+@admin_bp.post("/admin/users")
+@roles(*ROLES_SUPERADMIN)
+@validate_json(AdminCreateSchema())
+def create_admin_user():
+    data = validated_json()
+    email = (data.get("email") or "").lower().strip()
+    apellido_paterno = (
+        data.get("apellido_paterno")
+        or data.get("paternal_last_name")
+        or data.get("last_name")
+    )
+    apellido_materno = data.get("apellido_materno") or data.get("maternal_last_name")
+    numero_documento = (data.get("numero_documento") or "").strip()
+    try:
+        role = Role(data.get("role", "ADMIN_VICEMINISTERIO"))
+    except ValueError:
+        return error("Rol administrativo inválido")
+    if role not in (Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO):
+        return error("Rol administrativo inválido")
+    if not valid_gmail(email):
+        return error("El correo debe ser una dirección @gmail.com válida")
+    if db.session.scalar(select(User.id).where(User.email == email)):
+        return error("El Gmail ya está registrado", 409)
+    if not data.get("first_name") or not apellido_paterno or not numero_documento:
+        return error("Nombres, apellido paterno y número de CI son obligatorios")
+    document_exists = db.session.scalar(
+        select(AdminProfile.id).where(
+            AdminProfile.numero_documento == numero_documento
+        )
+    ) or db.session.scalar(
+        select(Exhibitor.id).where(Exhibitor.numero_documento == numero_documento)
+    )
+    if document_exists:
+        return error("El número de documento ya está registrado", 409)
+    password = document_initial_password(
+        numero_documento, data["first_name"], apellido_paterno
+    )
+    unit_name = ensure_admin_unit(data.get("unidad"))
+    user = User(
+        username=unique_username(data["first_name"], apellido_paterno),
+        email=email,
+        role=role,
+        first_name=data["first_name"].strip(),
+        # Se conserva last_name para los flujos antiguos y los usuarios expositores.
+        last_name=apellido_paterno.strip(),
+        apellido_paterno=apellido_paterno.strip(),
+        apellido_materno=(
+            apellido_materno.strip() if apellido_materno else None
+        ),
+        phone=data.get("phone"),
+        status=UserStatus.ACTIVE,
+        must_change_password=True,
+    )
+    user.set_password(password)
+    db.session.add(user)
+    db.session.flush()
+    db.session.add(
+        AdminProfile(
+            user_id=user.id,
+            numero_documento=numero_documento,
+            cargo=data.get("cargo"),
+            unidad=unit_name,
+            observaciones=data.get("observaciones"),
+        )
+    )
+    audit("CREAR", "Usuario", user.id, f"Administrador creado: {user.username}")
+    db.session.commit()
+    response = {
+        "message": "Administrador creado",
+        "data": admin_user_json(user),
+        "username": user.username,
+        "temporary_password": password,
+    }
+    return response, 201
+
+
+@admin_bp.patch("/admin/users/<uuid:user_id>")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+@validate_json(AdminUpdateSchema())
+def update_admin_user(user_id):
+    user = db.session.get(User, user_id)
+    data = validated_json()
+    actor = current_user()
+    if not user or user.deleted_at or user.role == Role.EXPOSITOR:
+        return error("Administrador no encontrado", 404)
+    previous_role = user.role
+    if "role" in data and data["role"] != user.role:
+        new_role = data["role"]
+        if user.id == actor.id:
+            return error("No puede cambiar su propio rol", 409)
+        unit = db.session.scalar(
+            select(ProductiveUnit).where(ProductiveUnit.user_id == user.id)
+        )
+        if new_role == Role.PRODUCTIVE_UNIT_RESPONSIBLE and not unit:
+            return error("El rol responsable requiere una Unidad Productiva asociada", 409)
+        if user.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE and unit and new_role != user.role:
+            return error("Primero debe reasignar la Unidad Productiva", 409)
+        if user.role == Role.SUPERADMIN:
+            active_superadmins = db.session.scalar(
+                select(func.count()).select_from(User).where(
+                    User.role == Role.SUPERADMIN,
+                    User.status == UserStatus.ACTIVE,
+                    User.deleted_at.is_(None),
+                )
+            )
+            if active_superadmins <= 1:
+                return error("No puede cambiar el rol del último SUPERADMIN activo", 409)
+        user.role = new_role
+        user.token_version += 1
+    if "email" in data:
+        email = (data.get("email") or "").lower().strip()
+        if not valid_gmail(email):
+            return error("El correo debe ser una dirección @gmail.com válida")
+        duplicate = db.session.scalar(
+            select(User.id).where(User.email == email, User.id != user.id)
+        )
+        if duplicate:
+            return error("El Gmail ya está registrado", 409)
+        user.email = email
+    if "apellido_paterno" not in data:
+        data["apellido_paterno"] = data.get("paternal_last_name") or data.get("last_name")
+    if "apellido_materno" not in data and "maternal_last_name" in data:
+        data["apellido_materno"] = data["maternal_last_name"]
+    for field in ("first_name", "apellido_paterno", "apellido_materno", "phone"):
+        if field in data:
+            setattr(user, field, data.get(field))
+    if data.get("apellido_paterno"):
+        user.last_name = data["apellido_paterno"]
+    if user.admin_profile:
+        if "numero_documento" in data:
+            numero_documento = (data.get("numero_documento") or "").strip()
+            duplicate = db.session.scalar(
+                select(AdminProfile.id).where(
+                    AdminProfile.numero_documento == numero_documento,
+                    AdminProfile.id != user.admin_profile.id,
+                )
+            ) or db.session.scalar(
+                select(Exhibitor.id).where(
+                    Exhibitor.numero_documento == numero_documento
+                )
+            )
+            if duplicate:
+                return error("El número de documento ya está registrado", 409)
+            user.admin_profile.numero_documento = numero_documento
+        for field in ("cargo", "unidad", "observaciones"):
+            if field in data:
+                value = ensure_admin_unit(data.get(field)) if field == "unidad" else data.get(field)
+                setattr(user.admin_profile, field, value)
+    audit(
+        "EDITAR",
+        "Usuario",
+        user.id,
+        f"Usuario actualizado: {user.username}",
+        before={"role": previous_role.value},
+        after={"role": user.role.value},
+    )
+    db.session.commit()
+    return admin_user_json(user)
+
+
+@admin_bp.patch("/admin/users/<uuid:user_id>/status")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+@validate_json(UserStatusSchema())
+def change_admin_status(user_id):
+    target = db.session.get(User, user_id)
+    actor = current_user()
+    if not target or target.role == Role.EXPOSITOR:
+        return error("Administrador no encontrado", 404)
+    try:
+        new_status = UserStatus(validated_json()["status"])
+    except ValueError:
+        return error("Estado inválido")
+    if target.id == actor.id and new_status != UserStatus.ACTIVE:
+        return error("No puede inhabilitar su propia cuenta")
+    if target.role == Role.SUPERADMIN and new_status != UserStatus.ACTIVE:
+        active = db.session.scalar(
+            select(func.count()).select_from(User).where(
+                User.role == Role.SUPERADMIN,
+                User.status == UserStatus.ACTIVE,
+                User.deleted_at.is_(None),
+            )
+        )
+        if active <= 1:
+            return error("No puede inhabilitar al último SUPERADMIN activo")
+    target.status = new_status
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        target.token_version += 1
+    if new_status == UserStatus.ACTIVE:
+        target.failed_login_attempts = 0
+        target.blocked_until = None
+    audit(
+        "CAMBIAR_ESTADO",
+        "Usuario",
+        target.id,
+        f"Estado de {target.username} cambiado a {new_status.value}",
+    )
+    db.session.commit()
+    return {"message": "Estado actualizado", "data": admin_user_json(target)}
+
+
+@admin_bp.delete("/admin/users/<uuid:user_id>")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+def delete_admin_user(user_id):
+    target = db.session.get(User, user_id)
+    actor = current_user()
+    if not target or target.deleted_at or target.role == Role.EXPOSITOR:
+        return error("Administrador no encontrado", 404)
+    if target.id == actor.id:
+        return error("No puede eliminar su propia cuenta", 409)
+    if target.role == Role.SUPERADMIN:
+        active = db.session.scalar(
+            select(func.count()).select_from(User).where(
+                User.role == Role.SUPERADMIN,
+                User.status == UserStatus.ACTIVE,
+                User.deleted_at.is_(None),
+            )
+        )
+        if active <= 1:
+            return error("No puede eliminar al último SUPERADMIN activo", 409)
+    target.deleted_at = datetime.now(timezone.utc)
+    target.status = UserStatus.INACTIVE
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        target.token_version += 1
+        unit = db.session.scalar(
+            select(ProductiveUnit).where(ProductiveUnit.user_id == target.id)
+        )
+        if unit:
+            unit.deleted_at = target.deleted_at
+            unit.estado = ProductiveUnitStatus.INACTIVE
+    audit("ELIMINAR", "Usuario", target.id, f"Administrador eliminado: {target.username}")
+    db.session.commit()
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        invalidate_public_cache()
+    return "", 204
+
+
+@admin_bp.post("/admin/users/<uuid:user_id>/reset-password")
+@roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
+def admin_reset_password(user_id):
+    user = db.session.get(User, user_id)
+    actor = current_user()
+    if not user or user.deleted_at:
+        return error("Usuario no encontrado", 404)
+    if actor.role == Role.ADMIN_VICEMINISTERIO and user.role != Role.EXPOSITOR:
+        return error(
+            "Un administrador solo puede restablecer contraseñas de expositores",
+            403,
+        )
+    if user.role == Role.EXPOSITOR and user.exhibitor:
+        document = user.exhibitor.numero_documento
+        first_name = user.exhibitor.nombre_responsable
+        last_name = user.exhibitor.apellido_responsable
+    elif user.admin_profile and user.admin_profile.numero_documento:
+        document = user.admin_profile.numero_documento
+        first_name = user.first_name
+        last_name = user.apellido_paterno or user.last_name
+    else:
+        return error("Registre el número de documento antes de restablecer", 409)
+    password = document_initial_password(document, first_name, last_name)
+    user.set_password(password)
+    user.must_change_password = True
+    user.status = UserStatus.ACTIVE
+    user.failed_login_attempts = 0
+    user.password_changed_at = datetime.now(timezone.utc)
+    audit(
+        "RESTABLECER_CONTRASENA",
+        "Usuario",
+        user.id,
+        f"Contraseña restablecida para {user.username}",
+    )
+    db.session.commit()
+    return {
+        "message": "Contraseña restablecida",
+        "username": user.username,
+        "temporary_password": password,
+    }
+
+
+@admin_bp.get("/audit")
+@admin_bp.get("/admin/audits")
+@roles(*ROLES_ADMINISTRACION_COMPLETA)
+def list_audit():
+    def serialize(item):
+        actor = db.session.get(User, item.user_id) if item.user_id else None
+        return {
+            "id": str(item.id),
+            "accion": item.accion,
+            "entidad": item.entidad,
+            "entidad_id": str(item.entidad_id) if item.entidad_id else None,
+            "descripcion": item.descripcion or audit_description(item.accion, item.entidad),
+            "usuario": actor.username if actor else "Sistema",
+            "created_at": item.created_at.isoformat(),
+        }
+
+    query = select(Audit)
+    term = request.args.get("q", "").strip()
+    if term:
+        pattern = f"%{term}%"
+        query = query.outerjoin(User, Audit.user_id == User.id).where(
+            Audit.accion.ilike(pattern)
+            | Audit.entidad.ilike(pattern)
+            | Audit.descripcion.ilike(pattern)
+            | User.username.ilike(pattern)
+        )
+    if request.args.get("action"):
+        query = query.where(Audit.accion == request.args["action"])
+    if request.args.get("entity"):
+        query = query.where(Audit.entidad == request.args["entity"])
+    if request.args.get("date_from"):
+        query = query.where(func.date(Audit.created_at) >= request.args["date_from"])
+    if request.args.get("date_to"):
+        query = query.where(func.date(Audit.created_at) <= request.args["date_to"])
+    return paginate(query.order_by(Audit.created_at.desc()), serialize)
+
+
+@admin_bp.get("/admin/audits/<uuid:audit_id>")
+@roles(*ROLES_ADMINISTRACION_COMPLETA)
+def get_audit(audit_id):
+    item = db.session.get(Audit, audit_id)
+    if not item:
+        return error("Auditoría no encontrada", 404)
+    actor = db.session.get(User, item.user_id) if item.user_id else None
+    return {
+        "id": str(item.id),
+        "user_id": str(item.user_id) if item.user_id else None,
+        "usuario": actor.username if actor else "Sistema",
+        "accion": item.accion,
+        "entidad": item.entidad,
+        "entidad_id": str(item.entidad_id) if item.entidad_id else None,
+        "valores_anteriores": item.datos_anteriores,
+        "valores_nuevos": item.datos_nuevos,
+        "direccion_ip": item.ip_address,
+        "user_agent": item.user_agent,
+        "fecha_hora": item.created_at.isoformat(),
+        "resultado": item.resultado,
+        "detalle": item.descripcion,
+    }
+
+
+@admin_bp.post("/admin/users/<uuid:user_id>/unlock")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+def unlock_user(user_id):
+    target = db.session.get(User, user_id)
+    if not target or target.deleted_at:
+        return error("Usuario no encontrado", 404)
+    target.status = UserStatus.ACTIVE
+    target.failed_login_attempts = 0
+    target.blocked_until = None
+    target.token_version += 1
+    audit("DESBLOQUEAR", "Usuario", target.id)
+    db.session.commit()
+    return {"message": "Usuario desbloqueado", "data": admin_user_json(target)}
+
+
+@admin_bp.post("/admin/users/<uuid:user_id>/restore")
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
+def restore_user(user_id):
+    target = db.session.get(User, user_id)
+    if not target or not target.deleted_at:
+        return error("Usuario eliminado no encontrado", 404)
+    target.deleted_at = None
+    target.status = UserStatus.INACTIVE
+    target.failed_login_attempts = 0
+    target.blocked_until = None
+    target.token_version += 1
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        unit = db.session.scalar(
+            select(ProductiveUnit).where(ProductiveUnit.user_id == target.id)
+        )
+        if unit:
+            unit.deleted_at = None
+            unit.estado = ProductiveUnitStatus.INACTIVE
+    audit("RESTAURAR", "Usuario", target.id)
+    db.session.commit()
+    if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
+        invalidate_public_cache()
+    return {"message": "Usuario restaurado", "data": admin_user_json(target)}
