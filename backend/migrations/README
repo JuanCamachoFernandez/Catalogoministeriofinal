@@ -1,2 +1,1 @@
-Migraciones de Alembic administradas mediante Flask-Migrate.
-Ejecute `flask db upgrade` desde backend.
+Single-database configuration for Flask.
