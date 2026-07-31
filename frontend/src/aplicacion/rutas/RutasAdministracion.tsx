@@ -7,6 +7,7 @@ import {
   type FuncionAdministracion,
 } from "../../compartido/autenticacion/roles";
 import { paginaDiferida } from "./paginaDiferida";
+import "../../modulos/registro/estilos/registro.css";
 import "../../modulos/administracion/estilos/administracion.css";
 
 const PaginaInicioAdministracion = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaResumen"), "PaginaInicioAdministracion");
