@@ -101,7 +101,7 @@ def registrar_comandos(app):
     @app.cli.command("seed-test-data")
     @with_appcontext
     def seed_test_data():
-        """Carga catalogos y un SUPERADMIN predecible para pruebas."""
+        """Carga catalogos y un ADMIN predecible para pruebas."""
         require_postgresql_test_database()
         email = os.getenv("CORREO_ADMINISTRADOR_PRUEBAS", "catalogo.test@gmail.com").lower()
         password = os.getenv("CONTRASENA_ADMINISTRADOR_PRUEBAS", "Catalogo.Test123!")
@@ -109,7 +109,7 @@ def registrar_comandos(app):
             user = User(
                 username="catalogo.test",
                 email=email,
-                role=Role.SUPERADMIN,
+                role=Role.ADMIN,
                 first_name="Administrador",
                 last_name="Pruebas",
                 status=UserStatus.ACTIVE,
@@ -188,7 +188,7 @@ def registrar_comandos(app):
         user = User(
             username=username,
             email=email,
-            role=Role.SUPERADMIN,
+            role=Role.ADMIN,
             first_name=first_name,
             last_name=paternal_last_name,
             apellido_paterno=paternal_last_name,
@@ -199,7 +199,7 @@ def registrar_comandos(app):
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
-        click.echo(f"SUPERADMIN creado: {user.username} ({user.first_name} {user.last_name})")
+        click.echo(f"ADMIN creado: {user.username} ({user.first_name} {user.last_name})")
 
     @app.cli.command("cleanup-registration-uploads")
     @with_appcontext

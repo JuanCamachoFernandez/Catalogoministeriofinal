@@ -25,7 +25,7 @@ def _admin(client):
     user = User(
         username="admin.dominio",
         email="admin.dominio@gmail.com",
-        role=Role.SUPERADMIN,
+        role=Role.ADMIN,
         first_name="Admin",
         last_name="Dominio",
         status=UserStatus.ACTIVE,

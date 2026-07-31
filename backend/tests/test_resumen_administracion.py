@@ -93,7 +93,7 @@ def create_unit(index, department):
 
 def test_dashboard_muestra_indicadores_y_oculta_eventos_rutinarios(app, client):
     with app.app_context():
-        admin = create_user("administrador", Role.SUPERADMIN)
+        admin = create_user("administrador", Role.ADMIN)
         create_unit(1, "La Paz")
         create_unit(2, "Cochabamba")
         create_registration(

@@ -27,7 +27,7 @@ def admin_token(client):
     user = User(
         username="superadmin",
         email="superadmin@gmail.com",
-        role=Role.SUPERADMIN,
+        role=Role.ADMIN,
         first_name="Super",
         last_name="Admin",
         status=UserStatus.ACTIVE,
@@ -58,7 +58,7 @@ def test_administrador_edita_su_propio_perfil(app, client):
     with app.app_context():
         user_id, token = admin_token(client)
         user = db.session.get(User, user_id)
-        user.role = Role.ADMIN_VICEMINISTERIO
+        user.role = Role.ADMIN
         db.session.commit()
 
     response = client.patch(
@@ -90,12 +90,12 @@ def test_administrador_edita_su_propio_perfil(app, client):
         assert profile.cargo == "Técnico"
 
 
-def test_administrador_puede_restaurar_expositor_pero_no_otro_admin(app, client):
+def test_administrador_puede_restaurar_responsable_y_requiere_documento_para_otro_admin(app, client):
     with app.app_context():
         actor = User(
             username="adminunidad",
             email="adminunidad@gmail.com",
-            role=Role.ADMIN_VICEMINISTERIO,
+            role=Role.ADMIN,
             first_name="Admin",
             last_name="Unidad",
             status=UserStatus.ACTIVE,
@@ -105,7 +105,7 @@ def test_administrador_puede_restaurar_expositor_pero_no_otro_admin(app, client)
         exhibitor_user = User(
             username="expositorprueba",
             email="expositorprueba@gmail.com",
-            role=Role.EXPOSITOR,
+            role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
             first_name="Rosa",
             last_name="Quispe",
             status=UserStatus.ACTIVE,
@@ -149,7 +149,7 @@ def test_administrador_puede_restaurar_expositor_pero_no_otro_admin(app, client)
         f"/api/admin/users/{actor_id}/reset-password",
         headers=auth(token),
     )
-    assert forbidden.status_code == 403
+    assert forbidden.status_code == 409
 
 
 def test_reportes_pdf_excel_y_opciones(app, client):
@@ -211,7 +211,7 @@ def test_admin_guarda_apellidos_separados(app, client):
             "email": "juana.quispe@gmail.com",
             "phone": "71234567",
             "unidad": "Promoción Productiva",
-            "role": "ADMIN_VICEMINISTERIO",
+            "role": "ADMIN",
         },
     )
 
@@ -251,7 +251,7 @@ def test_admin_acepta_last_name_de_clientes_antiguos(app, client):
             "last_name": "Anterior",
             "numero_documento": "87654321",
             "email": "cliente.anterior@gmail.com",
-            "role": "ADMIN_VICEMINISTERIO",
+            "role": "ADMIN",
         },
     )
 
@@ -261,7 +261,7 @@ def test_admin_acepta_last_name_de_clientes_antiguos(app, client):
     assert response.json["temporary_password"] == "87654321CA"
 
 
-def test_editar_admin_ignora_role_enviado_por_formulario_anterior(app, client):
+def test_editar_admin_conserva_role_canonico(app, client):
     with app.app_context():
         admin_id, token = admin_token(client)
 
@@ -272,21 +272,21 @@ def test_editar_admin_ignora_role_enviado_por_formulario_anterior(app, client):
             "first_name": "Super",
             "apellido_paterno": "Admin",
             "email": "superadmin@gmail.com",
-            "role": "SUPERADMIN",
+            "role": "ADMIN",
         },
     )
 
     assert response.status_code == 200
-    assert response.json["role"] == "SUPERADMIN"
+    assert response.json["role"] == "ADMIN"
 
 
-def test_superadmin_cambia_rol_y_revoca_la_sesion_del_usuario(app, client):
+def test_admin_cambia_rol_y_revoca_la_sesion_del_usuario(app, client):
     with app.app_context():
         _, token = admin_token(client)
         target = User(
             username="administrador.objetivo",
             email="administrador.objetivo@gmail.com",
-            role=Role.ADMIN_VICEMINISTERIO,
+            role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
             first_name="Administrador",
             last_name="Objetivo",
             status=UserStatus.ACTIVE,
@@ -504,7 +504,7 @@ def test_asignar_expositor_a_feria(app, client):
         owner = User(
             username="expositor",
             email="expositor@gmail.com",
-            role=Role.EXPOSITOR,
+            role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
             first_name="Expo",
             last_name="Sitor",
             status=UserStatus.ACTIVE,
@@ -559,7 +559,7 @@ def test_admin_no_puede_crear_productos(app, client):
         owner = User(
             username="expositor",
             email="expositor@gmail.com",
-            role=Role.EXPOSITOR,
+            role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
             first_name="Expo",
             last_name="Sitor",
             status=UserStatus.ACTIVE,

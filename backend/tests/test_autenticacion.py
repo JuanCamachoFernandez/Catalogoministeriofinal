@@ -19,7 +19,7 @@ def create_user():
     user = User(
         username="admin.prueba",
         email="admin.prueba@gmail.com",
-        role=Role.SUPERADMIN,
+        role=Role.ADMIN,
         first_name="Admin",
         last_name="Prueba",
         status=UserStatus.ACTIVE,
@@ -46,7 +46,7 @@ def test_seed_admin_lee_identidad_completa_desde_entorno(app, monkeypatch):
             db.select(User).where(User.username == "rosa.quispe")
         )
         assert user is not None
-        assert user.role == Role.SUPERADMIN
+        assert user.role == Role.ADMIN
         assert user.first_name == "Rosa María"
         assert user.apellido_paterno == "Quispe"
         assert user.apellido_materno == "Mamani"

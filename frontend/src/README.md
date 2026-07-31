@@ -31,9 +31,8 @@ usa directamente `compartido` y `compartido/componentes`.
 `aplicacion/rutas/EnrutadorAplicacion.tsx` compone las rutas públicas, de
 autenticación, administración, Unidad Productiva y redirecciones anteriores.
 Las políticas del frontend viven en `compartido/autenticacion/roles.ts`. Los
-valores `SUPERADMIN`, `ADMIN_VICEMINISTERIO`, `ADMIN`,
-`PRODUCTIVE_UNIT_RESPONSIBLE` y `EXPOSITOR` no se traducen porque forman parte
-del contrato.
+el contrato actual utiliza solamente los roles `ADMIN` y
+`PRODUCTIVE_UNIT_RESPONSIBLE`.
 
 Para añadir un módulo, crear `modulos/<dominio>` y solo las subcarpetas que
 necesite. Para añadir un rol, actualizar la matriz, la ruta inicial y sus pruebas.

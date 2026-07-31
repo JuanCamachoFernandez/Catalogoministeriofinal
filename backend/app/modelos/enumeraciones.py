@@ -2,11 +2,6 @@ import enum
 
 
 class Role(str, enum.Enum):
-    SUPERADMIN = "SUPERADMIN"
-    ADMIN_VICEMINISTERIO = "ADMIN_VICEMINISTERIO"
-    EXPOSITOR = "EXPOSITOR"
-    # Canonical roles used by the productive-unit API.  Legacy roles remain
-    # while the React client is migrated.
     ADMIN = "ADMIN"
     PRODUCTIVE_UNIT_RESPONSIBLE = "PRODUCTIVE_UNIT_RESPONSIBLE"
 

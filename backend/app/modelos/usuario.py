@@ -55,8 +55,6 @@ class User(TimestampMixin, db.Model):
     def admin_query(cls, term=None):
         query = select(cls).where(
             cls.role.in_([
-                Role.SUPERADMIN,
-                Role.ADMIN_VICEMINISTERIO,
                 Role.ADMIN,
                 Role.PRODUCTIVE_UNIT_RESPONSIBLE,
             ]),

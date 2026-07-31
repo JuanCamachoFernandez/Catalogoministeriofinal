@@ -200,9 +200,11 @@ def ensure_public_products(unit: ProductiveUnit, image_urls: list[str]):
 def main():
     app = create_app()
     with app.app_context():
-        admin = db.session.scalar(select(User).where(User.role.in_([
-            Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN,
-        ])).order_by(User.created_at))
+        admin = db.session.scalar(
+            select(User)
+            .where(User.role == Role.ADMIN)
+            .order_by(User.created_at)
+        )
         if not admin:
             raise RuntimeError("Debe existir un administrador antes de cargar los datos demo")
 

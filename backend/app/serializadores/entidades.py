@@ -1,12 +1,18 @@
 from sqlalchemy import select
 
 from ..extensiones import db
-from ..modelos import Category, Exhibitor, ExhibitorType, ExhibitorTypeLink, ProductImage, Role
+from ..modelos import (
+    Category,
+    Exhibitor,
+    ExhibitorType,
+    ExhibitorTypeLink,
+    ProductImage,
+)
 
 
 def user_json(user):
     profile_photo = user.foto_perfil
-    if user.role == Role.EXPOSITOR:
+    if getattr(user, "exhibitor", None):
         exhibitor = db.session.scalar(
             select(Exhibitor).where(Exhibitor.user_id == user.id)
         )

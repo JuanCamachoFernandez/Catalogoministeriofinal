@@ -6,18 +6,17 @@ from ..servicios import upload_to_cloudinary
 
 from ..autenticacion.decoradores import roles
 from ..autenticacion.sesiones import current_user
-from ..autenticacion.permisos import ROLES_GESTION_COMPARTIDA_LEGADA
+from ..autenticacion.permisos import ROLES_GESTION_COMPARTIDA
 upload_bp = Blueprint("uploads", __name__)
 
 
 @upload_bp.post("/uploads")
-@roles(*ROLES_GESTION_COMPARTIDA_LEGADA)
+@roles(*ROLES_GESTION_COMPARTIDA)
 def upload_file():
     folder = request.form.get("folder", "general")
     allowed = {
-        Role.SUPERADMIN: {"general", "ferias", "productos", "logos", "perfiles"},
-        Role.ADMIN_VICEMINISTERIO: {"general", "ferias", "productos", "logos", "perfiles"},
-        Role.EXPOSITOR: {"productos", "logos"},
+        Role.ADMIN: {"general", "ferias", "productos", "logos", "perfiles"},
+        Role.PRODUCTIVE_UNIT_RESPONSIBLE: {"productos", "logos"},
     }
     if folder not in allowed[current_user().role]:
         return error("No autorizado para esta carpeta", 403)

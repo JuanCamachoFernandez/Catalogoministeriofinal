@@ -20,8 +20,8 @@ class AdminCreateSchema(Schema):
     role = fields.Enum(
         Role,
         by_value=True,
-        load_default=Role.ADMIN_VICEMINISTERIO,
-        validate=validate.OneOf([Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO]),
+        load_default=Role.ADMIN,
+        validate=validate.OneOf([Role.ADMIN]),
     )
 
 
@@ -43,8 +43,6 @@ class AdminUpdateSchema(Schema):
         Role,
         by_value=True,
         validate=validate.OneOf([
-            Role.SUPERADMIN,
-            Role.ADMIN_VICEMINISTERIO,
             Role.ADMIN,
             Role.PRODUCTIVE_UNIT_RESPONSIBLE,
         ]),

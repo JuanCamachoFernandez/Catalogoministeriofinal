@@ -1,22 +1,16 @@
 export const ROLES_USUARIO = {
-  SUPERADMIN: "SUPERADMIN",
-  ADMIN_VICEMINISTERIO: "ADMIN_VICEMINISTERIO",
   ADMIN: "ADMIN",
   PRODUCTIVE_UNIT_RESPONSIBLE: "PRODUCTIVE_UNIT_RESPONSIBLE",
-  EXPOSITOR: "EXPOSITOR",
 } as const;
 
 export type UserRole = (typeof ROLES_USUARIO)[keyof typeof ROLES_USUARIO];
 
 export const ROLES_ADMINISTRACION = [
-  ROLES_USUARIO.SUPERADMIN,
-  ROLES_USUARIO.ADMIN_VICEMINISTERIO,
   ROLES_USUARIO.ADMIN,
 ] as const satisfies readonly UserRole[];
 
 export const ROLES_UNIDAD_PRODUCTIVA = [
   ROLES_USUARIO.PRODUCTIVE_UNIT_RESPONSIBLE,
-  ROLES_USUARIO.EXPOSITOR,
 ] as const satisfies readonly UserRole[];
 
 export type FuncionAdministracion =
@@ -41,11 +35,8 @@ const ROLES_POR_FUNCION_ADMINISTRACION: Record<
   products: ROLES_ADMINISTRACION,
   fairs: ROLES_ADMINISTRACION,
   audit: ROLES_ADMINISTRACION,
-  "administrator-accounts": [
-    ROLES_USUARIO.SUPERADMIN,
-    ROLES_USUARIO.ADMIN,
-  ],
-  reports: [ROLES_USUARIO.SUPERADMIN, ROLES_USUARIO.ADMIN_VICEMINISTERIO],
+  "administrator-accounts": ROLES_ADMINISTRACION,
+  reports: ROLES_ADMINISTRACION,
 };
 
 export function tieneRol(
@@ -78,17 +69,4 @@ export function inicioParaRol(role: UserRole) {
   return esRolUnidadProductiva(role)
     ? "/unidad-productiva/productos"
     : "/admin";
-}
-
-export function rolCanonicoPara(role: UserRole) {
-  if (role === ROLES_USUARIO.EXPOSITOR) {
-    return ROLES_USUARIO.PRODUCTIVE_UNIT_RESPONSIBLE;
-  }
-  if (
-    role === ROLES_USUARIO.SUPERADMIN ||
-    role === ROLES_USUARIO.ADMIN_VICEMINISTERIO
-  ) {
-    return ROLES_USUARIO.ADMIN;
-  }
-  return role;
 }

@@ -54,9 +54,8 @@ STATUS_LABELS = {
     "DISABLED": "Cancelada",
 }
 ROLE_LABELS = {
-    "SUPERADMIN": "Superadministrador",
-    "ADMIN_VICEMINISTERIO": "Administrador",
-    "EXPOSITOR": "Expositor",
+    "ADMIN": "Administrador",
+    "PRODUCTIVE_UNIT_RESPONSIBLE": "Responsable de unidad productiva",
 }
 
 
@@ -143,7 +142,10 @@ def enum_value(value):
 
 
 def display(value):
-    value = enum_value(value)
+    if isinstance(value, Role):
+        value = value.value
+    else:
+        value = enum_value(value)
     if value is None or value == "":
         return "—"
     if isinstance(value, bool):
@@ -203,7 +205,7 @@ def selected_columns(resource):
 
 def administrator_rows():
     query = select(User, AdminProfile).outerjoin(AdminProfile).where(
-        User.role.in_([Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO]),
+        User.role == Role.ADMIN,
         User.deleted_at.is_(None),
     )
     term = request.args.get("q", "").strip()
@@ -217,8 +219,8 @@ def administrator_rows():
         ))
     if request.args.get("status") in {item.value for item in UserStatus}:
         query = query.where(User.status == UserStatus(request.args["status"]))
-    if request.args.get("role") in {Role.SUPERADMIN.value, Role.ADMIN_VICEMINISTERIO.value}:
-        query = query.where(User.role == Role(request.args["role"]))
+    if request.args.get("role") == Role.ADMIN.value:
+        query = query.where(User.role == Role.ADMIN)
     if request.args.get("unit"):
         query = query.where(AdminProfile.unidad == request.args["unit"])
     query = apply_created_dates(query, User.created_at).order_by(User.created_at.desc())

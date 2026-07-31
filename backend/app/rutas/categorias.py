@@ -17,7 +17,7 @@ from ..servicios import audit, invalidate_public_cache
 from ..autenticacion.decoradores import roles
 from ..autenticacion.permisos import (
     ROLES_ADMINISTRACION_INSTITUCIONAL,
-    ROLES_GESTION_COMPARTIDA_LEGADA,
+    ROLES_GESTION_COMPARTIDA,
 )
 category_bp = Blueprint("categories", __name__)
 
@@ -33,7 +33,7 @@ def category_json(category):
 
 
 @category_bp.get("/categories")
-@roles(*ROLES_GESTION_COMPARTIDA_LEGADA)
+@roles(*ROLES_GESTION_COMPARTIDA)
 def categories():
     query = (
         select(Category)

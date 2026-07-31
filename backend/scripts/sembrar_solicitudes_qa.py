@@ -44,9 +44,8 @@ def media_urls(app):
 
 
 def get_admin():
-    admin_roles = [Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO, Role.ADMIN]
     admin = db.session.scalar(
-        select(User).where(User.role.in_(admin_roles), User.deleted_at.is_(None))
+        select(User).where(User.role == Role.ADMIN, User.deleted_at.is_(None))
     )
     if not admin:
         raise RuntimeError("Debe existir un administrador para crear los casos QA.")

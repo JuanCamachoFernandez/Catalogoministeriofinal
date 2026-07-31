@@ -41,7 +41,7 @@ def _admin_headers(client):
     user = User(
         username="admin.cloudinary",
         email="admin.cloudinary@gmail.com",
-        role=Role.SUPERADMIN,
+        role=Role.ADMIN,
         first_name="Admin",
         last_name="Cloudinary",
         status=UserStatus.ACTIVE,

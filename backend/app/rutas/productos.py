@@ -14,8 +14,8 @@ from ..modelos import (
     ProductImage,
     ProductStatus,
     ProductiveUnit,
-    Role,
     ProductiveUnitStatus,
+    Role,
 )
 from ..esquemas import error, paginate, product_json, validate_json, validated_json
 from ..esquemas.productos import (
@@ -43,8 +43,7 @@ from ..autenticacion.sesiones import current_user
 from ..autenticacion.permisos import (
     ROLES_ADMINISTRACION_COMPLETA,
     ROLES_ADMINISTRACION_INSTITUCIONAL,
-    ROLES_EXPOSITOR,
-    ROLES_GESTION_COMPARTIDA_LEGADA,
+    ROLES_GESTION_COMPARTIDA,
     ROLES_RESPONSABLES_UNIDAD,
 )
 product_bp = Blueprint("products", __name__)
@@ -283,7 +282,7 @@ def delete_admin_product(product_id):
 
 
 @product_bp.get("/exhibitor/products")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 def own_products():
     exhibitor = current_user().exhibitor
     query = Product.owned_query(exhibitor.id).order_by(Product.created_at.desc(), Product.id.desc())
@@ -291,14 +290,14 @@ def own_products():
 
 
 @product_bp.get("/exhibitor/products/<uuid:product_id>")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 def get_own_product(product_id):
     product = product_or_404(product_id, current_user().exhibitor.id)
     return product_json(product) if product else error("Producto no encontrado", 404)
 
 
 @product_bp.post("/exhibitor/products")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 @validate_json(ProductCreateSchema())
 def create_product():
     exhibitor = current_user().exhibitor
@@ -321,7 +320,7 @@ def create_product():
 
 
 @product_bp.patch("/exhibitor/products/<uuid:product_id>")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 @validate_json(ProductUpdateSchema())
 def update_own_product(product_id):
     product = product_or_404(product_id, current_user().exhibitor.id)
@@ -339,7 +338,7 @@ def update_own_product(product_id):
 
 
 @product_bp.delete("/exhibitor/products/<uuid:product_id>")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 def delete_own_product(product_id):
     product = product_or_404(product_id, current_user().exhibitor.id)
     if not product:
@@ -364,18 +363,18 @@ def add_admin_product_image(product_id):
 
 
 @product_bp.post("/exhibitor/products/<uuid:product_id>/images")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 def add_own_product_image(product_id):
     product = product_or_404(product_id, current_user().exhibitor.id)
     return add_product_image(product) if product else error("Producto no encontrado", 404)
 
 
 @product_bp.patch("/product-images/<uuid:image_id>")
-@roles(*ROLES_GESTION_COMPARTIDA_LEGADA)
+@roles(*ROLES_GESTION_COMPARTIDA)
 @validate_json(ProductImageUpdateSchema())
 def update_product_image(image_id):
     user = current_user()
-    if user.role != Role.EXPOSITOR:
+    if user.role != Role.PRODUCTIVE_UNIT_RESPONSIBLE:
         return error("Las imágenes solo pueden ser editadas por su expositor", 403)
     image = db.session.get(ProductImage, image_id)
     if not image:
@@ -403,10 +402,10 @@ def update_product_image(image_id):
 
 
 @product_bp.delete("/product-images/<uuid:image_id>")
-@roles(*ROLES_GESTION_COMPARTIDA_LEGADA)
+@roles(*ROLES_GESTION_COMPARTIDA)
 def delete_product_image(image_id):
     user = current_user()
-    if user.role != Role.EXPOSITOR:
+    if user.role != Role.PRODUCTIVE_UNIT_RESPONSIBLE:
         return error("Las imágenes solo pueden ser eliminadas por su expositor", 403)
     image = db.session.get(ProductImage, image_id)
     if not image:

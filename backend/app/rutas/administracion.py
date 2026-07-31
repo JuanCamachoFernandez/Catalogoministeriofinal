@@ -45,7 +45,6 @@ from ..autenticacion.permisos import (
     ROLES_ADMINISTRACION_COMPLETA,
     ROLES_ADMINISTRACION_CUENTAS,
     ROLES_ADMINISTRACION_INSTITUCIONAL,
-    ROLES_SUPERADMIN,
 )
 admin_bp = Blueprint("admin", __name__)
 
@@ -68,6 +67,24 @@ def ensure_admin_unit(value):
         return existing.nombre
     db.session.add(AdminUnit(nombre=name))
     return name
+
+
+def _is_manageable_user(user):
+    return bool(
+        user
+        and not user.deleted_at
+        and user.role in {Role.ADMIN, Role.PRODUCTIVE_UNIT_RESPONSIBLE}
+    )
+
+
+def _active_admin_count():
+    return db.session.scalar(
+        select(func.count()).select_from(User).where(
+            User.role == Role.ADMIN,
+            User.status == UserStatus.ACTIVE,
+            User.deleted_at.is_(None),
+        )
+    )
 
 
 @admin_bp.get("/admin/units")
@@ -153,7 +170,7 @@ def update_own_admin_profile():
 
 
 @admin_bp.delete("/admin/units/<uuid:unit_id>")
-@roles(*ROLES_SUPERADMIN)
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
 def delete_admin_unit(unit_id):
     unit = db.session.get(AdminUnit, unit_id)
     if not unit:
@@ -305,12 +322,7 @@ def list_admin_users():
     query = User.admin_query(term)
     if request.args.get("status") in {item.value for item in UserStatus}:
         query = query.where(User.status == UserStatus(request.args["status"]))
-    if request.args.get("role") in {
-        Role.SUPERADMIN.value,
-        Role.ADMIN_VICEMINISTERIO.value,
-        Role.ADMIN.value,
-        Role.PRODUCTIVE_UNIT_RESPONSIBLE.value,
-    }:
+    if request.args.get("role") in {Role.ADMIN.value, Role.PRODUCTIVE_UNIT_RESPONSIBLE.value}:
         query = query.where(User.role == Role(request.args["role"]))
     if request.args.get("unit"):
         query = query.join(AdminProfile).where(AdminProfile.unidad == request.args["unit"])
@@ -321,13 +333,13 @@ def list_admin_users():
 @roles(*ROLES_ADMINISTRACION_CUENTAS)
 def get_admin_user(user_id):
     user = db.session.get(User, user_id)
-    if not user or user.deleted_at or user.role == Role.EXPOSITOR:
+    if not _is_manageable_user(user):
         return error("Administrador no encontrado", 404)
     return admin_user_json(user)
 
 
 @admin_bp.post("/admin/users")
-@roles(*ROLES_SUPERADMIN)
+@roles(*ROLES_ADMINISTRACION_CUENTAS)
 @validate_json(AdminCreateSchema())
 def create_admin_user():
     data = validated_json()
@@ -340,10 +352,10 @@ def create_admin_user():
     apellido_materno = data.get("apellido_materno") or data.get("maternal_last_name")
     numero_documento = (data.get("numero_documento") or "").strip()
     try:
-        role = Role(data.get("role", "ADMIN_VICEMINISTERIO"))
+        role = Role(data.get("role", Role.ADMIN.value))
     except ValueError:
         return error("Rol administrativo inválido")
-    if role not in (Role.SUPERADMIN, Role.ADMIN_VICEMINISTERIO):
+    if role != Role.ADMIN:
         return error("Rol administrativo inválido")
     if not valid_gmail(email):
         return error("El correo debe ser una dirección @gmail.com válida")
@@ -409,7 +421,7 @@ def update_admin_user(user_id):
     user = db.session.get(User, user_id)
     data = validated_json()
     actor = current_user()
-    if not user or user.deleted_at or user.role == Role.EXPOSITOR:
+    if not _is_manageable_user(user):
         return error("Administrador no encontrado", 404)
     previous_role = user.role
     if "role" in data and data["role"] != user.role:
@@ -423,16 +435,8 @@ def update_admin_user(user_id):
             return error("El rol responsable requiere una Unidad Productiva asociada", 409)
         if user.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE and unit and new_role != user.role:
             return error("Primero debe reasignar la Unidad Productiva", 409)
-        if user.role == Role.SUPERADMIN:
-            active_superadmins = db.session.scalar(
-                select(func.count()).select_from(User).where(
-                    User.role == Role.SUPERADMIN,
-                    User.status == UserStatus.ACTIVE,
-                    User.deleted_at.is_(None),
-                )
-            )
-            if active_superadmins <= 1:
-                return error("No puede cambiar el rol del último SUPERADMIN activo", 409)
+        if user.role == Role.ADMIN and new_role != Role.ADMIN and _active_admin_count() <= 1:
+            return error("No puede cambiar el rol del último ADMIN activo", 409)
         user.role = new_role
         user.token_version += 1
     if "email" in data:
@@ -492,7 +496,7 @@ def update_admin_user(user_id):
 def change_admin_status(user_id):
     target = db.session.get(User, user_id)
     actor = current_user()
-    if not target or target.role == Role.EXPOSITOR:
+    if not _is_manageable_user(target):
         return error("Administrador no encontrado", 404)
     try:
         new_status = UserStatus(validated_json()["status"])
@@ -500,16 +504,8 @@ def change_admin_status(user_id):
         return error("Estado inválido")
     if target.id == actor.id and new_status != UserStatus.ACTIVE:
         return error("No puede inhabilitar su propia cuenta")
-    if target.role == Role.SUPERADMIN and new_status != UserStatus.ACTIVE:
-        active = db.session.scalar(
-            select(func.count()).select_from(User).where(
-                User.role == Role.SUPERADMIN,
-                User.status == UserStatus.ACTIVE,
-                User.deleted_at.is_(None),
-            )
-        )
-        if active <= 1:
-            return error("No puede inhabilitar al último SUPERADMIN activo")
+    if target.role == Role.ADMIN and new_status != UserStatus.ACTIVE and _active_admin_count() <= 1:
+        return error("No puede inhabilitar al último ADMIN activo")
     target.status = new_status
     if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
         target.token_version += 1
@@ -531,20 +527,12 @@ def change_admin_status(user_id):
 def delete_admin_user(user_id):
     target = db.session.get(User, user_id)
     actor = current_user()
-    if not target or target.deleted_at or target.role == Role.EXPOSITOR:
+    if not _is_manageable_user(target):
         return error("Administrador no encontrado", 404)
     if target.id == actor.id:
         return error("No puede eliminar su propia cuenta", 409)
-    if target.role == Role.SUPERADMIN:
-        active = db.session.scalar(
-            select(func.count()).select_from(User).where(
-                User.role == Role.SUPERADMIN,
-                User.status == UserStatus.ACTIVE,
-                User.deleted_at.is_(None),
-            )
-        )
-        if active <= 1:
-            return error("No puede eliminar al último SUPERADMIN activo", 409)
+    if target.role == Role.ADMIN and _active_admin_count() <= 1:
+        return error("No puede eliminar al último ADMIN activo", 409)
     target.deleted_at = datetime.now(timezone.utc)
     target.status = UserStatus.INACTIVE
     if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
@@ -566,15 +554,9 @@ def delete_admin_user(user_id):
 @roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
 def admin_reset_password(user_id):
     user = db.session.get(User, user_id)
-    actor = current_user()
     if not user or user.deleted_at:
         return error("Usuario no encontrado", 404)
-    if actor.role == Role.ADMIN_VICEMINISTERIO and user.role != Role.EXPOSITOR:
-        return error(
-            "Un administrador solo puede restablecer contraseñas de expositores",
-            403,
-        )
-    if user.role == Role.EXPOSITOR and user.exhibitor:
+    if user.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE and user.exhibitor:
         document = user.exhibitor.numero_documento
         first_name = user.exhibitor.nombre_responsable
         last_name = user.exhibitor.apellido_responsable

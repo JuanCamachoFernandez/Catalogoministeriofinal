@@ -33,7 +33,7 @@ from app.modelos import (
 PASSWORD = "Temporal2026!"
 
 
-def create_user(username, role=Role.SUPERADMIN):
+def create_user(username, role=Role.ADMIN):
     user = User(
         username=username,
         email=f"{username}@gmail.com",
@@ -74,7 +74,7 @@ def test_paginacion_limita_y_reporta_totales(app, client):
     with app.app_context():
         create_user("actor")
         for index in range(24):
-            create_user(f"admin{index:02d}", Role.ADMIN_VICEMINISTERIO)
+            create_user(f"admin{index:02d}", Role.ADMIN)
         token = login(client, "actor")
 
     response = client.get(
@@ -95,7 +95,7 @@ def test_paginacion_limita_y_reporta_totales(app, client):
 def test_eliminacion_logica_admin_protege_actor(app, client):
     with app.app_context():
         actor = create_user("actor")
-        target = create_user("target", Role.ADMIN_VICEMINISTERIO)
+        target = create_user("target", Role.ADMIN)
         actor_id, target_id = actor.id, target.id
         token = login(client, "actor")
         target_token = login(client, "target")
@@ -219,8 +219,8 @@ def test_cleanup_elimina_logo_de_solicitud_rechazada_vencida(app):
 
 def test_expositor_no_puede_consultar_producto_ajeno(app, client):
     with app.app_context():
-        first = create_user("expo1", Role.EXPOSITOR)
-        second = create_user("expo2", Role.EXPOSITOR)
+        first = create_user("expo1", Role.PRODUCTIVE_UNIT_RESPONSIBLE)
+        second = create_user("expo2", Role.PRODUCTIVE_UNIT_RESPONSIBLE)
         first_exhibitor = Exhibitor(
             user_id=first.id,
             nombre_comercial="Primero",
@@ -274,7 +274,7 @@ def test_imagen_producto_exige_datos_y_permite_varias(app, client):
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     )
     with app.app_context():
-        owner = create_user("expoimagenes", Role.EXPOSITOR)
+        owner = create_user("expoimagenes", Role.PRODUCTIVE_UNIT_RESPONSIBLE)
         exhibitor = Exhibitor(
             user_id=owner.id,
             nombre_comercial="Taller de imágenes",

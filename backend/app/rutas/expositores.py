@@ -43,7 +43,7 @@ from ..autenticacion.decoradores import roles
 from ..autenticacion.sesiones import current_user
 from ..autenticacion.permisos import (
     ROLES_ADMINISTRACION_INSTITUCIONAL,
-    ROLES_EXPOSITOR,
+    ROLES_RESPONSABLES_UNIDAD,
 )
 exhibitor_bp = Blueprint("exhibitors", __name__)
 
@@ -248,7 +248,7 @@ def create_exhibitor():
     user = User(
         username=unique_username(data["nombre_responsable"], apellido_paterno),
         email=email,
-        role=Role.EXPOSITOR,
+        role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
         first_name=data["nombre_responsable"],
         last_name=apellido_paterno,
         phone=phone,
@@ -389,7 +389,7 @@ def delete_exhibitor(exhibitor_id):
 
 
 @exhibitor_bp.get("/exhibitor/profile")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 def own_profile():
     exhibitor = current_user().exhibitor
     if not exhibitor or exhibitor.deleted_at:
@@ -398,7 +398,7 @@ def own_profile():
 
 
 @exhibitor_bp.patch("/exhibitor/profile")
-@roles(*ROLES_EXPOSITOR)
+@roles(*ROLES_RESPONSABLES_UNIDAD)
 @validate_json(ExhibitorUpdateSchema())
 def update_own_profile():
     exhibitor = current_user().exhibitor
