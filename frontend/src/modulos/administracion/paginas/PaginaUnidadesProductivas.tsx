@@ -100,9 +100,10 @@ export default function PaginaUnidadesProductivas() {
         >
           ← Volver al listado
         </button>
-        <div className="page-heading">
+        <div className="registration-intro">
           <div>
             <span className="eyebrow">Registrar Unidad Productiva</span>
+            <h1>Nueva Unidad Productiva</h1>
           </div>
         </div>
         <FormularioDirectoUnidadProductiva
@@ -140,7 +141,7 @@ export default function PaginaUnidadesProductivas() {
           onClick={() => setCreating(true)}
         >
           <Plus aria-hidden="true" />
-          Registrar unidad
+          Registrar Unidad
         </button>
       </div>
       <div className="toolbar admin-units-toolbar">

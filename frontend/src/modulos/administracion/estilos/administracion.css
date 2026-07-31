@@ -62,9 +62,9 @@
 }
 .management-shell.admin-area .page-heading h1 {
   margin: 0.15rem 0 0.25rem;
-  font-size: clamp(1.7rem, 3vw, 2.15rem);
+  font-size: clamp(1.35rem, 2.2vw, 1.7rem);
   font-weight: 500;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
 }
 .management-shell.admin-area .page-heading p {
   margin: 0;
@@ -72,9 +72,9 @@
   font-size: 0.93rem;
 }
 .management-shell.admin-area .page-heading .eyebrow {
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   font-weight: 600;
-  letter-spacing: 0.075em;
+  letter-spacing: 0.065em;
 }
 .management-shell.admin-area .status {
   border: 1px solid transparent;
@@ -417,6 +417,9 @@
   .admin-dashboard .dashboard-overview {
     margin-top: 0;
   }
+  .management-shell.admin-area .content-wrap {
+    padding: 1rem;
+  }
 }
 @media (max-width: 600px) {
   .admin-dashboard .dashboard-stats-overview {
@@ -427,6 +430,9 @@
   }
 }
 @media (max-width: 600px) {
+  .management-shell.admin-area .content-wrap {
+    padding: 0.85rem;
+  }
   .admin-dashboard .dashboard-context {
     grid-template-columns: 1fr;
   }
@@ -627,7 +633,53 @@
   color: #554711;
 }
 .audit-list-table {
+  overflow: auto;
   margin-top: 0;
+  border: 1px solid #e2e2dc;
+  border-radius: 0.8rem;
+  background: #fff;
+  box-shadow: none;
+}
+.audit-list-table table {
+  min-width: 720px;
+}
+.audit-list-table th {
+  border-bottom: 1px solid #e2e2dc;
+  background: #fbfbf8;
+  color: #77776f;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.audit-list-table td {
+  padding-block: 0.9rem;
+  border-bottom-color: #eeeeea;
+  color: #45453f;
+  font-size: 0.86rem;
+}
+.audit-list-table tbody tr:hover {
+  background: #fcfcfa;
+}
+.audit-list-table .table-user strong {
+  font-weight: 500;
+}
+.audit-list-table td:first-child strong {
+  color: #252522;
+}
+.audit-list-table td small {
+  display: block;
+  margin-top: 0.2rem;
+  color: #85857d;
+  font-size: 0.75rem;
+}
+.audit-list-table .action-pill {
+  border: 1px solid #ddd3ae;
+  background: #f6f1df;
+  padding: 0.24rem 0.56rem;
+  color: #6f6240;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 .audit-detail {
   display: grid;
@@ -1044,9 +1096,9 @@
 .admin-requests-page .page-heading {
   margin-bottom: 0.2rem;
 }
-.admin-requests-toolbar {
+.toolbar.admin-requests-toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) 180px 150px 150px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
   align-items: end;
   margin: 0;
@@ -1075,6 +1127,22 @@
   font-weight: 400;
   letter-spacing: 0;
 }
+
+@media (min-width: 1200px) {
+  .toolbar.admin-requests-toolbar {
+    grid-template-columns: minmax(320px, 1.6fr) minmax(190px, 0.8fr) minmax(150px, 0.55fr) minmax(150px, 0.55fr);
+  }
+}
+
+@media (max-width: 1080px) {
+  .toolbar.admin-fairs-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .toolbar.admin-fairs-toolbar .search-field {
+    grid-column: 1 / -1;
+  }
+}
+
 .admin-requests-page .empty-state h2{
   margin: 0;
   color: #555850;
@@ -1082,27 +1150,22 @@
   font-weight: 400;
 }
 
-.admin-units-toolbar {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
+.toolbar.admin-units-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(180px, 0.75fr) minmax(180px, 0.85fr);
+  align-items: end;
   gap: 0.7rem;
   margin: 0;
   padding: 0.1rem 0;
 }
 
 .admin-units-toolbar .search-field {
-  flex: 0 1 50%;
+  width: 100%;
   min-width: 0;
   min-height: 42px;
   border-color: #deded7;
   border-radius: 0.65rem;
   box-shadow: none;
-}
-
-.admin-units-toolbar > .input {
-  flex: 0 0 220px;
-  min-width: 180px;
 }
 
 .admin-requests-toolbar .searchable-select,
@@ -1111,25 +1174,44 @@
 }
 
 .admin-units-toolbar .searchable-select {
-  flex: 0 0 220px;
-  min-width: 180px;
+  width: 100%;
+  min-width: 0;
 }
 
 .admin-sector-filter {
   position: relative;
-  flex: 0 0 220px;
-  min-width: 180px;
+  width: 100%;
+  min-width: 0;
 }
 
 .admin-sector-filter-trigger {
   display: flex;
   width: 100%;
+  min-height: 42px;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   border: 1px solid #deded7;
   padding: 0.62rem 0.82rem;
   text-align: left;
+}
+
+@media (max-width: 1080px) {
+  .toolbar.admin-units-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .toolbar.admin-units-toolbar .search-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .toolbar.admin-units-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .toolbar.admin-units-toolbar .search-field {
+    grid-column: auto;
+  }
 }
 
 .admin-sector-filter-trigger svg {
@@ -1356,29 +1438,159 @@
   margin-top: 0.15rem;
 }
 
+.admin-audit-modal .audit-detail {
+  gap: 1rem;
+}
+
+.admin-audit-modal {
+  width: min(560px, 100%);
+}
+
+.admin-audit-modal .audit-detail-summary {
+  border: 1px solid #e4d8b8;
+  border-radius: 0.9rem;
+  background: #f8f3e6;
+  color: #5b533f;
+}
+
+.admin-audit-modal .audit-detail-summary svg {
+  color: #877757;
+}
+
+.admin-audit-modal .audit-detail-summary p {
+  margin: 0;
+  color: #4e4738;
+  font-size: 0.98rem;
+  font-weight: 500;
+}
+
+.admin-audit-modal .audit-detail dl {
+  grid-template-columns: 1fr;
+  gap: 0.8rem;
+}
+
+.admin-audit-modal .audit-detail-summary span {
+  color: #7b725b;
+}
+
+.admin-audit-modal .audit-detail dl div {
+  border-color: #e6e6e0;
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.admin-audit-modal .audit-detail dt {
+  color: #757066;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
+.admin-audit-modal .audit-detail dd {
+  margin-top: 0.3rem;
+  color: #373933;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.admin-audit-modal .audit-changes {
+  grid-template-columns: 1fr;
+  gap: 0.8rem;
+}
+
+.admin-audit-modal .audit-changes h3 {
+  margin: 0 0 0.45rem;
+  color: #5d6058;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.admin-audit-modal .audit-change-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-audit-modal .audit-change-item {
+  border: 1px solid #ece9e1;
+  border-radius: 0.78rem;
+  background: #f7f7f4;
+  padding: 0.7rem 0.8rem;
+}
+
+.admin-audit-modal .audit-change-item span {
+  display: block;
+  color: #757066;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.admin-audit-modal .audit-change-item p {
+  margin: 0;
+  margin-top: 0.28rem;
+  color: #50544e;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.admin-audit-modal .audit-change-empty {
+  margin: 0;
+  border: 1px solid #ece9e1;
+  border-radius: 0.78rem;
+  background: #f7f7f4;
+  padding: 0.75rem 0.8rem;
+  color: #70746b;
+  font-size: 0.82rem;
+}
+
 .admin-unit-registration-page {
   display: grid;
   gap: 1.2rem;
   width: 100%;
   min-width: 0;
-  border-top: 1px solid #deded7;
-  padding-top: 1rem;
+  padding-top: 0.25rem;
 }
 
-.admin-unit-registration-page .page-heading {
-  display: grid;
-  gap: 0.85rem;
-  border-bottom: 1px solid #e2e2dc;
-  padding-bottom: 1.1rem;
+.admin-unit-registration-page .registration-intro {
+  max-width: 780px;
   margin: 0;
 }
 
-.admin-unit-registration-page .page-heading > .back-navigation {
+.admin-unit-registration-page .registration-intro .eyebrow {
+  margin-bottom: 0.45rem;
+}
+
+.admin-unit-registration-page .registration-intro h1 {
+  margin: 0 0 0.45rem;
+  font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.admin-unit-registration-page .registration-intro p {
+  max-width: 62ch;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.admin-unit-registration-page .back-navigation {
+  width: max-content;
+}
+
+.admin-unit-registration-page .registration-form {
+  width: 100%;
+}
+
+.admin-unit-registration-page .registration-actions .modal-actions {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-mobile-sector-select {
   display: none;
-}
-
-.admin-unit-registration-page .page-heading .eyebrow {
-  margin: 0;
 }
 
 .admin-unit-detail-page {
@@ -2723,16 +2935,37 @@
 }
 
 @media (max-width: 760px) {
-  .admin-requests-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .toolbar.admin-requests-toolbar {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
   }
-  .admin-units-toolbar {
-    flex-wrap: wrap;
+  .admin-page,
+  .admin-requests-page,
+  .admin-dashboard {
+    gap: 0.85rem;
   }
-  .admin-units-toolbar .search-field,
-  .admin-units-toolbar > .input,
-  .admin-sector-filter {
-    flex: 1 1 100%;
+  .management-shell.admin-area .page-heading {
+    margin-bottom: 0;
+    padding: 1rem 1rem 0.95rem;
+  }
+  .management-shell.admin-area .page-heading h1 {
+    font-size: 1.45rem;
+    line-height: 1.15;
+  }
+  .admin-requests-toolbar .field > span {
+    margin-bottom: 0.25rem;
+    font-size: 0.74rem;
+  }
+  .admin-requests-toolbar .search-field,
+  .admin-requests-toolbar .input,
+  .admin-requests-toolbar .searchable-select,
+  .admin-requests-toolbar .field {
+    width: 100%;
+  }
+  .toolbar.admin-units-toolbar .search-field,
+  .toolbar.admin-units-toolbar .searchable-select,
+  .toolbar.admin-units-toolbar .admin-sector-filter {
+    width: 100%;
   }
   .admin-request-products {
     grid-template-columns: 1fr;
@@ -2747,6 +2980,7 @@
   .admin-request-review-heading {
     align-items: flex-start;
     flex-direction: column;
+    gap: 0.55rem;
   }
   .admin-request-review-page .admin-request-detail,
   .admin-request-review-page .admin-request-products {
@@ -2765,33 +2999,223 @@
     grid-template-columns: 1fr;
     gap: 0.7rem;
   }
+  .admin-request-review-page {
+    gap: 1rem;
+    padding-top: 0.6rem;
+  }
+  .admin-request-review-section {
+    gap: 0.7rem;
+    padding-bottom: 1rem;
+  }
+  .admin-request-field-grid p,
+  .admin-request-logo-field,
+  .admin-request-social-grid p,
+  .admin-request-info-card,
+  .admin-request-product,
+  .admin-request-decision-card,
+  .admin-request-decision-confirmed,
+  .admin-text-preview-content {
+    border-radius: 0.8rem;
+    padding: 0.85rem;
+  }
   .admin-request-activity-grid {
     grid-template-columns: 1fr;
   }
   .admin-request-product {
     grid-template-columns: 1fr;
+    gap: 0.8rem;
   }
   .admin-request-product-image {
-    min-height: 190px;
+    min-height: 210px;
   }
   .admin-request-product-image img {
-    min-height: 190px;
+    min-height: 210px;
+  }
+  .admin-request-products-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
   }
   .admin-request-decision-heading {
     flex-direction: column;
+    gap: 0.45rem;
   }
   .admin-request-decision-grid,
   .admin-request-decision-confirmed {
     grid-template-columns: 1fr;
   }
+  .admin-request-decision-button,
+  .admin-request-review-page .btn-small,
+  .back-navigation {
+    width: 100%;
+    justify-content: center;
+  }
+  .admin-image-preview-modal,
+  .admin-text-preview-modal {
+    width: min(100vw - 1rem, 720px);
+    padding: 0.65rem;
+  }
+  .admin-unit-registration-page {
+    gap: 0.95rem;
+    padding-top: 0;
+  }
+  .admin-unit-registration-page .registration-intro {
+    margin-top: 0.15rem;
+  }
+  .admin-unit-registration-page .registration-intro p {
+    max-width: 36ch;
+    font-size: 0.98rem;
+    line-height: 1.65;
+  }
+  .admin-unit-registration-page .registration-section-heading h2 {
+    font-size: 1.08rem;
+    line-height: 1.3;
+  }
+  .admin-unit-registration-page .registration-section-heading p {
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .admin-unit-registration-page .registration-form .field {
+    font-size: 0.9rem;
+    gap: 0.48rem;
+  }
+  .admin-unit-registration-page .registration-form .field > span,
+  .admin-unit-registration-page .field small,
+  .admin-unit-registration-page .form-hint {
+    line-height: 1.45;
+  }
+  .admin-unit-registration-page .registration-form .input,
+  .admin-unit-registration-page .registration-form textarea.input,
+  .admin-unit-registration-page .registration-form select.input {
+    font-size: 0.95rem;
+  }
+  .admin-unit-registration-page .registration-sectors label {
+    align-items: flex-start;
+    padding: 0.72rem 0.78rem;
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  .admin-unit-registration-page .registration-sectors input {
+    margin-top: 0.1rem;
+  }
+  .admin-unit-registration-page .registration-sectors {
+    display: none;
+  }
+  .admin-mobile-sector-select {
+    position: relative;
+    display: block;
+  }
+  .admin-mobile-sector-select-trigger {
+    display: flex;
+    width: 100%;
+    min-height: 46px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    border: 1px solid #d5d0c5;
+    border-radius: 0.7rem;
+    background: #fff;
+    padding: 0.72rem 0.8rem;
+    color: #24221e;
+    text-align: left;
+  }
+  .admin-mobile-sector-select-trigger span {
+    min-width: 0;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+  .admin-mobile-sector-select-trigger svg {
+    flex: none;
+    transition: transform 0.18s ease;
+  }
+  .admin-mobile-sector-select.is-open .admin-mobile-sector-select-trigger {
+    border-color: #6f776b;
+    box-shadow: 0 0 0 3px rgb(23 107 58 / 0.1);
+  }
+  .admin-mobile-sector-select.is-open .admin-mobile-sector-select-trigger svg {
+    transform: rotate(180deg);
+  }
+  .admin-mobile-sector-select-menu {
+    position: absolute;
+    z-index: 25;
+    top: calc(100% + 0.45rem);
+    right: 0;
+    left: 0;
+    overflow: hidden;
+    border: 1px solid #ddd8cc;
+    border-radius: 0.85rem;
+    background: #fff;
+    box-shadow: 0 16px 34px rgb(30 27 20 / 0.14);
+  }
+  .admin-mobile-sector-select-actions {
+    display: flex;
+    justify-content: flex-end;
+    border-bottom: 1px solid #ebe7de;
+    padding: 0.55rem 0.7rem;
+  }
+  .admin-mobile-sector-select-actions button {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: #176b3a;
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+  .admin-mobile-sector-select-options {
+    display: grid;
+    gap: 0.35rem;
+    max-height: 260px;
+    overflow: auto;
+    padding: 0.55rem;
+  }
+  .admin-mobile-sector-select-options label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    border: 1px solid #ddd8cc;
+    border-radius: 0.7rem;
+    background: #fff;
+    padding: 0.7rem 0.75rem;
+    color: #3e3a33;
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  .admin-mobile-sector-select-options input {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    margin: 0.1rem 0 0;
+    accent-color: var(--color-secondary);
+  }
+  .admin-unit-registration-page .registration-actions > span {
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+  .admin-unit-registration-page .registration-actions > span {
+    text-align: center;
+  }
+  .admin-unit-registration-page .registration-actions .modal-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+  .admin-unit-registration-page .registration-actions .modal-actions > button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 520px) {
-  .admin-requests-toolbar {
-    grid-template-columns: 1fr;
+  .admin-page,
+  .admin-requests-page,
+  .admin-dashboard {
+    gap: 0.7rem;
   }
-  .admin-requests-page {
-    gap: 0.75rem;
+  .management-shell.admin-area .page-heading {
+    padding: 0.9rem 0.85rem;
+  }
+  .management-shell.admin-area .page-heading h1 {
+    font-size: 1.25rem;
   }
   .admin-requests-table {
     border-radius: 0.6rem;
@@ -2838,6 +3262,63 @@
     min-height: 170px;
   }
   .admin-request-decision-button {
-    min-height: 40px;
+    min-height: 44px;
+  }
+  .admin-image-preview-modal,
+  .admin-text-preview-modal {
+    width: calc(100vw - 0.75rem);
+    padding: 0.5rem;
+  }
+  .admin-image-preview-modal .image-preview-dialog img {
+    max-height: calc(100dvh - 5.5rem);
+  }
+  .admin-unit-registration-page .registration-intro {
+    margin-top: 0;
+  }
+  .admin-unit-registration-page .registration-intro h1 {
+    font-size: clamp(1.55rem, 7vw, 1.9rem);
+    line-height: 1.18;
+  }
+  .admin-unit-registration-page .registration-intro p {
+    max-width: none;
+    font-size: 0.95rem;
+    line-height: 1.68;
+  }
+  .admin-unit-registration-page .registration-section-heading {
+    gap: 0.75rem;
+    margin-bottom: 1.05rem;
+  }
+  .admin-unit-registration-page .registration-section-heading h2 {
+    font-size: 1rem;
+  }
+  .admin-unit-registration-page .registration-section-heading p {
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .admin-unit-registration-page .registration-form .field {
+    font-size: 0.88rem;
+  }
+  .admin-unit-registration-page .registration-form .input,
+  .admin-unit-registration-page .registration-form textarea.input,
+  .admin-unit-registration-page .registration-form select.input {
+    font-size: 0.94rem;
+  }
+  .admin-unit-registration-page .registration-sectors label {
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+  .admin-mobile-sector-select-trigger span,
+  .admin-mobile-sector-select-options label {
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+  .admin-unit-registration-page .registration-actions > span {
+    font-size: 0.84rem;
+    line-height: 1.6;
+    text-align: left;
+  }
+  .admin-unit-registration-page .back-navigation {
+    width: max-content;
+    justify-content: flex-start;
   }
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Send } from "lucide-react";
+import { ChevronDown, Send } from "lucide-react";
 import {
   api,
   type Paged,
@@ -32,6 +32,7 @@ export function FormularioDirectoUnidadProductiva({
   const formRef = useRef<HTMLFormElement | null>(null);
   const [draft, setDraft] = useState(registroVacio);
   const [sectorIds, setSectorIds] = useState<string[]>([]);
+  const [mobileSectorMenuOpen, setMobileSectorMenuOpen] = useState(false);
   const [otherDetail, setOtherDetail] = useState("");
   const [logo, setLogo] = useState<File | null>(null);
   const sectors = useQuery({
@@ -82,6 +83,17 @@ export function FormularioDirectoUnidadProductiva({
   };
   const change = (key: keyof BorradorRegistro, value: string) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const toggleSector = (sectorId: string) =>
+    setSectorIds((current) =>
+      current.includes(sectorId)
+        ? current.filter((id) => id !== sectorId)
+        : [...current, sectorId],
+    );
+  const mobileSectorLabel = !sectorIds.length
+    ? "Seleccione uno o varios sectores"
+    : sectorIds.length === 1
+      ? sectors.data?.find((item) => item.id === sectorIds[0])?.nombre ?? "1 sector seleccionado"
+      : `${sectorIds.length} sectores seleccionados`;
   const mutation = useMutation({
     mutationFn: async () => {
       let logo_url: string | null = null;
@@ -160,9 +172,15 @@ export function FormularioDirectoUnidadProductiva({
       return;
     }
     if (!sectorIds.length) {
-      const firstSector = event.currentTarget.querySelector<HTMLInputElement>(
-        'input[name="sectores"]',
-      );
+      const firstSector =
+        Array.from(
+          event.currentTarget.querySelectorAll<HTMLInputElement>(
+            'input[name="sectores"]',
+          ),
+        ).find((input) => input.offsetParent !== null) ??
+        event.currentTarget.querySelector<HTMLInputElement>(
+          'input[name="sectores"]',
+        );
       if (firstSector)
         focusInvalidControl(
           firstSector,
@@ -455,25 +473,63 @@ export function FormularioDirectoUnidadProductiva({
           ) : sectors.error ? (
             <CajaError mensaje={mensaje(sectors.error)} />
           ) : (
-            <div className="registration-sectors">
-              {sectors.data?.map((item) => (
-                <label key={item.id}>
-                  <input
-                    name="sectores"
-                    type="checkbox"
-                    checked={sectorIds.includes(item.id)}
-                    onChange={() =>
-                      setSectorIds((ids) =>
-                        ids.includes(item.id)
-                          ? ids.filter((id) => id !== item.id)
-                          : [...ids, item.id],
-                      )
-                    }
-                  />
-                  <span>{item.nombre}</span>
-                </label>
-              ))}
-            </div>
+            <>
+              <div className="registration-sectors">
+                {sectors.data?.map((item) => (
+                  <label key={item.id}>
+                    <input
+                      name="sectores"
+                      type="checkbox"
+                      checked={sectorIds.includes(item.id)}
+                      onChange={() => toggleSector(item.id)}
+                    />
+                    <span>{item.nombre}</span>
+                  </label>
+                ))}
+              </div>
+              <div
+                className={`admin-mobile-sector-select ${mobileSectorMenuOpen ? "is-open" : ""}`}
+              >
+                <button
+                  type="button"
+                  className="admin-mobile-sector-select-trigger"
+                  aria-expanded={mobileSectorMenuOpen}
+                  aria-label="Seleccionar sectores productivos"
+                  onClick={() => setMobileSectorMenuOpen((current) => !current)}
+                >
+                  <span>{mobileSectorLabel}</span>
+                  <ChevronDown size={18} />
+                </button>
+                {mobileSectorMenuOpen && (
+                  <div className="admin-mobile-sector-select-menu">
+                    <div className="admin-mobile-sector-select-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSectorIds([]);
+                          setMobileSectorMenuOpen(false);
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                    <div className="admin-mobile-sector-select-options">
+                      {sectors.data?.map((item) => (
+                        <label key={item.id}>
+                          <input
+                            name="sectores"
+                            type="checkbox"
+                            checked={sectorIds.includes(item.id)}
+                            onChange={() => toggleSector(item.id)}
+                          />
+                          <span>{item.nombre}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </Campo>{" "}
         {otherSelected && (
@@ -521,7 +577,7 @@ export function FormularioDirectoUnidadProductiva({
             disabled={mutation.isPending}
           >
             <Send aria-hidden="true" />
-            {mutation.isPending ? "Registrando..." : "Registrar unidad"}
+            {mutation.isPending ? "Registrando..." : "Registrar"}
           </button>
         </div>
       </footer>{" "}

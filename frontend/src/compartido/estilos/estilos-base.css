@@ -188,7 +188,7 @@ textarea.input {
   margin-bottom: 0.45rem;
   color: var(--color-secondary);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -724,10 +724,10 @@ textarea.input {
   color: var(--color-primary);
 }
 .catalog-link {
-  position: absolute;
-  right: 1rem;
-  bottom: 1.25rem;
-  left: 1rem;
+  position: static;
+  margin-top: auto;
+  margin-inline: 0;
+  margin-bottom: 0;
   color: var(--color-secondary);
 }
 .management-main {
@@ -1116,22 +1116,54 @@ textarea.input {
   .sidebar-close {
     display: flex !important;
   }
+  .management-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0 0.85rem;
+  }
+  .header-brand {
+    gap: 0.5rem;
+  }
+  .header-user {
+    justify-content: flex-end;
+    gap: 0.45rem;
+  }
   .header-user > span {
     display: none;
+  }
+  .header-user button span {
+    display: none;
+  }
+  .mobile-menu,
+  .header-user button,
+  .sidebar-close {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 0.75rem;
+  }
+  .management-header .sidebar-toggle,
+  .sidebar-toggle {
+    display: none !important;
   }
   .sidebar {
     top: 0;
     z-index: 60;
+    width: min(86vw, 320px);
+    padding: 1rem 0.85rem 1.15rem;
     transform: translateX(-110%);
     transition: transform 0.2s;
+    box-shadow: 0 22px 60px rgb(0 0 0 / 0.24);
   }
   .sidebar-open {
     transform: translateX(0);
   }
   .sidebar-close {
     margin-left: auto;
-    border: 0;
-    background: transparent;
+    margin-bottom: 0.55rem;
   }
   .sidebar-scrim {
     position: fixed;
@@ -1142,6 +1174,23 @@ textarea.input {
   }
   .management-main {
     padding-left: 0;
+  }
+  .sidebar-collapsed .management-main {
+    padding-left: 0;
+  }
+  .sidebar-title {
+    margin-bottom: 0.8rem;
+    padding-right: 0.35rem;
+  }
+  .sidebar nav a,
+  .catalog-link {
+    min-height: 46px;
+    border-radius: 0.8rem;
+    padding: 0.8rem 0.9rem;
+  }
+  .catalog-link {
+    position: static;
+    margin-top: 0.85rem;
   }
   .page-header,
   .section-heading {
@@ -1598,6 +1647,27 @@ textarea.input {
   align-items: center;
   gap: 0.75rem;
 }
+.header-brand,
+.header-user,
+.header-user-copy {
+  min-width: 0;
+}
+.header-user-copy {
+  display: grid;
+  line-height: 1.15;
+}
+.header-user-copy strong,
+.header-user-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-profile-link {
+  display: inline-flex;
+  flex: none;
+  border-radius: 999px;
+  text-decoration: none;
+}
 .sidebar-toggle {
   display: grid !important;
   width: 38px;
@@ -1686,14 +1756,15 @@ textarea.input {
   padding-inline: 0.7rem;
 }
 .sidebar-collapsed .catalog-link {
-  right: 0.7rem;
-  left: 0.7rem;
-}
-.sidebar-collapsed .management-main {
-  padding-left: 84px;
+  margin-inline: 0;
 }
 .management-main {
   transition: padding-left 0.25s ease;
+}
+@media (min-width: 761px) {
+  .sidebar-collapsed .management-main {
+    padding-left: 84px;
+  }
 }
 
 /* Recuperación de contraseña por código */
@@ -2008,8 +2079,7 @@ textarea.input {
     top: 0;
   }
   .management-seal {
-    width: 42px;
-    height: 42px;
+    display: none;
   }
   .header-brand strong {
     display: none;
@@ -2027,6 +2097,24 @@ textarea.input {
   }
 }
 @media (max-width: 520px) {
+  .management-header {
+    padding-inline: 0.7rem;
+  }
+  .mobile-menu,
+  .header-user button,
+  .header-profile-link {
+    width: 38px;
+    height: 38px;
+  }
+  .header-user > img,
+  .header-avatar {
+    width: 32px;
+    height: 32px;
+  }
+  .sidebar {
+    width: min(92vw, 300px);
+    padding-inline: 0.75rem;
+  }
   .public-header .brand {
     max-width: 42px;
   }
@@ -2036,9 +2124,6 @@ textarea.input {
   }
   .public-header .btn-light {
     max-width: 115px;
-  }
-  .management-seal {
-    left: 46%;
   }
   .footer-seal {
     width: 62px;
@@ -2386,6 +2471,11 @@ textarea.input {
   border-radius: 1rem;
   background: #fff8db;
   color: var(--color-secondary);
+}
+@media (max-width: 760px) {
+  .heading-icon {
+    display: none;
+  }
 }
 .panel {
   border-color: #ded2ad;

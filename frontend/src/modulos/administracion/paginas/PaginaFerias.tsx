@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import {
@@ -42,7 +42,19 @@ const emptyFair: FairDraft = {
   fecha_inicio: "",
   fecha_fin: "",
 };
+
+const FAIR_FIELD_LABELS: Record<string, string> = {
+  nombre: "Nombre de la feria",
+  descripcion: "Descripción",
+  ubicacion: "Lugar o dirección",
+  departamento: "Departamento",
+  fecha_inicio: "Fecha de inicio",
+  fecha_fin: "Fecha de finalización",
+  cover: "Imagen de portada",
+};
+
 export default function PaginaFerias() {
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -58,6 +70,60 @@ export default function PaginaFerias() {
     [uploadProgress, setUploadProgress] = useState(0);
   const qc = useQueryClient(),
     feedback = useRetroalimentacion();
+  const focusInvalidControl = (
+    control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+    popupMessage: string,
+  ) => {
+    formRef.current
+      ?.querySelectorAll<HTMLElement>('[aria-invalid="true"]')
+      .forEach((item) => item.removeAttribute("aria-invalid"));
+    control.setAttribute("aria-invalid", "true");
+    control.scrollIntoView({ behavior: "smooth", block: "center" });
+    control.focus({ preventScroll: true });
+    feedback.notify({
+      title: "Revise el campo marcado",
+      mensaje: popupMessage,
+      tone: "error",
+      onClose: () => {
+        control.scrollIntoView({ behavior: "smooth", block: "center" });
+        control.focus({ preventScroll: true });
+      },
+    });
+  };
+  const messageForInvalidControl = (
+    control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+  ) => {
+    const fieldName = control.name || "";
+    const label = FAIR_FIELD_LABELS[fieldName] ?? "este campo";
+    if (control.validity.valueMissing)
+      return `Complete el campo ${label}.`;
+    if (control.validity.typeMismatch || control.validity.patternMismatch)
+      return `Revise el formato del campo ${label}.`;
+    if (control.validity.rangeUnderflow && fieldName === "fecha_fin")
+      return "La fecha de finalización no puede ser anterior a la fecha de inicio.";
+    return control.validationMessage || `Revise el campo ${label}.`;
+  };
+  const fieldFromServerError = (error: unknown) => {
+    const response = (
+      error as {
+        response?: {
+          data?: { details?: Record<string, unknown>; error?: string };
+        };
+      }
+    )?.response;
+    const details = response?.data?.details;
+    const detailedField = details ? Object.keys(details)[0] : "";
+    if (detailedField) return detailedField;
+    const errorMessage = (response?.data?.error ?? "").toLowerCase();
+    if (errorMessage.includes("nombre")) return "nombre";
+    if (errorMessage.includes("ubic")) return "ubicacion";
+    if (errorMessage.includes("departamento")) return "departamento";
+    if (errorMessage.includes("inicio")) return "fecha_inicio";
+    if (errorMessage.includes("fin")) return "fecha_fin";
+    if (errorMessage.includes("portada") || errorMessage.includes("imagen"))
+      return "cover";
+    return "";
+  };
   const list = useQuery({
       queryKey: ["canonical-fairs", page, q, dateFrom, dateTo],
       queryFn: () =>
@@ -103,6 +169,48 @@ export default function PaginaFerias() {
     setCoverPreview(urlRecurso(f?.imagen_portada));
     setShowCoverPreview(false);
     setUploadProgress(0);
+  };
+  const validateAndSave = (form: HTMLFormElement) => {
+    const controls = Array.from(form.elements).filter(
+      (
+        element,
+      ): element is
+        | HTMLInputElement
+        | HTMLSelectElement
+        | HTMLTextAreaElement =>
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLSelectElement ||
+        element instanceof HTMLTextAreaElement,
+    );
+    const firstInvalid = controls.find((control) => !control.checkValidity());
+    if (firstInvalid) {
+      focusInvalidControl(firstInvalid, messageForInvalidControl(firstInvalid));
+      return false;
+    }
+    if (draft.fecha_fin < draft.fecha_inicio) {
+      const dateEndControl = form.querySelector<HTMLInputElement>(
+        '[name="fecha_fin"]',
+      );
+      if (dateEndControl) {
+        focusInvalidControl(
+          dateEndControl,
+          "La fecha de finalización no puede ser anterior a la fecha de inicio.",
+        );
+      }
+      return false;
+    }
+    if (!editing && !cover) {
+      const coverControl = form.querySelector<HTMLInputElement>('[name="cover"]');
+      if (coverControl) {
+        focusInvalidControl(
+          coverControl,
+          "Seleccione una imagen de portada para crear la feria.",
+        );
+      }
+      return false;
+    }
+    void save();
+    return true;
   };
   const save = async () => {
     if (draft.fecha_fin < draft.fecha_inicio) {
@@ -180,11 +288,16 @@ export default function PaginaFerias() {
   };
   const fairForm = (
     <form
+      ref={formRef}
       className="registration-form fair-registration-form"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        validateAndSave(event.currentTarget);
       }}
+      onInput={(event) =>
+        (event.target as HTMLElement).removeAttribute("aria-invalid")
+      }
     >
       <div className="fair-registration-layout">
       <section className="registration-section">
@@ -196,9 +309,10 @@ export default function PaginaFerias() {
           </div>
         </div>
         <div className="registration-grid fair-registration-grid-single">
-          <Campo label="Nombre de la feria">
+          <Campo label="Nombre de la feria" required>
             <input
               className="input"
+              name="nombre"
               required
               placeholder="Ej.: Feria Productiva Nacional"
               value={draft.nombre}
@@ -210,6 +324,7 @@ export default function PaginaFerias() {
           <Campo label="Descripción">
             <textarea
               className="input"
+              name="descripcion"
               rows={4}
               placeholder="Cuente brevemente qué encontrarán los visitantes"
               value={draft.descripcion}
@@ -299,9 +414,10 @@ export default function PaginaFerias() {
           </div>
         </div>
         <div className="registration-grid fair-registration-grid-single">
-          <Campo label="Lugar o dirección">
+          <Campo label="Lugar o dirección" required>
             <input
               className="input"
+              name="ubicacion"
               required
               placeholder="Ej.: Campo Ferial, pabellón central"
               value={draft.ubicacion}
@@ -310,9 +426,10 @@ export default function PaginaFerias() {
               }
             />
           </Campo>
-          <Campo label="Departamento">
+          <Campo label="Departamento" required>
             <select
               className="input"
+              name="departamento"
               required
               value={draft.departamento}
               onChange={(e) =>
@@ -338,9 +455,10 @@ export default function PaginaFerias() {
           </div>
         </div>
         <div className="registration-grid">
-          <Campo label="Fecha de inicio">
+          <Campo label="Fecha de inicio" required>
             <input
               className="input"
+              name="fecha_inicio"
               required
               type="date"
               value={draft.fecha_inicio}
@@ -352,9 +470,10 @@ export default function PaginaFerias() {
               }
             />
           </Campo>
-          <Campo label="Fecha de finalización">
+          <Campo label="Fecha de finalización" required>
             <input
               className="input"
+              name="fecha_fin"
               required
               type="date"
               min={draft.fecha_inicio || undefined}
@@ -371,27 +490,29 @@ export default function PaginaFerias() {
         <span>
           Revise los datos antes de guardar la feria.
         </span>
-        <button
-          type="button"
-          className="btn-outline"
-          disabled={saving}
-          onClick={closeForm}
-        >
-          Cancelar
-        </button>
-        <button
-          type="submit"
-          className="admin-unit-action-button registration-submit"
-          disabled={saving}
-        >
-          {saving
-            ? uploadProgress > 0
-              ? `Subiendo imagen ${uploadProgress}%`
-              : "Guardando…"
-            : editing
-              ? "Guardar cambios"
-              : "Crear feria"}
-        </button>
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="admin-unit-action-button admin-unit-action-button-danger"
+            disabled={saving}
+            onClick={closeForm}
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            className="admin-unit-action-button registration-submit"
+            disabled={saving}
+          >
+            {saving
+              ? uploadProgress > 0
+                ? `Subiendo imagen ${uploadProgress}%`
+                : "Guardando…"
+              : editing
+                ? "Guardar cambios"
+                : "Crear feria"}
+          </button>
+        </div>
       </footer>
     </form>
   );
@@ -406,9 +527,10 @@ export default function PaginaFerias() {
         >
           ← Volver al listado
         </button>
-        <div className="page-heading">
+        <div className="registration-intro">
           <div>
             <span className="eyebrow">Registrar Feria</span>
+            <h1>Nueva Feria</h1>
           </div>
         </div>
         {fairForm}
@@ -432,7 +554,7 @@ export default function PaginaFerias() {
           Nueva feria
         </button>
       </div>{" "}
-      <div className="toolbar admin-requests-toolbar">
+      <div className="toolbar admin-requests-toolbar admin-fairs-toolbar">
         <CampoBusqueda
           value={q}
           onChange={(value) => {
