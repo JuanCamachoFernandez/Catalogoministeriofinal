@@ -10,18 +10,34 @@ from sqlalchemy.engine import make_url
 
 from .extensiones import db
 from .modelos import (
+    AssignmentStatus,
     Category,
     ExhibitorType,
     Fair,
     FairImage,
+    FairParticipation,
+    FeriaStatus,
+    NotificationStatus,
+    Product,
+    ProductImage,
+    ProductStatus,
     ProductiveSector,
+    ProductiveUnit,
+    ProductiveUnitStatus,
     RegistrationRequest,
+    RegistrationRequestProduct,
+    RegistrationRequestSector,
     RegistrationStatus,
     RevokedToken,
     Role,
+    SectorStatus,
+    UnitSector,
     User,
     UserStatus,
+    bolivia_today,
 )
+from .modelos.usuario import ph
+from .servicios import invalidate_public_cache
 from .utilidades import slugify, valid_gmail
 
 
@@ -89,7 +105,7 @@ def registrar_comandos(app):
         """Reconstruye una base PostgreSQL de prueba desde las migraciones."""
         require_postgresql_test_database()
         if not yes:
-            raise click.ClickException("Confirme la operaciÃ³n con --yes")
+            raise click.ClickException("Confirme la operación con --yes")
         db.session.execute(text("DROP SCHEMA public CASCADE"))
         db.session.execute(text("CREATE SCHEMA public"))
         db.session.commit()
@@ -101,32 +117,544 @@ def registrar_comandos(app):
     @app.cli.command("seed-test-data")
     @with_appcontext
     def seed_test_data():
-        """Carga catalogos y un ADMIN predecible para pruebas."""
+        """Carga una base de pruebas amplia e idempotente."""
         require_postgresql_test_database()
         email = os.getenv("CORREO_ADMINISTRADOR_PRUEBAS", "catalogo.test@gmail.com").lower()
         password = os.getenv("CONTRASENA_ADMINISTRADOR_PRUEBAS", "Catalogo.Test123!")
-        if not db.session.scalar(select(User.id).where(User.email == email)):
-            user = User(
-                username="catalogo.test",
-                email=email,
-                role=Role.ADMIN,
-                first_name="Administrador",
-                last_name="Pruebas",
-                status=UserStatus.ACTIVE,
-                must_change_password=False,
+        now_utc = datetime.now(timezone.utc)
+        today = bolivia_today()
+
+        def ensure_admin(
+            *, username, email_address, first_name, paternal_last_name, maternal_last_name,
+            status=UserStatus.ACTIVE, must_change_password=False, raw_password=password
+        ):
+            user = db.session.scalar(
+                select(User).where(
+                    (User.email == email_address.lower()) | (User.username == username.lower())
+                )
             )
-            user.set_password(password)
-            db.session.add(user)
-        for name in ["Microempresa", "Productor", "Artesano", "Emprendimiento"]:
+            if not user:
+                user = User(
+                    username=username.lower(),
+                    email=email_address.lower(),
+                    role=Role.ADMIN,
+                    first_name=first_name,
+                    last_name=paternal_last_name,
+                    apellido_paterno=paternal_last_name,
+                    apellido_materno=maternal_last_name,
+                    status=status,
+                    must_change_password=must_change_password,
+                )
+                user.set_password(raw_password)
+                db.session.add(user)
+                db.session.flush()
+                return user
+            if user.role != Role.ADMIN:
+                raise click.ClickException(
+                    f"El usuario {user.username} ya existe con un rol distinto a ADMIN"
+                )
+            user.first_name = first_name
+            user.last_name = paternal_last_name
+            user.apellido_paterno = paternal_last_name
+            user.apellido_materno = maternal_last_name
+            user.status = status
+            user.must_change_password = must_change_password
+            return user
+
+        def ensure_sector(name, description=None, is_other=False):
+            sector = db.session.scalar(
+                select(ProductiveSector).where(ProductiveSector.nombre == name)
+            )
+            if sector:
+                sector.descripcion = description or sector.descripcion
+                sector.es_otro = is_other
+                sector.estado = SectorStatus.ACTIVE
+                sector.deleted_at = None
+                return sector
+            sector = ProductiveSector(
+                nombre=name,
+                descripcion=description,
+                estado=SectorStatus.ACTIVE,
+                es_otro=is_other,
+            )
+            db.session.add(sector)
+            db.session.flush()
+            return sector
+
+        def ensure_category(name):
+            category = db.session.scalar(select(Category).where(Category.nombre == name))
+            if category:
+                category.estado = True
+                category.deleted_at = None
+                return category
+            category = Category(nombre=name, slug=slugify(name), estado=True)
+            db.session.add(category)
+            db.session.flush()
+            return category
+
+        def media_urls(folder):
+            target = Path(app.config["CARPETA_CARGAS"]) / folder
+            if not target.is_dir():
+                return []
+            return [
+                f"/uploads/{folder}/{path.name}"
+                for path in sorted(target.iterdir())
+                if path.is_file()
+            ]
+
+        primary_admin = ensure_admin(
+            username="catalogo.test",
+            email_address=email,
+            first_name="Administrador",
+            paternal_last_name="Pruebas",
+            maternal_last_name="Sistema",
+            status=UserStatus.ACTIVE,
+            must_change_password=False,
+        )
+        ensure_admin(
+            username="maria.rivera",
+            email_address="maria.rivera@fcpn.edu.bo",
+            first_name="Maria",
+            paternal_last_name="Rivera",
+            maternal_last_name="Lopez",
+            status=UserStatus.ACTIVE,
+            must_change_password=True,
+            raw_password="Admin.Pruebas2026!",
+        )
+        ensure_admin(
+            username="jorge.quispe",
+            email_address="jorge.quispe@fcpn.edu.bo",
+            first_name="Jorge",
+            paternal_last_name="Quispe",
+            maternal_last_name="Mamani",
+            status=UserStatus.INACTIVE,
+            must_change_password=False,
+            raw_password="Admin.Inactivo2026!",
+        )
+
+        for name in [
+            "Microempresa",
+            "Productor",
+            "Artesano",
+            "Emprendimiento",
+            "Asociacion",
+            "Cooperativa",
+            "Otro",
+        ]:
             if not db.session.scalar(
                 select(ExhibitorType.id).where(ExhibitorType.nombre == name)
             ):
                 db.session.add(ExhibitorType(nombre=name))
-        for name in ["Alimentos", "ArtesanÃ­as", "Textiles", "Otros"]:
-            if not db.session.scalar(select(Category.id).where(Category.nombre == name)):
-                db.session.add(Category(nombre=name, slug=slugify(name)))
+
+        for name in [
+            "Alimentos",
+            "Artesanias",
+            "Textiles",
+            "Cosmetica natural",
+            "Bebidas",
+            "Marroquineria",
+            "Otros",
+        ]:
+            ensure_category(name)
+
+        sectors = [
+            ("Textiles y Confecciones", "Produccion textil y confecciones nacionales."),
+            ("Cuero y Calzados", "Manufactura de cuero, calzado y derivados."),
+            ("Alimentos y Bebidas Procesados", "Produccion alimentaria con valor agregado."),
+            ("Madera y Carpinteria", "Muebles, carpinteria y acabados en madera."),
+            ("Orfebreria y Joyeria", "Joyeria artesanal y orfebreria boliviana."),
+            ("Cosmetica Natural y Cuidado Personal", "Productos de bienestar y cosmetica natural."),
+            ("Artesania Tradicional o Decorativa", "Artesanias con identidad regional."),
+            ("Otros", "Sector abierto para pruebas adicionales."),
+        ]
+        for name, description in sectors:
+            ensure_sector(name, description, is_other=name == "Otros")
+
+        fair_images = media_urls("ferias")
+        product_images = media_urls("productos")
+        logo_images = media_urls("logos")
+        request_images = media_urls("solicitudes") or product_images
+        shared_images = product_images + logo_images + fair_images
+        if not shared_images:
+            raise click.ClickException(
+                "No se encontraron imagenes en backend/uploads para completar los datos de prueba"
+            )
+
+        def ensure_fair(name, *, location, department, description, starts_in, ends_in, status):
+            fair = db.session.scalar(select(Fair).where(Fair.slug == slugify(name)))
+            if not fair:
+                fair = Fair(
+                    nombre=name,
+                    slug=slugify(name),
+                    descripcion=description,
+                    lugar=location,
+                    ubicacion=location,
+                    departamento=department,
+                    fecha_inicio=today + timedelta(days=starts_in),
+                    fecha_fin=today + timedelta(days=ends_in),
+                    fecha_limite_registro=today + timedelta(days=max(starts_in - 3, -1)),
+                    imagen_portada=fair_images[0] if fair_images else None,
+                    estado=status,
+                    visible_publicamente=status == FeriaStatus.PUBLISHED,
+                    created_by=primary_admin.id,
+                    disabled_at=now_utc if status == FeriaStatus.DISABLED else None,
+                    finished_at=now_utc if status == FeriaStatus.FINISHED else None,
+                )
+                db.session.add(fair)
+                db.session.flush()
+                return fair
+            fair.nombre = name
+            fair.descripcion = description
+            fair.lugar = location
+            fair.ubicacion = location
+            fair.departamento = department
+            fair.fecha_inicio = today + timedelta(days=starts_in)
+            fair.fecha_fin = today + timedelta(days=ends_in)
+            fair.fecha_limite_registro = today + timedelta(days=max(starts_in - 3, -1))
+            fair.imagen_portada = fair.imagen_portada or (fair_images[0] if fair_images else None)
+            fair.estado = status
+            fair.visible_publicamente = status == FeriaStatus.PUBLISHED
+            fair.deleted_at = None
+            fair.disabled_at = now_utc if status == FeriaStatus.DISABLED else None
+            fair.finished_at = now_utc if status == FeriaStatus.FINISHED else None
+            return fair
+
+        published_fair = ensure_fair(
+            "Feria Productiva del Altiplano",
+            location="Plaza Villarroel, pabellon productivo",
+            department="La Paz",
+            description="Produccion, identidad y emprendimiento boliviano.",
+            starts_in=-2,
+            ends_in=12,
+            status=FeriaStatus.PUBLISHED,
+        )
+        ensure_fair(
+            "Encuentro Nacional de Emprendedores",
+            location="Campo Ferial Alalay",
+            department="Cochabamba",
+            description="Productos nacionales y contacto directo con sus productores.",
+            starts_in=10,
+            ends_in=16,
+            status=FeriaStatus.DRAFT,
+        )
+        ensure_fair(
+            "Feria Hecho en Bolivia 2026",
+            location="Parque Urbano Central",
+            department="La Paz",
+            description="Evento concluido para probar estados finalizados.",
+            starts_in=-25,
+            ends_in=-12,
+            status=FeriaStatus.FINISHED,
+        )
+        ensure_fair(
+            "Expo Regiones Integradas",
+            location="Fexpocruz",
+            department="Santa Cruz",
+            description="Feria deshabilitada para pruebas administrativas.",
+            starts_in=20,
+            ends_in=26,
+            status=FeriaStatus.DISABLED,
+        )
+
+        category_ids = [
+            item.id
+            for item in db.session.scalars(
+                select(Category).where(Category.deleted_at.is_(None)).order_by(Category.nombre)
+            ).all()
+        ]
+
+        def ensure_demo_unit(index, data):
+            name, sector_name, department = data
+            email_address = f"expositor.demo{index:02d}@gmail.com"
+            user = db.session.scalar(select(User).where(User.email == email_address))
+            if not user:
+                user = User(
+                    username=f"expositor.demo{index:02d}",
+                    email=email_address,
+                    password_hash=ph.hash("Demo.Publico2026!"),
+                    role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
+                    first_name="Representante",
+                    last_name=f"Demo {index}",
+                    apellido_paterno="Demo",
+                    apellido_materno=f"Unidad {index}",
+                    phone=f"70000{index:03d}",
+                    status=UserStatus.ACTIVE,
+                    must_change_password=False,
+                )
+                db.session.add(user)
+                db.session.flush()
+
+            sector = ensure_sector(sector_name)
+            registration = db.session.scalar(
+                select(RegistrationRequest).where(
+                    RegistrationRequest.correo_electronico == email_address
+                )
+            )
+            logo_url = logo_images[(index - 1) % len(logo_images)] if logo_images else None
+            if not registration:
+                registration = RegistrationRequest(
+                    nombre_comercial=name,
+                    razon_social=f"{name} SRL",
+                    nit=f"99000{index:04d}",
+                    registro_seprec=f"88000{index:04d}",
+                    registro_pro_bolivia=f"77000{index:04d}",
+                    nombres_representante="Mariela",
+                    apellido_paterno_representante=f"Quispe{index}",
+                    apellido_materno_representante="Mamani",
+                    departamento=department,
+                    direccion_fisica=f"Zona comercial {index}, avenida principal",
+                    telefono_whatsapp=f"71234{index:03d}",
+                    correo_electronico=email_address,
+                    facebook_url=f"https://facebook.com/demo.unidad.{index:02d}",
+                    instagram_url=f"https://instagram.com/demo.unidad.{index:02d}",
+                    tiktok_url=f"https://tiktok.com/@demo.unidad.{index:02d}",
+                    resena_comercial=f"{name} produce y comercializa bienes bolivianos.",
+                    logo_url=logo_url,
+                    estado=RegistrationStatus.APPROVED,
+                    fecha_revision=now_utc,
+                    reviewed_by=primary_admin.id,
+                    notification_status=NotificationStatus.SENT,
+                    credentials_sent_at=now_utc,
+                )
+                db.session.add(registration)
+                db.session.flush()
+            if not db.session.scalar(
+                select(RegistrationRequestSector.id).where(
+                    RegistrationRequestSector.registration_request_id == registration.id,
+                    RegistrationRequestSector.productive_sector_id == sector.id,
+                )
+            ):
+                db.session.add(
+                    RegistrationRequestSector(
+                        registration_request_id=registration.id,
+                        productive_sector_id=sector.id,
+                    )
+                )
+
+            unit = db.session.scalar(
+                select(ProductiveUnit).where(
+                    ProductiveUnit.registration_request_id == registration.id
+                )
+            )
+            if not unit:
+                unit = ProductiveUnit(
+                    user_id=user.id,
+                    registration_request_id=registration.id,
+                    nombre_comercial=name,
+                    razon_social=registration.razon_social,
+                    nit=registration.nit,
+                    registro_seprec=registration.registro_seprec,
+                    registro_pro_bolivia=registration.registro_pro_bolivia,
+                    nombres_representante=registration.nombres_representante,
+                    apellido_paterno_representante=registration.apellido_paterno_representante,
+                    apellido_materno_representante=registration.apellido_materno_representante,
+                    departamento=department,
+                    direccion_fisica=registration.direccion_fisica,
+                    telefono_whatsapp=registration.telefono_whatsapp,
+                    correo_electronico=email_address,
+                    facebook_url=registration.facebook_url,
+                    instagram_url=registration.instagram_url,
+                    tiktok_url=registration.tiktok_url,
+                    resena_comercial=registration.resena_comercial,
+                    logo_url=logo_url,
+                    estado=ProductiveUnitStatus.ACTIVE,
+                    fecha_aprobacion=now_utc,
+                )
+                db.session.add(unit)
+                db.session.flush()
+            else:
+                unit.estado = ProductiveUnitStatus.ACTIVE
+                unit.deleted_at = None
+
+            if not db.session.scalar(
+                select(UnitSector.id).where(
+                    UnitSector.productive_unit_id == unit.id,
+                    UnitSector.productive_sector_id == sector.id,
+                )
+            ):
+                db.session.add(
+                    UnitSector(
+                        productive_unit_id=unit.id,
+                        productive_sector_id=sector.id,
+                        estado=SectorStatus.ACTIVE,
+                    )
+                )
+
+            products = db.session.scalars(
+                select(Product)
+                .where(Product.productive_unit_id == unit.id, Product.deleted_at.is_(None))
+                .order_by(Product.created_at)
+            ).all()
+            if len(products) < 3:
+                for number in range(len(products) + 1, 4):
+                    product = Product(
+                        productive_unit_id=unit.id,
+                        category_id=category_ids[(index + number - 2) % len(category_ids)],
+                        nombre=f"Producto {number} de {name}",
+                        slug=f"{slugify(name)}-{number}",
+                        descripcion=f"Producto de prueba del catalogo para {name}.",
+                        materiales_o_ingredientes="Materia prima nacional seleccionada",
+                        lugar_origen=department,
+                        presentacion="Presentacion estandar",
+                        informacion_adicional="Registro de ejemplo para pruebas funcionales.",
+                        nombre_comercial=f"Linea comercial {number} de {name}",
+                        descripcion_tecnica="Ficha tecnica de demostracion para validaciones del sistema.",
+                        materia_prima="Materia prima local",
+                        dimensiones="30 x 20 cm",
+                        colores_disponibles="Rojo, azul, natural",
+                        certificaciones="Registro interno de demostracion",
+                        presentacion_empaque="Empaque listo para envio",
+                        precio_referencia=20 + number * 7,
+                        capacidad_produccion_stock="150 unidades por mes",
+                        precio=20 + number * 7,
+                        estado=(
+                            ProductStatus.OUT_OF_STOCK
+                            if number == 3 and index % 2 == 0
+                            else ProductStatus.AVAILABLE
+                        ),
+                    )
+                    db.session.add(product)
+                    db.session.flush()
+                    for order in range(3):
+                        url = shared_images[(index + number + order - 2) % len(shared_images)]
+                        db.session.add(
+                            ProductImage(
+                                product_id=product.id,
+                                filename=Path(url).name,
+                                url=url,
+                                alt_text=f"{product.nombre} - imagen {order + 1}",
+                                is_cover=order == 0,
+                                display_order=order,
+                            )
+                        )
+            return unit
+
+        units = [
+            ensure_demo_unit(index, spec)
+            for index, spec in enumerate(
+                (
+                    ("Sabores del Valle", "Alimentos y Bebidas Procesados", "Cochabamba"),
+                    ("Tejidos Jach'a", "Textiles y Confecciones", "La Paz"),
+                    ("Madera Viva Bolivia", "Madera y Carpinteria", "Santa Cruz"),
+                    ("Manos de Tarija", "Artesania Tradicional o Decorativa", "Tarija"),
+                    ("Belleza Natural Andina", "Cosmetica Natural y Cuidado Personal", "Oruro"),
+                    ("Cuero Chapaco", "Cuero y Calzados", "Tarija"),
+                ),
+                start=1,
+            )
+        ]
+
+        for index, unit in enumerate(units):
+            participation = db.session.scalar(
+                select(FairParticipation).where(
+                    FairParticipation.fair_id == published_fair.id,
+                    FairParticipation.productive_unit_id == unit.id,
+                )
+            )
+            if not participation:
+                participation = FairParticipation(
+                    fair_id=published_fair.id,
+                    productive_unit_id=unit.id,
+                )
+                db.session.add(participation)
+            participation.estado = (
+                AssignmentStatus.PENDING
+                if index == len(units) - 1
+                else AssignmentStatus.AUTHORIZED
+            )
+            participation.authorized_by = (
+                None if participation.estado == AssignmentStatus.PENDING else primary_admin.id
+            )
+            participation.authorized_at = (
+                None if participation.estado == AssignmentStatus.PENDING else now_utc
+            )
+            participation.revoked_at = None
+            participation.observaciones = (
+                "Pendiente de validacion documental."
+                if participation.estado == AssignmentStatus.PENDING
+                else "Participacion aprobada para demostracion."
+            )
+
+        qa_cases = (
+            ("Pendiente", RegistrationStatus.PENDING, "qa.pendiente", None),
+            ("Aprobada", RegistrationStatus.APPROVED, "qa.aprobada", None),
+            (
+                "Rechazada",
+                RegistrationStatus.REJECTED,
+                "qa.rechazada",
+                "Caso QA rechazado: documentacion incompleta para la revision.",
+            ),
+        )
+        qa_sector = ensure_sector(
+            "QA - Sector de prueba",
+            "Sector auxiliar para validar flujos administrativos.",
+        )
+        for label, status, prefix, reason in qa_cases:
+            email_address = f"{prefix}@fcpn.edu.bo"
+            request = db.session.scalar(
+                select(RegistrationRequest).where(
+                    RegistrationRequest.correo_electronico == email_address
+                )
+            )
+            if request:
+                continue
+            request = RegistrationRequest(
+                nombre_comercial=f"Solicitud QA {label}",
+                razon_social=f"Solicitud QA {label} SRL",
+                nit=f"98765{len(label):04d}",
+                registro_seprec=f"87654{len(label):04d}",
+                registro_pro_bolivia=f"76543{len(label):04d}",
+                nombres_representante="Maria Fernanda",
+                apellido_paterno_representante="Quispe",
+                apellido_materno_representante="Mamani",
+                departamento="La Paz",
+                direccion_fisica="Av. QA 123, zona central",
+                telefono_whatsapp="71234567",
+                correo_electronico=email_address,
+                facebook_url="https://facebook.com/qa.solicitud",
+                instagram_url="https://instagram.com/qa.solicitud",
+                tiktok_url="https://tiktok.com/@qa.solicitud",
+                resena_comercial="Caso de prueba para revisar el flujo completo de solicitudes.",
+                logo_url=request_images[0] if request_images else None,
+                estado=status,
+                reviewed_by=primary_admin.id if status != RegistrationStatus.PENDING else None,
+                fecha_revision=now_utc if status != RegistrationStatus.PENDING else None,
+                notification_status=(
+                    NotificationStatus.SENT if status != RegistrationStatus.PENDING else None
+                ),
+                credentials_sent_at=now_utc if status == RegistrationStatus.APPROVED else None,
+                motivo_rechazo=reason,
+            )
+            db.session.add(request)
+            db.session.flush()
+            db.session.add(
+                RegistrationRequestSector(
+                    registration_request_id=request.id,
+                    productive_sector_id=qa_sector.id,
+                )
+            )
+            if request_images:
+                for order in range(1, 4):
+                    db.session.add(
+                        RegistrationRequestProduct(
+                            registration_request_id=request.id,
+                            nombre_comercial=f"Producto QA {order} - {label}",
+                            descripcion_tecnica=(
+                                "Descripcion tecnica de ejemplo para validar listados y detalle."
+                            ),
+                            precio_referencia=order * 25,
+                            imagen_url=request_images[(order - 1) % len(request_images)],
+                            orden=order,
+                        )
+                    )
+
+        invalidate_public_cache()
         db.session.commit()
-        click.echo(f"Datos de prueba creados; administrador: {email}")
+        click.echo(
+            "Datos de prueba creados: "
+            f"3 administradores, {len(units)} unidades productivas, 4 ferias y 3 solicitudes QA"
+        )
+        click.echo(f"Administrador principal: {email} / {password}")
 
     @app.cli.command("seed-admin")
     @with_appcontext
@@ -144,7 +672,7 @@ def registrar_comandos(app):
             username = slugify(email.split("@")[0])
         if not valid_gmail(email):
             raise click.ClickException(
-                "CORREO_ADMINISTRADOR_INICIAL debe ser una dirección válida terminada en @gmail.com"
+                "CORREO_ADMINISTRADOR_INICIAL debe ser una dirección electronica válida"
             )
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,79}", username):
             raise click.ClickException(
@@ -183,7 +711,7 @@ def registrar_comandos(app):
                 click.echo("El administrador inicial ya existe")
                 return
             raise click.ClickException(
-                "El usuario o Gmail del administrador inicial ya está registrado"
+                "El usuario o correo del administrador inicial ya está registrado"
             )
         user = User(
             username=username,

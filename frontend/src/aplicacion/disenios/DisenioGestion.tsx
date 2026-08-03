@@ -11,6 +11,7 @@ import {
   Package,
   PanelLeftClose,
   PanelLeftOpen,
+  UsersRound,
   UserRound,
   X,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const adminNav: ReadonlyArray<
   ["/admin/sectores-productivos", "Sectores Productivos", Activity, "productive-sectors"],
   ["/admin/productos", "Productos", Package, "products"],
   ["/admin/ferias", "Ferias", CalendarDays, "fairs"],
+  ["/admin/administradores", "Administradores", UsersRound, "administrator-accounts"],
   ["/admin/auditoria", "Auditoría", History, "audit"],
 ] as const;
 

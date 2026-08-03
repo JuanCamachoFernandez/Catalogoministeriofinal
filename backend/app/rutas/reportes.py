@@ -63,7 +63,6 @@ REPORT_COLUMNS = {
     "administradores": {
         "nombre": "Nombre completo",
         "usuario": "Usuario",
-        "ci": "CI",
         "correo": "Correo",
         "celular": "Celular",
         "rol": "Rol",
@@ -215,7 +214,7 @@ def administrator_rows():
             User.first_name.ilike(pattern), User.last_name.ilike(pattern),
             User.apellido_paterno.ilike(pattern), User.apellido_materno.ilike(pattern),
             User.username.ilike(pattern), User.email.ilike(pattern),
-            AdminProfile.numero_documento.ilike(pattern), AdminProfile.unidad.ilike(pattern),
+            AdminProfile.unidad.ilike(pattern),
         ))
     if request.args.get("status") in {item.value for item in UserStatus}:
         query = query.where(User.status == UserStatus(request.args["status"]))
@@ -229,7 +228,6 @@ def administrator_rows():
         rows.append({
             "nombre": " ".join(filter(None, [user.first_name, user.apellido_paterno or user.last_name, user.apellido_materno])),
             "usuario": user.username,
-            "ci": profile.numero_documento if profile else None,
             "correo": user.email,
             "celular": user.phone,
             "rol": user.role,

@@ -68,7 +68,6 @@ def test_administrador_edita_su_propio_perfil(app, client):
             "first_name": "Daniel",
             "apellido_paterno": "Camacho",
             "apellido_materno": "Fernandez",
-            "numero_documento": "778899",
             "email": "danielperfil@gmail.com",
             "phone": "71234567",
             "cargo": "Técnico",
@@ -78,7 +77,7 @@ def test_administrador_edita_su_propio_perfil(app, client):
     assert response.status_code == 200
     assert response.json["first_name"] == "Daniel"
     assert response.json["apellido_paterno"] == "Camacho"
-    assert response.json["numero_documento"] == "778899"
+    assert "numero_documento" not in response.json
 
     own_profile = client.get("/api/admin/profile", headers=auth(token))
     assert own_profile.status_code == 200
@@ -90,7 +89,7 @@ def test_administrador_edita_su_propio_perfil(app, client):
         assert profile.cargo == "Técnico"
 
 
-def test_administrador_puede_restaurar_responsable_y_requiere_documento_para_otro_admin(app, client):
+def test_administrador_puede_restaurar_responsable_y_admin_sin_ci(app, client):
     with app.app_context():
         actor = User(
             username="adminunidad",
@@ -145,11 +144,14 @@ def test_administrador_puede_restaurar_responsable_y_requiere_documento_para_otr
     assert restored.status_code == 200
     assert restored.json["temporary_password"] == "7654321RQ"
 
-    forbidden = client.post(
+    restored_admin = client.post(
         f"/api/admin/users/{actor_id}/reset-password",
         headers=auth(token),
     )
-    assert forbidden.status_code == 409
+    assert restored_admin.status_code == 200
+    assert restored_admin.json["username"] == "adminunidad"
+    assert restored_admin.json["temporary_password"].startswith("A1!")
+    assert len(restored_admin.json["temporary_password"]) == 16
 
 
 def test_reportes_pdf_excel_y_opciones(app, client):
@@ -207,7 +209,6 @@ def test_admin_guarda_apellidos_separados(app, client):
             "first_name": "Juana",
             "apellido_paterno": "Quispe",
             "apellido_materno": "Mamani",
-            "numero_documento": "12345678",
             "email": "juana.quispe@gmail.com",
             "phone": "71234567",
             "unidad": "Promoción Productiva",
@@ -218,21 +219,21 @@ def test_admin_guarda_apellidos_separados(app, client):
     assert response.status_code == 201
     assert response.json["data"]["apellido_paterno"] == "Quispe"
     assert response.json["data"]["apellido_materno"] == "Mamani"
-    assert response.json["data"]["numero_documento"] == "12345678"
+    assert "numero_documento" not in response.json["data"]
     assert response.json["username"] == response.json["data"]["username"]
-    assert response.json["temporary_password"] == "12345678JQ"
+    assert response.json["temporary_password"].startswith("A1!")
+    assert len(response.json["temporary_password"]) == 16
     with app.app_context():
         saved = db.session.scalar(
             db.select(User).where(User.email == "juana.quispe@gmail.com")
         )
         assert saved.apellido_paterno == "Quispe"
         assert saved.apellido_materno == "Mamani"
-        assert saved.admin_profile.numero_documento == "12345678"
         assert saved.admin_profile.unidad == "Promoción Productiva"
         assert db.session.scalar(
             db.select(AdminUnit).where(AdminUnit.nombre == "Promoción Productiva")
         )
-        assert saved.check_password("12345678JQ")
+        assert saved.check_password(response.json["temporary_password"])
 
     units = client.get("/api/admin/units", headers=auth(token))
     assert units.status_code == 200
@@ -249,7 +250,6 @@ def test_admin_acepta_last_name_de_clientes_antiguos(app, client):
         json={
             "first_name": "Cliente",
             "last_name": "Anterior",
-            "numero_documento": "87654321",
             "email": "cliente.anterior@gmail.com",
             "role": "ADMIN",
         },
@@ -258,7 +258,8 @@ def test_admin_acepta_last_name_de_clientes_antiguos(app, client):
     assert response.status_code == 201
     assert response.json["data"]["apellido_paterno"] == "Anterior"
     assert response.json["data"]["apellido_materno"] is None
-    assert response.json["temporary_password"] == "87654321CA"
+    assert response.json["temporary_password"].startswith("A1!")
+    assert len(response.json["temporary_password"]) == 16
 
 
 def test_editar_admin_conserva_role_canonico(app, client):

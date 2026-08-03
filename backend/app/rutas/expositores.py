@@ -7,7 +7,6 @@ from sqlalchemy import func, select
 
 from ..extensiones import db
 from ..modelos import (
-    AdminProfile,
     DocumentType,
     Exhibitor,
     ExhibitorType,
@@ -61,14 +60,14 @@ def update_exhibitor_fields(exhibitor, data):
     if "correo" in data:
         email = (data.get("correo") or "").lower().strip()
         if not valid_gmail(email):
-            raise ValueError("El correo debe ser una dirección @gmail.com válida")
+            raise ValueError("El correo debe ser una direccion electrónica válida")
         duplicate = db.session.scalar(
             select(Exhibitor.id).where(
                 Exhibitor.correo == email, Exhibitor.id != exhibitor.id
             )
         )
         if duplicate:
-            raise ValueError("El Gmail ya está registrado")
+            raise ValueError("El correo electrónico ya esta registrado")
         exhibitor.correo = email
         exhibitor.user.email = email
     if "telefono_whatsapp" in data:
@@ -202,18 +201,14 @@ def create_exhibitor():
     )
     apellido_materno = data.get("apellido_materno_responsable")
     if not valid_gmail(email):
-        return error("El correo debe ser una dirección @gmail.com válida")
+        return error("El correo debe ser una dirección electrónica válida")
     if len(type_ids) != 1:
         return error("Seleccione un solo tipo de expositor")
     if db.session.scalar(select(User.id).where(User.email == email)):
-        return error("El Gmail ya está registrado", 409)
+        return error("El correo electrónico ya esta registrado", 409)
     if db.session.scalar(
         select(Exhibitor.id).where(
             Exhibitor.numero_documento == data.get("numero_documento")
-        )
-    ) or db.session.scalar(
-        select(AdminProfile.id).where(
-            AdminProfile.numero_documento == data.get("numero_documento")
         )
     ):
         return error("El documento ya está registrado", 409)

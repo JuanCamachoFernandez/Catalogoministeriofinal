@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import secrets
+import string
 
 from flask import Blueprint, request
 from sqlalchemy import func, select
@@ -28,6 +30,7 @@ from ..utilidades import document_initial_password, valid_gmail
 from ..esquemas import admin_user_json, error, paginate, validate_json, validated_json
 from ..esquemas.administracion import AdminCreateSchema, AdminUpdateSchema, UserStatusSchema
 from .autenticacion import strong_password
+from ..servicios.servicio_correo import BrevoEmailService, EmailDeliveryError
 from ..servicios import (
     audit,
     audit_description,
@@ -54,6 +57,44 @@ def _delete_profile_photo(url, public_id):
         delete_cloudinary_upload(public_id)
     elif url:
         delete_managed_upload(url, "perfiles")
+
+
+def _admin_temporary_password():
+    alphabet = string.ascii_letters + string.digits + "!@#$%"
+    return "A1!" + "".join(secrets.choice(alphabet) for _ in range(13))
+
+
+def _release_deleted_user_identity(user):
+    identifier = str(user.id).replace("-", "")
+    user.username = f"deleted.{identifier[:24]}"
+    user.email = f"deleted.{identifier[:24]}@usuarios.invalid"
+
+
+def _send_admin_credentials(user, password):
+    full_name = " ".join(
+        filter(None, [user.first_name, user.apellido_paterno or user.last_name, user.apellido_materno])
+    )
+    try:
+        result = BrevoEmailService().send_temporary_credentials(
+            user.email,
+            full_name or user.username,
+            user.username,
+            password,
+        )
+        audit(
+            "ENVIAR_CREDENCIALES",
+            "Usuario",
+            user.id,
+            result="SUCCESS" if result.get("sent") else "PENDING",
+        )
+    except EmailDeliveryError:
+        audit(
+            "ENVIAR_CREDENCIALES",
+            "Usuario",
+            user.id,
+            result="FAILED",
+        )
+    db.session.commit()
 
 
 def ensure_admin_unit(value):
@@ -109,12 +150,12 @@ def update_own_admin_profile():
     if "email" in data:
         email = (data.get("email") or "").lower().strip()
         if not valid_gmail(email):
-            return error("El correo debe ser una dirección @gmail.com válida")
+            return error("El correo debe ser una direccion electronica valida")
         duplicate = db.session.scalar(
             select(User.id).where(User.email == email, User.id != user.id)
         )
         if duplicate:
-            return error("El Gmail ya está registrado", 409)
+            return error("El correo electronico ya esta registrado", 409)
         user.email = email
     if "apellido_paterno" not in data:
         data["apellido_paterno"] = data.get("paternal_last_name") or data.get("last_name")
@@ -129,19 +170,6 @@ def update_own_admin_profile():
     if not profile:
         profile = AdminProfile(user_id=user.id)
         db.session.add(profile)
-    if "numero_documento" in data:
-        numero_documento = (data.get("numero_documento") or "").strip()
-        duplicate = db.session.scalar(
-            select(AdminProfile.id).where(
-                AdminProfile.numero_documento == numero_documento,
-                AdminProfile.user_id != user.id,
-            )
-        ) or db.session.scalar(
-            select(Exhibitor.id).where(Exhibitor.numero_documento == numero_documento)
-        )
-        if duplicate:
-            return error("El número de documento ya está registrado", 409)
-        profile.numero_documento = numero_documento
     for field in ("cargo", "unidad", "observaciones"):
         if field in data:
             value = ensure_admin_unit(data.get(field)) if field == "unidad" else data.get(field)
@@ -350,7 +378,6 @@ def create_admin_user():
         or data.get("last_name")
     )
     apellido_materno = data.get("apellido_materno") or data.get("maternal_last_name")
-    numero_documento = (data.get("numero_documento") or "").strip()
     try:
         role = Role(data.get("role", Role.ADMIN.value))
     except ValueError:
@@ -358,23 +385,12 @@ def create_admin_user():
     if role != Role.ADMIN:
         return error("Rol administrativo inválido")
     if not valid_gmail(email):
-        return error("El correo debe ser una dirección @gmail.com válida")
+        return error("El correo debe ser una dirección electronica válida")
     if db.session.scalar(select(User.id).where(User.email == email)):
-        return error("El Gmail ya está registrado", 409)
-    if not data.get("first_name") or not apellido_paterno or not numero_documento:
-        return error("Nombres, apellido paterno y número de CI son obligatorios")
-    document_exists = db.session.scalar(
-        select(AdminProfile.id).where(
-            AdminProfile.numero_documento == numero_documento
-        )
-    ) or db.session.scalar(
-        select(Exhibitor.id).where(Exhibitor.numero_documento == numero_documento)
-    )
-    if document_exists:
-        return error("El número de documento ya está registrado", 409)
-    password = document_initial_password(
-        numero_documento, data["first_name"], apellido_paterno
-    )
+        return error("El correo electrónico ya esta registrado", 409)
+    if not data.get("first_name") or not apellido_paterno:
+        return error("Nombres y apellido paterno son obligatorios")
+    password = _admin_temporary_password()
     unit_name = ensure_admin_unit(data.get("unidad"))
     user = User(
         username=unique_username(data["first_name"], apellido_paterno),
@@ -397,7 +413,6 @@ def create_admin_user():
     db.session.add(
         AdminProfile(
             user_id=user.id,
-            numero_documento=numero_documento,
             cargo=data.get("cargo"),
             unidad=unit_name,
             observaciones=data.get("observaciones"),
@@ -411,6 +426,7 @@ def create_admin_user():
         "username": user.username,
         "temporary_password": password,
     }
+    _send_admin_credentials(user, password)
     return response, 201
 
 
@@ -442,12 +458,12 @@ def update_admin_user(user_id):
     if "email" in data:
         email = (data.get("email") or "").lower().strip()
         if not valid_gmail(email):
-            return error("El correo debe ser una dirección @gmail.com válida")
+            return error("El correo debe ser una dirección electrónica válida")
         duplicate = db.session.scalar(
             select(User.id).where(User.email == email, User.id != user.id)
         )
         if duplicate:
-            return error("El Gmail ya está registrado", 409)
+            return error("El correo electrónico ya esta registrado", 409)
         user.email = email
     if "apellido_paterno" not in data:
         data["apellido_paterno"] = data.get("paternal_last_name") or data.get("last_name")
@@ -459,21 +475,6 @@ def update_admin_user(user_id):
     if data.get("apellido_paterno"):
         user.last_name = data["apellido_paterno"]
     if user.admin_profile:
-        if "numero_documento" in data:
-            numero_documento = (data.get("numero_documento") or "").strip()
-            duplicate = db.session.scalar(
-                select(AdminProfile.id).where(
-                    AdminProfile.numero_documento == numero_documento,
-                    AdminProfile.id != user.admin_profile.id,
-                )
-            ) or db.session.scalar(
-                select(Exhibitor.id).where(
-                    Exhibitor.numero_documento == numero_documento
-                )
-            )
-            if duplicate:
-                return error("El número de documento ya está registrado", 409)
-            user.admin_profile.numero_documento = numero_documento
         for field in ("cargo", "unidad", "observaciones"):
             if field in data:
                 value = ensure_admin_unit(data.get(field)) if field == "unidad" else data.get(field)
@@ -531,8 +532,9 @@ def delete_admin_user(user_id):
         return error("Administrador no encontrado", 404)
     if target.id == actor.id:
         return error("No puede eliminar su propia cuenta", 409)
-    if target.role == Role.ADMIN and _active_admin_count() <= 1:
+    if target.role == Role.ADMIN and target.status == UserStatus.ACTIVE and _active_admin_count() <= 1:
         return error("No puede eliminar al último ADMIN activo", 409)
+    _release_deleted_user_identity(target)
     target.deleted_at = datetime.now(timezone.utc)
     target.status = UserStatus.INACTIVE
     if target.role == Role.PRODUCTIVE_UNIT_RESPONSIBLE:
@@ -560,13 +562,11 @@ def admin_reset_password(user_id):
         document = user.exhibitor.numero_documento
         first_name = user.exhibitor.nombre_responsable
         last_name = user.exhibitor.apellido_responsable
-    elif user.admin_profile and user.admin_profile.numero_documento:
-        document = user.admin_profile.numero_documento
-        first_name = user.first_name
-        last_name = user.apellido_paterno or user.last_name
+        password = document_initial_password(document, first_name, last_name)
+    elif user.role == Role.ADMIN:
+        password = _admin_temporary_password()
     else:
-        return error("Registre el número de documento antes de restablecer", 409)
-    password = document_initial_password(document, first_name, last_name)
+        return error("Usuario no elegible para restablecer contraseña", 409)
     user.set_password(password)
     user.must_change_password = True
     user.status = UserStatus.ACTIVE
@@ -579,6 +579,7 @@ def admin_reset_password(user_id):
         f"Contraseña restablecida para {user.username}",
     )
     db.session.commit()
+    _send_admin_credentials(user, password)
     return {
         "message": "Contraseña restablecida",
         "username": user.username,
