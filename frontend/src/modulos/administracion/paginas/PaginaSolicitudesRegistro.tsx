@@ -453,7 +453,7 @@ export default function PaginaSolicitudesRegistro() {
                   <h3>Decisión de la solicitud</h3>
                   <p>
                     La solicitud ya fue aprobada. Puede regenerar la
-                    contraseÃ±a temporal y reenviar el usuario actual si la
+                    contraseña temporal y reenviar el usuario actual si la
                     Unidad Productiva lo requiere.
                   </p>
                 </div>
