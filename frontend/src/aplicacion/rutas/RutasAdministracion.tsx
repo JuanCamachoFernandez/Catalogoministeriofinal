@@ -9,6 +9,7 @@ import {
 import { paginaDiferida } from "./paginaDiferida";
 import "../../modulos/registro/estilos/registro.css";
 import "../../modulos/administracion/estilos/administracion.css";
+import "../../modulos/reportes/estilos/reportes.css";
 
 const PaginaInicioAdministracion = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaResumen"), "PaginaInicioAdministracion");
 const PaginaSolicitudesRegistro = paginaDiferida(
@@ -33,6 +34,10 @@ const PaginaAdministradores = paginaDiferida(
   "default",
 );
 const PaginaAuditoria = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaAuditoria"), "PaginaAuditoria");
+const PaginaReportesAdministracion = paginaDiferida(
+  () => import("../../modulos/reportes/paginas/PaginaReportesAdministracion"),
+  "default",
+);
 
 function AdminRoute({
   feature,
@@ -67,4 +72,5 @@ export const rutasAdministracion = [
   route("/admin/ferias", "fairs", <PaginaFerias />),
   route("/admin/administradores", "administrator-accounts", <PaginaAdministradores />),
   route("/admin/auditoria", "audit", <PaginaAuditoria />),
+  route("/admin/reportes", "reports", <PaginaReportesAdministracion />),
 ];

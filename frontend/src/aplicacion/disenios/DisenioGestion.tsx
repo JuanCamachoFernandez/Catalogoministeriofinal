@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   CalendarDays,
   ClipboardList,
   Factory,
@@ -34,6 +35,7 @@ const adminNav: ReadonlyArray<
   ["/admin/ferias", "Ferias", CalendarDays, "fairs"],
   ["/admin/administradores", "Administradores", UsersRound, "administrator-accounts"],
   ["/admin/auditoria", "Auditoría", History, "audit"],
+  ["/admin/reportes", "Reportes", BarChart3, "reports"],
 ] as const;
 
 const unitNav = [

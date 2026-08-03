@@ -1,5 +1,6 @@
 from datetime import timedelta
 from io import BytesIO
+import re
 
 from PIL import Image
 from openpyxl import load_workbook
@@ -170,6 +171,15 @@ def test_reportes_pdf_excel_y_opciones(app, client):
     options = client.get("/api/reports/options", headers=auth(token))
     assert options.status_code == 200
     assert any(item["value"] == "categorias" for item in options.json["resources"])
+    assert {
+        "solicitudes",
+        "unidades_productivas",
+        "sectores_productivos",
+        "productos",
+        "ferias",
+        "administradores",
+        "auditoria",
+    }.issubset({item["value"] for item in options.json["resources"]})
 
     excel = client.get(
         "/api/reports/categorias?format=xlsx&status=active&columns=nombre,estado",
@@ -177,7 +187,10 @@ def test_reportes_pdf_excel_y_opciones(app, client):
     )
     assert excel.status_code == 200
     assert excel.data.startswith(b"PK")
-    assert "reporte_categorias_" in excel.headers["Content-Disposition"]
+    assert re.search(
+        r"Reporte_Categorias_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.xlsx",
+        excel.headers["Content-Disposition"],
+    )
     workbook = load_workbook(BytesIO(excel.data), read_only=True)
     sheet = workbook["Categorías"]
     assert list(sheet.values)[0] == ("Categoría", "Estado")
@@ -190,6 +203,20 @@ def test_reportes_pdf_excel_y_opciones(app, client):
     assert pdf.status_code == 200
     assert pdf.data.startswith(b"%PDF")
     assert pdf.mimetype == "application/pdf"
+
+    filtered_reports = (
+        "/api/reports/solicitudes?format=xlsx&status=PENDING&has_nit=false",
+        "/api/reports/unidades_productivas?format=xlsx&status=ACTIVE&has_social=true",
+        "/api/reports/sectores_productivos?format=xlsx&status=ACTIVE",
+        "/api/reports/productos?format=xlsx&status=AVAILABLE&price_min=10&price_max=100",
+        "/api/reports/ferias?format=xlsx&status=DRAFT&location=La%20Paz",
+        "/api/reports/administradores?format=xlsx&status=ACTIVE",
+        "/api/reports/auditoria?format=xlsx&action=GENERAR_REPORTE",
+    )
+    for report_url in filtered_reports:
+        response = client.get(report_url, headers=auth(token))
+        assert response.status_code == 200
+        assert response.data.startswith(b"PK")
 
     invalid = client.get(
         "/api/reports/ferias?format=pdf&date_from=no-es-fecha",

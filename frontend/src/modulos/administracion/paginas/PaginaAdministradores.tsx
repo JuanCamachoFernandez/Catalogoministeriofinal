@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, Pencil, Plus, Trash2, UserRoundCheck, UserRoundX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { api, type AdminUser, type Paged, type UserStatus } from "../../../compartido";
 import {
   BarraPaginacion,
@@ -152,18 +152,6 @@ export default function PaginaAdministradores() {
   });
 
   const data = datosPagina(list.data);
-
-  useEffect(() => {
-    if (!creating && !editing) {
-      setDraft(EMPTY_DRAFT);
-      return;
-    }
-    if (editing) {
-      setDraft(draftFromAdmin(editing));
-      return;
-    }
-    setDraft(EMPTY_DRAFT);
-  }, [creating, editing]);
 
   const closeForm = () => {
     setCreating(false);
@@ -678,6 +666,7 @@ export default function PaginaAdministradores() {
             setCreatedCredentials(null);
             setSelected(null);
             setEditing(null);
+            setDraft(EMPTY_DRAFT);
             setCreating(true);
           }}
         >
@@ -766,6 +755,7 @@ export default function PaginaAdministradores() {
                           onClick={() => {
                             setSelected(null);
                             setCreating(false);
+                            setDraft(draftFromAdmin(admin));
                             setEditing(admin);
                           }}
                           aria-label={`Editar ${admin.first_name}`}
