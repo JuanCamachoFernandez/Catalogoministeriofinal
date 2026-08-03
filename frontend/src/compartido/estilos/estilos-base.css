@@ -772,7 +772,7 @@ textarea.input {
   align-items: center;
   gap: 0.5rem;
   margin: 0 0 1rem;
-  font-size: 1.15rem;
+  font-size: 1.0rem;
 }
 .stats-grid {
   display: grid;
@@ -2518,7 +2518,7 @@ textarea.input {
 .input,
 .search-field,
 .searchable-select-trigger {
-  min-height: 48px;
+  min-height: 40px;
   border-color: #d8ceb1;
   border-radius: 0.8rem;
   background: #fffdf8;

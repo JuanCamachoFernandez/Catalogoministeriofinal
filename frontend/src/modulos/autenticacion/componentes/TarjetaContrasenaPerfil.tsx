@@ -83,7 +83,7 @@ export function TarjetaContrasenaPerfil() {
       <SecureInput label="Nueva contraseña" value={newPassword} onChange={setNewPassword} autoComplete="new-password"/>
       <SecureInput label="Confirmar nueva contraseña" value={confirmation} onChange={setConfirmation} autoComplete="new-password"/>
       <p className="form-hint full">Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo. No puede reutilizar la contraseña actual.</p>
-      <div className="profile-password-action full"><button className="btn" disabled={pending}><Save/>{pending ? "Guardando…" : "Guardar nueva contraseña"}</button></div>
+      <div className="profile-password-action full"><button className="admin-unit-action-button admin-profile-primary-button" disabled={pending}><Save/>{pending ? "Guardando…" : "Guardar nueva contraseña"}</button></div>
     </form>
   </section>;
 }

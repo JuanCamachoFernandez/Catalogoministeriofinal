@@ -108,7 +108,9 @@ export function DisenioGestion({
           <div className="header-user">
             <Link
               className="header-profile-link"
-              to={area === "admin" ? "/admin" : "/unidad-productiva/perfil"}
+              to={area === "admin" ? "/admin/perfil" : "/unidad-productiva/perfil"}
+              title="Ver/Editar perfil"
+              aria-label="Ver/Editar perfil"
             >
               {user?.foto_perfil ? (
                 <img src={urlRecurso(user.foto_perfil)} alt="Perfil" />

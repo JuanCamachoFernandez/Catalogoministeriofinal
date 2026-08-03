@@ -104,7 +104,7 @@ export function PaginaDetalleUnidadProductiva({
   return (
     <article className="admin-unit-detail-page">
       <button type="button" className="back-navigation" onClick={onBack}>
-        {"<-"} Volver al listado
+        {"←"} Volver al listado
       </button>
 
       <header className="admin-unit-detail-heading">
