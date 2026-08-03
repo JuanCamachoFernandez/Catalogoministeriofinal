@@ -131,7 +131,7 @@ def productive_unit_json(item, include_products=False):
         "sectores": _sector_links(UnitSector, "productive_unit_id", item.id),
     }
     if include_products:
-        from .productos import productive_product_json
+        from ..esquemas.productos import productive_product_json
 
         products = db.session.scalars(
             select(Product).where(

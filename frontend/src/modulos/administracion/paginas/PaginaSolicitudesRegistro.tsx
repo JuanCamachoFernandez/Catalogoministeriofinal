@@ -452,8 +452,9 @@ export default function PaginaSolicitudesRegistro() {
                 <div>
                   <h3>Decisión de la solicitud</h3>
                   <p>
-                    La solicitud ya fue aprobada. Puede reenviar las
-                    credenciales si la Unidad Productiva las requiere.
+                    La solicitud ya fue aprobada. Puede regenerar la
+                    contraseÃ±a temporal y reenviar el usuario actual si la
+                    Unidad Productiva lo requiere.
                   </p>
                 </div>
                 <InsigniaEstado value={selected.estado} />
@@ -463,6 +464,7 @@ export default function PaginaSolicitudesRegistro() {
                 <button
                   type="button"
                   className="admin-request-decision-button admin-request-resend-button"
+                  title="Regenera una contraseña temporal y reenvía el usuario actual por correo."
                   onClick={() =>
                     void act(
                       `/admin/registration-requests/${selected.id}/resend-credentials`,

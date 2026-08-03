@@ -4,8 +4,8 @@ import { CheckCircle2, Clock3, KeyRound, Link2, Mail, Send } from "lucide-react"
 import { Link } from "react-router-dom";
 import { errorApi, type RegistrationRequest } from "../../../compartido";
 import { CajaError, ProveedorRetroalimentacion, Campo, EstadoCarga, useRetroalimentacion } from "../../../compartido/componentes";
-import { EncabezadoPublico } from "../../catalogo-publico/componentes/EncabezadoPublico";
 import { BOLIVIA_DEPARTMENTS } from "../../../compartido/constantes/ubicacionesBolivia";
+import { EstructuraPublica } from "../../catalogo-publico/componentes/EstructuraPublica";
 import {
   EMAIL_PATTERN,
   registroVacio,
@@ -19,6 +19,7 @@ import {
   type BorradorProductoSolicitado,
 } from "../componentes/formularioRegistro";
 import { servicioRegistro } from "../servicios/servicioRegistro";
+import "../../catalogo-publico/estilos/catalogo-publico.css";
 import "../estilos/registro.css";
 
 const mensaje = (error: unknown) =>
@@ -145,9 +146,8 @@ function PaginaRegistroContent() {
   });
   if (created)
     return (
-      <>
-        <EncabezadoPublico />
-        <main className="container public-main registration-page">
+      <EstructuraPublica>
+        <section className="registration-page">
           <section className="registration-success">
             {" "}
             <div className="registration-success-icon">
@@ -219,8 +219,8 @@ function PaginaRegistroContent() {
               Volver a las ferias
             </Link>{" "}
           </section>
-        </main>
-      </>
+        </section>
+      </EstructuraPublica>
     );
   const change = (key: keyof BorradorRegistro, value: string) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -290,9 +290,8 @@ function PaginaRegistroContent() {
     mutation.mutate();
   };
   return (
-    <>
-      <EncabezadoPublico />
-      <main className="container public-main registration-page">
+    <EstructuraPublica>
+      <section className="registration-page">
         {" "}
         <header className="registration-intro">
           <h1>Solicitud de Unidad Productiva</h1>
@@ -809,7 +808,7 @@ function PaginaRegistroContent() {
             </button>
           </footer>{" "}
         </form>{" "}
-      </main>
-    </>
+      </section>
+    </EstructuraPublica>
   );
 }

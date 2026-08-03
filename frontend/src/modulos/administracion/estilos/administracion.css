@@ -1663,6 +1663,31 @@
   font-size: 0.9rem;
 }
 
+.admin-unit-detail-credentials {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, max-content);
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid #e8e8e2;
+  border-radius: 0.8rem;
+  background: #fbfbf8;
+  padding: 1rem 1.1rem;
+}
+
+.admin-unit-detail-credentials h3 {
+  margin: 0;
+  color: #343630;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.admin-unit-detail-credentials p {
+  margin: 0.3rem 0 0;
+  color: #6f7068;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .admin-unit-detail-section {
   display: grid;
   gap: 0.8rem;
@@ -3044,9 +3069,16 @@
   .admin-request-decision-confirmed {
     grid-template-columns: 1fr;
   }
+  .admin-unit-detail-credentials {
+    grid-template-columns: 1fr;
+  }
   .admin-request-decision-button,
   .admin-request-review-page .btn-small,
   .back-navigation {
+    width: 100%;
+    justify-content: center;
+  }
+  .admin-unit-detail-credentials .admin-request-decision-button {
     width: 100%;
     justify-content: center;
   }

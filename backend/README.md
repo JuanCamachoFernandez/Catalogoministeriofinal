@@ -50,7 +50,7 @@ Desarrollo y producción deben usar las migraciones:
 .\.venv\Scripts\flask.exe --app app:create_app db current
 ```
 
-La cadena tiene una sola cabeza y usa la tabla `version_migraciones`. Las
+La cadena tiene una sola cabeza y usa la tabla estándar `alembic_version`. Las
 migraciones están orientadas a PostgreSQL y conservan sus restricciones,
 índices y tipos. No se ejecuta `create_all()` al iniciar la aplicación ni durante
 una solicitud.
