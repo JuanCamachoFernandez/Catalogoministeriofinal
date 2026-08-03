@@ -1,9 +1,9 @@
 import type { UserRole } from "../autenticacion/roles";
 
 export type UserStatus = "ACTIVE" | "INACTIVE" | "LOCKED" | "BLOCKED";
-export type ProductStatus = "AVAILABLE" | "OUT_OF_STOCK" | "INACTIVE" | "DELETED";
+export type ProductStatus = "DRAFT" | "AVAILABLE" | "OUT_OF_STOCK" | "RETIRED" | "DELETED";
 export type FairStatus = "DRAFT" | "PUBLISHED" | "DISABLED" | "FINISHED";
-export type AssignmentStatus = "PENDING" | "AUTHORIZED" | "REJECTED" | "REVOKED";
+export type AssignmentStatus = "PENDING" | "AUTHORIZED" | "REVOKED";
 
 export interface SessionUser {
   id: string;
@@ -44,7 +44,7 @@ export interface Paged<T> {
 
 export type RegistrationStatus = "PENDING" | "APPROVED" | "REJECTED";
 export type NotificationStatus = "PENDING" | "SENT" | "FAILED";
-export type ProductiveUnitStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+export type ProductiveUnitStatus = "ACTIVE" | "INACTIVE";
 export type SectorStatus = "ACTIVE" | "INACTIVE";
 export type CanonicalProductStatus = "DRAFT" | "AVAILABLE" | "OUT_OF_STOCK" | "RETIRED";
 

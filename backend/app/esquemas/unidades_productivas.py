@@ -192,7 +192,7 @@ class ProductiveUnitUpdateSchema(Schema):
 class ProductiveUnitStatusSchema(Schema):
     estado = fields.String(
         required=True,
-        validate=validate.OneOf(["ACTIVE", "INACTIVE", "SUSPENDED"]),
+        validate=validate.OneOf(["ACTIVE", "INACTIVE"]),
     )
 
 

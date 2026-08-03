@@ -23,7 +23,6 @@ class FeriaStatus(str, enum.Enum):
 class AssignmentStatus(str, enum.Enum):
     PENDING = "PENDING"
     AUTHORIZED = "AUTHORIZED"
-    REJECTED = "REJECTED"
     REVOKED = "REVOKED"
     INACTIVE = "INACTIVE"
 
@@ -33,7 +32,6 @@ class ProductStatus(str, enum.Enum):
     AVAILABLE = "AVAILABLE"
     OUT_OF_STOCK = "OUT_OF_STOCK"
     RETIRED = "RETIRED"
-    INACTIVE = "INACTIVE"
     DELETED = "DELETED"
 
 
@@ -46,7 +44,6 @@ class RegistrationStatus(str, enum.Enum):
 class ProductiveUnitStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
-    SUSPENDED = "SUSPENDED"
 
 
 class SectorStatus(str, enum.Enum):
