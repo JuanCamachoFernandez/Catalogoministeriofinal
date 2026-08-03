@@ -103,9 +103,10 @@ def test_admin_puede_registrar_una_unidad_sin_logo_ni_productos(app, client):
         db.session.commit()
         sector_id = sector.id
 
+    admin_headers = _admin(client)
     response = client.post(
         "/api/admin/productive-units",
-        headers=_admin(client),
+        headers=admin_headers,
         json={
             "nombre_comercial": "Tejidos del Altiplano",
             "razon_social": "Tejidos del Altiplano SRL",
@@ -123,6 +124,12 @@ def test_admin_puede_registrar_una_unidad_sin_logo_ni_productos(app, client):
     )
 
     assert response.status_code == 201
+    detail = client.get(
+        f"/api/admin/productive-units/{response.json['id']}",
+        headers=admin_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json["productos"] == []
     with app.app_context():
         unit = db.session.get(ProductiveUnit, UUID(response.json["id"]))
         assert unit.logo_url is None
@@ -417,6 +424,84 @@ def test_solicitud_aprobacion_y_credenciales_temporales(app, client, monkeypatch
     with app.app_context():
         old_link = db.session.get(UnitSector, old_link_id)
         assert old_link.estado == SectorStatus.ACTIVE
+
+
+def test_admin_puede_reenviar_credenciales_desde_detalle_unidad(app, client, monkeypatch):
+    monkeypatch.setattr(
+        "app.rutas.unidades_productivas._temporary_password",
+        lambda: "TemporalUnidad2026!",
+    )
+    monkeypatch.setattr(
+        "app.rutas.solicitudes_registro.BrevoEmailService.send_temporary_credentials",
+        lambda *args, **kwargs: {"sent": False},
+    )
+    with app.app_context():
+        headers = _admin(client)
+        sector = ProductiveSector(nombre="Artesania", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    created = client.post(
+        "/api/admin/productive-units",
+        headers=headers,
+        json={
+            "nombre_comercial": "Tejidos del Altiplano",
+            "razon_social": "Tejidos del Altiplano SRL",
+            "nit": "987654321",
+            "nombres_representante": "Lucia",
+            "apellido_paterno_representante": "Mamani",
+            "apellido_materno_representante": "Quispe",
+            "departamento": "La Paz",
+            "direccion_fisica": "Calle 2",
+            "telefono_whatsapp": "76543210",
+            "correo_electronico": "lucia@tejidos.bo",
+            "resena_comercial": "Tejidos artesanales de alpaca",
+            "sectores": [{"productive_sector_id": str(sector_id)}],
+        },
+    )
+    assert created.status_code == 201
+    unit_id = created.json["id"]
+
+    first_login = client.post(
+        "/api/auth/login",
+        json={"login": "lucia@tejidos.bo", "password": "TemporalUnidad2026!"},
+    )
+    assert first_login.status_code == 200
+
+    changed = client.post(
+        "/api/auth/change-password",
+        headers={"Authorization": f"Bearer {first_login.json['access_token']}"},
+        json={
+            "current_password": "TemporalUnidad2026!",
+            "new_password": "DefinitivaUnidad2026!",
+        },
+    )
+    assert changed.status_code == 200
+
+    monkeypatch.setattr(
+        "app.rutas.unidades_productivas._temporary_password",
+        lambda: "ReenvioUnidad2026!",
+    )
+    resent = client.post(
+        f"/api/admin/productive-units/{unit_id}/resend-credentials",
+        headers=headers,
+    )
+    assert resent.status_code == 200
+    assert resent.json["message"] == "Credenciales regeneradas"
+
+    old_login = client.post(
+        "/api/auth/login",
+        json={"login": "lucia@tejidos.bo", "password": "DefinitivaUnidad2026!"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/api/auth/login",
+        json={"login": "lucia@tejidos.bo", "password": "ReenvioUnidad2026!"},
+    )
+    assert new_login.status_code == 200
+    assert new_login.json["user"]["must_change_password"] is True
 
 
 def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypatch):

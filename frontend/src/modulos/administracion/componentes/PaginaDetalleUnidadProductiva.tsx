@@ -104,7 +104,7 @@ export function PaginaDetalleUnidadProductiva({
   return (
     <article className="admin-unit-detail-page">
       <button type="button" className="back-navigation" onClick={onBack}>
-        ← Volver al listado
+        {"<-"} Volver al listado
       </button>
 
       <header className="admin-unit-detail-heading">
@@ -133,6 +133,36 @@ export function PaginaDetalleUnidadProductiva({
           value={isDeleted ? "LOGICALLY_DELETED" : unit.data.estado}
         />
       </header>
+
+      <section className="admin-unit-detail-credentials">
+        <div>
+          <h3>Credenciales de acceso</h3>
+          <p>
+            Puede regenerar la contraseña temporal y reenviar el usuario actual
+            al correo de la unidad productiva cuando necesite recuperar el
+            acceso.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="admin-request-decision-button admin-request-resend-button"
+          disabled={isDeleted}
+          title={
+            isDeleted
+              ? "No es posible reenviar credenciales a una unidad inhabilitada."
+              : "Regenera una contraseña temporal y reenvía el usuario actual por correo."
+          }
+          onClick={() =>
+            act(
+              `/admin/productive-units/${unitId}/resend-credentials`,
+              "post",
+              "Las credenciales se regeneraron y se reenviaron al correo de la unidad.",
+            )
+          }
+        >
+          Reenviar credenciales
+        </button>
+      </section>
 
       <section className="admin-unit-detail-section">
         <h3>Datos de la unidad</h3>

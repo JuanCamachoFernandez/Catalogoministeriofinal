@@ -3,6 +3,7 @@
 /* Solicitud p?blica de Unidad Productiva */
 .registration-page {
   width: min(1080px, calc(100% - 2rem));
+  margin-inline: auto;
 }
 .registration-intro {
   max-width: 780px;

@@ -294,6 +294,33 @@ def get_productive_unit(unit_id):
     )
 
 
+@productive_unit_bp.post("/admin/productive-units/<uuid:unit_id>/resend-credentials")
+@roles(*ROLES_ADMINISTRACION_COMPLETA)
+def resend_productive_unit_credentials(unit_id):
+    item = _get_available_unit(unit_id)
+    if not item:
+        return error("Unidad Productiva no encontrada", 404)
+    request_item = db.session.get(RegistrationRequest, item.registration_request_id)
+    user = db.session.get(User, item.user_id)
+    if not request_item:
+        return error("La solicitud asociada no existe", 409)
+    if not user or user.deleted_at:
+        return error("La cuenta asociada no existe", 409)
+    password = _temporary_password()
+    user.set_password(password)
+    user.must_change_password = True
+    user.token_version += 1
+    request_item.correo_electronico = item.correo_electronico
+    db.session.commit()
+    _send_credentials(request_item, user, password)
+    audit("REENVIAR_CREDENCIALES", "ProductiveUnit", item.id)
+    db.session.commit()
+    return {
+        "message": "Credenciales regeneradas",
+        "notification_status": request_item.notification_status.value,
+    }
+
+
 @productive_unit_bp.get("/admin/productive-units/<uuid:unit_id>/participations")
 @roles(*ROLES_ADMINISTRACION_COMPLETA)
 def list_productive_unit_participations(unit_id):

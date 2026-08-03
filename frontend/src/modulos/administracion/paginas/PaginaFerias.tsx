@@ -103,27 +103,6 @@ export default function PaginaFerias() {
       return "La fecha de finalización no puede ser anterior a la fecha de inicio.";
     return control.validationMessage || `Revise el campo ${label}.`;
   };
-  const fieldFromServerError = (error: unknown) => {
-    const response = (
-      error as {
-        response?: {
-          data?: { details?: Record<string, unknown>; error?: string };
-        };
-      }
-    )?.response;
-    const details = response?.data?.details;
-    const detailedField = details ? Object.keys(details)[0] : "";
-    if (detailedField) return detailedField;
-    const errorMessage = (response?.data?.error ?? "").toLowerCase();
-    if (errorMessage.includes("nombre")) return "nombre";
-    if (errorMessage.includes("ubic")) return "ubicacion";
-    if (errorMessage.includes("departamento")) return "departamento";
-    if (errorMessage.includes("inicio")) return "fecha_inicio";
-    if (errorMessage.includes("fin")) return "fecha_fin";
-    if (errorMessage.includes("portada") || errorMessage.includes("imagen"))
-      return "cover";
-    return "";
-  };
   const list = useQuery({
       queryKey: ["canonical-fairs", page, q, dateFrom, dateTo],
       queryFn: () =>
