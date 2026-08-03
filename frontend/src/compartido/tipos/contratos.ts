@@ -19,7 +19,6 @@ export interface SessionUser {
 export interface AdminUser extends SessionUser {
   apellido_paterno: string | null;
   apellido_materno: string | null;
-  numero_documento: string | null;
   phone: string | null;
   status: UserStatus;
   cargo: string | null;

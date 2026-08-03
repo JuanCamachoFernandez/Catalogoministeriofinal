@@ -28,6 +28,10 @@ const PaginaProductosAdministracion = paginaDiferida(
   "default",
 );
 const PaginaFerias = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaFerias"), "default");
+const PaginaAdministradores = paginaDiferida(
+  () => import("../../modulos/administracion/paginas/PaginaAdministradores"),
+  "default",
+);
 const PaginaAuditoria = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaAuditoria"), "PaginaAuditoria");
 
 function AdminRoute({
@@ -61,5 +65,6 @@ export const rutasAdministracion = [
   route("/admin/sectores-productivos", "productive-sectors", <PaginaSectoresProductivos />),
   route("/admin/productos", "products", <PaginaProductosAdministracion />),
   route("/admin/ferias", "fairs", <PaginaFerias />),
+  route("/admin/administradores", "administrator-accounts", <PaginaAdministradores />),
   route("/admin/auditoria", "audit", <PaginaAuditoria />),
 ];

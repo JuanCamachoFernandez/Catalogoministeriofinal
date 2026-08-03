@@ -35,7 +35,6 @@ def admin_user_json(user):
         **user_json(user),
         "apellido_paterno": user.apellido_paterno,
         "apellido_materno": user.apellido_materno,
-        "numero_documento": profile.numero_documento if profile else None,
         "phone": user.phone,
         "status": user.status.value,
         "cargo": profile.cargo if profile else None,

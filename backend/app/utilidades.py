@@ -8,7 +8,7 @@ def normalize_whatsapp(value):
     if len(digits)==8: digits="591"+digits
     if len(digits)!=11 or not digits.startswith("591") or digits[3] not in "67": raise ValueError("Número de WhatsApp boliviano inválido")
     return digits
-def valid_gmail(value): return bool(re.fullmatch(r"[A-Za-z0-9._%+-]+@gmail\.com",value or "",re.I))
+def valid_gmail(value): return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",value or "",re.I))
 def document_initial_password(document_number, first_name, last_name):
     """Construye la clave inicial solicitada sin alterar el número de documento."""
     document = str(document_number or "").strip()
