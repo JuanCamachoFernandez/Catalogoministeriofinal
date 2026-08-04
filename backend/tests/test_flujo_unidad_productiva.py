@@ -565,11 +565,8 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
         headers=admin_headers,
         json={"productive_unit_id": unit_id},
     )
-    authorized = client.post(
-        f"/api/admin/fairs/{fair.json['id']}/participations/{participation.json['id']}/authorize",
-        headers=admin_headers,
-    )
-    assert authorized.status_code == 200
+    assert participation.status_code == 201
+    assert participation.json["estado"] == "AUTHORIZED"
     public_products = client.get("/api/public/products")
     assert public_products.status_code == 200
     assert public_products.json["pagination"]["total"] == 3
@@ -671,6 +668,128 @@ def test_catalogo_deriva_todos_los_productos_de_la_unidad(app, client, monkeypat
     # Participation history remains AUTHORIZED, but the complete unit disappears
     # dynamically when it drops below three publishable products.
     assert client.get("/api/public/products").json["pagination"]["total"] == 0
+
+
+def test_participacion_nueva_queda_pendiente_si_la_unidad_no_cumple_reglas(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Metalurgia", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    admin_headers = _admin(client)
+    unit = client.post(
+        "/api/admin/productive-units",
+        headers=admin_headers,
+        json={
+            "nombre_comercial": "Unidad Pendiente Feria",
+            "razon_social": "Unidad Pendiente Feria SRL",
+            "nit": "999111222",
+            "nombres_representante": "Mariela",
+            "apellido_paterno_representante": "Lopez",
+            "apellido_materno_representante": "Quisbert",
+            "departamento": "La Paz",
+            "direccion_fisica": "Av. Siempre Viva 123",
+            "telefono_whatsapp": "70011122",
+            "correo_electronico": "pendiente.feria@gmail.com",
+            "resena_comercial": "Unidad creada sin productos publicables para validar pendiente.",
+            "sectores": [{"productive_sector_id": str(sector_id)}],
+        },
+    )
+    assert unit.status_code == 201
+
+    today = datetime.now(ZoneInfo("America/La_Paz")).date().isoformat()
+    fair = client.post(
+        "/api/admin/fairs",
+        headers=admin_headers,
+        json={
+            "nombre": "Feria pendiente por reglas",
+            "ubicacion": "La Paz",
+            "fecha_inicio": today,
+            "fecha_fin": today,
+        },
+    )
+    assert fair.status_code == 201
+
+    participation = client.post(
+        f"/api/admin/fairs/{fair.json['id']}/participations",
+        headers=admin_headers,
+        json={"productive_unit_id": unit.json["id"]},
+    )
+    assert participation.status_code == 201
+    assert participation.json["estado"] == "PENDING"
+
+    authorize = client.post(
+        f"/api/admin/fairs/{fair.json['id']}/participations/{participation.json['id']}/authorize",
+        headers=admin_headers,
+    )
+    assert authorize.status_code == 409
+    assert "al menos tres productos publicables" in authorize.json["error"]
+
+
+def test_unidad_revocada_vuelve_a_poder_asignarse(app, client):
+    with app.app_context():
+        sector = ProductiveSector(nombre="Vidrio", es_otro=False)
+        db.session.add(sector)
+        db.session.commit()
+        sector_id = sector.id
+
+    admin_headers = _admin(client)
+    unit = client.post(
+        "/api/admin/productive-units",
+        headers=admin_headers,
+        json={
+            "nombre_comercial": "Unidad Reasignable",
+            "razon_social": "Unidad Reasignable SRL",
+            "nit": "999333444",
+            "nombres_representante": "Paola",
+            "apellido_paterno_representante": "Rojas",
+            "apellido_materno_representante": "Mendoza",
+            "departamento": "La Paz",
+            "direccion_fisica": "Zona Sur 456",
+            "telefono_whatsapp": "70033344",
+            "correo_electronico": "reasignable.feria@gmail.com",
+            "resena_comercial": "Unidad para validar revocación y nueva asignación.",
+            "sectores": [{"productive_sector_id": str(sector_id)}],
+        },
+    )
+    assert unit.status_code == 201
+
+    today = datetime.now(ZoneInfo("America/La_Paz")).date().isoformat()
+    fair = client.post(
+        "/api/admin/fairs",
+        headers=admin_headers,
+        json={
+            "nombre": "Feria de reasignación",
+            "ubicacion": "La Paz",
+            "fecha_inicio": today,
+            "fecha_fin": today,
+        },
+    )
+    assert fair.status_code == 201
+
+    first = client.post(
+        f"/api/admin/fairs/{fair.json['id']}/participations",
+        headers=admin_headers,
+        json={"productive_unit_id": unit.json["id"]},
+    )
+    assert first.status_code == 201
+    assert first.json["estado"] == "PENDING"
+
+    revoked = client.post(
+        f"/api/admin/fairs/{fair.json['id']}/participations/{first.json['id']}/revoke",
+        headers=admin_headers,
+    )
+    assert revoked.status_code == 200
+
+    second = client.post(
+        f"/api/admin/fairs/{fair.json['id']}/participations",
+        headers=admin_headers,
+        json={"productive_unit_id": unit.json["id"]},
+    )
+    assert second.status_code == 200
+    assert second.json["id"] == first.json["id"]
+    assert second.json["estado"] == "PENDING"
 
 
 def test_admin_lista_solicitudes_filtra_por_rango_de_fechas(app, client):

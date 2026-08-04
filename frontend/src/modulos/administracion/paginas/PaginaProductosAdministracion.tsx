@@ -55,6 +55,7 @@ export default function PaginaProductosAdministracion() {
         .get<Paged<CanonicalProduct>>("/admin/products", {
           params: {
             page,
+            per_page: 10,
             q: q || undefined,
             estado: status || undefined,
             productive_unit_id: productiveUnitId || undefined,

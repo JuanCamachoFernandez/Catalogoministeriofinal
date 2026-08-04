@@ -29,4 +29,7 @@ class FairParticipation(TimestampMixin, db.Model):
 
     @classmethod
     def for_fair_query(cls, fair_id):
-        return select(cls).where(cls.fair_id == fair_id)
+        return select(cls).where(
+            cls.fair_id == fair_id,
+            cls.estado.notin_([AssignmentStatus.REVOKED, AssignmentStatus.INACTIVE]),
+        )

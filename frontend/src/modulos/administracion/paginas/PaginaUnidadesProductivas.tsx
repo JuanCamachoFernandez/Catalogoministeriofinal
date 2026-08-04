@@ -64,6 +64,7 @@ export default function PaginaUnidadesProductivas() {
             estado: statusFilter,
             sector_ids: sectorFilter || undefined,
             page,
+            per_page: 10,
             include_deleted: deletedFilter ? undefined : true,
             deleted: deletedFilter,
           },

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { ArrowDownUp, Ban, CalendarCheck2, Pencil, Plus, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import {
   api,
   urlRecurso,
   type CanonicalFair,
-  type FairParticipation,
   type Paged,
-  type ProductiveUnit,
 } from "../../../compartido";
 import { BOLIVIA_DEPARTMENTS } from "../../../compartido/constantes/ubicacionesBolivia";
 import {
@@ -21,6 +20,7 @@ import {
   CampoBusqueda,
   InsigniaEstado,
   ProgresoCarga,
+  SelectorBuscable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -43,6 +43,14 @@ const emptyFair: FairDraft = {
   fecha_fin: "",
 };
 
+const FAIR_STATUS_OPTIONS = [
+  { value: "", label: "Todos los estados" },
+  { value: "DRAFT", label: "Preparación" },
+  { value: "PUBLISHED", label: "Publicada" },
+  { value: "FINISHED", label: "Finalizada" },
+  { value: "DISABLED", label: "Cancelada" },
+];
+
 const FAIR_FIELD_LABELS: Record<string, string> = {
   nombre: "Nombre de la feria",
   descripcion: "Descripción",
@@ -55,14 +63,16 @@ const FAIR_FIELD_LABELS: Record<string, string> = {
 
 export default function PaginaFerias() {
   const formRef = useRef<HTMLFormElement | null>(null);
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
+  const [estado, setEstado] = useState("");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [editing, setEditing] = useState<CanonicalFair | null>(null),
     [creating, setCreating] = useState(false),
     [draft, setDraft] = useState(emptyFair),
-    [participants, setParticipants] = useState<CanonicalFair | null>(null),
     [saving, setSaving] = useState(false),
     [cover, setCover] = useState<File | null>(null),
     [coverPreview, setCoverPreview] = useState(""),
@@ -104,13 +114,16 @@ export default function PaginaFerias() {
     return control.validationMessage || `Revise el campo ${label}.`;
   };
   const list = useQuery({
-      queryKey: ["canonical-fairs", page, q, dateFrom, dateTo],
+      queryKey: ["canonical-fairs", page, q, estado, sortDir, dateFrom, dateTo],
       queryFn: () =>
         api
           .get<Paged<CanonicalFair>>("/admin/fairs", {
             params: {
               page,
+              per_page: 10,
               q: q || undefined,
+              estado: estado || undefined,
+              sort_dir: sortDir,
               date_from: dateFrom || undefined,
               date_to: dateTo || undefined,
             },
@@ -125,10 +138,10 @@ export default function PaginaFerias() {
     [coverPreview],
   );
   useEffect(() => {
-    if (creating) {
+    if (creating || editing) {
       document.body.classList.remove("modal-open");
     }
-  }, [creating]);
+  }, [creating, editing]);
   const open = (f?: CanonicalFair) => {
     setEditing(f ?? null);
     setCreating(!f);
@@ -496,7 +509,7 @@ export default function PaginaFerias() {
     </form>
   );
 
-  if (creating) {
+  if (creating || editing) {
     return (
       <section className="admin-unit-registration-page">
         <button
@@ -508,8 +521,10 @@ export default function PaginaFerias() {
         </button>
         <div className="registration-intro">
           <div>
-            <span className="eyebrow">Registrar Feria</span>
-            <h1>Nueva Feria</h1>
+            <span className="eyebrow">
+              {editing ? "Editar Feria" : "Registrar Feria"}
+            </span>
+            <h1>{editing ? "Editar Feria" : "Nueva Feria"}</h1>
           </div>
         </div>
         {fairForm}
@@ -541,6 +556,17 @@ export default function PaginaFerias() {
             setPage(1);
           }}
           placeholder="Buscar nombre o lugar de feria..."
+        />
+        <SelectorBuscable
+          value={estado}
+          options={FAIR_STATUS_OPTIONS}
+          onChange={(value) => {
+            setEstado(value);
+            setPage(1);
+          }}
+          placeholder="Todos los estados"
+          searchPlaceholder="Buscar estado..."
+          ariaLabel="Filtrar por estado"
         />
         <Campo label="Desde">
           <input
@@ -581,7 +607,23 @@ export default function PaginaFerias() {
                 <tr>
                   <th>Feria</th>
                   <th>Lugar</th>
-                  <th>Fechas</th>
+                  <th>
+                    <button
+                      type="button"
+                      className="admin-table-sort-button"
+                      onClick={() => {
+                        setSortDir((current) =>
+                          current === "asc" ? "desc" : "asc",
+                        );
+                        setPage(1);
+                      }}
+                      aria-label={`Ordenar por fecha de inicio ${sortDir === "asc" ? "descendente" : "ascendente"}`}
+                      title={`Ordenar por fecha de inicio ${sortDir === "asc" ? "descendente" : "ascendente"}`}
+                    >
+                      Fechas
+                      <ArrowDownUp size={15} />
+                    </button>
+                  </th>
                   <th>Estado</th>
                   <th>Acciones</th>
                 </tr>
@@ -601,22 +643,30 @@ export default function PaginaFerias() {
                       <InsigniaEstado value={f.estado} />
                     </td>
                     <td>
+                      <div className="admin-admins-actions">
                       <button
-                        className="btn-small"
+                        className="btn-small admin-sector-action-edit"
                         disabled={["FINISHED", "DISABLED"].includes(f.estado)}
                         onClick={() => open(f)}
+                        aria-label={`Editar ${f.nombre}`}
+                        title="Editar"
                       >
-                        Editar
+                        <Pencil size={16} />
                       </button>
                       <button
-                        className="btn-small"
-                        onClick={() => setParticipants(f)}
+                        className="btn-small admin-fair-action-manage"
+                        onClick={() =>
+                          navigate(`/admin/ferias/${f.id}/participaciones`)
+                        }
+                        aria-label={`Gestionar participaciones de ${f.nombre}`}
+                        title="Participaciones"
                       >
-                        Participaciones
+                        <Users size={16} />
                       </button>
                       {!["FINISHED", "DISABLED"].includes(f.estado) && (
                         <>
                           <BotonConfirmacion
+                            className="btn-small admin-fair-action-manage"
                             question="¿Finalizar esta feria?"
                             onConfirm={async () => {
                               await api.post(`/admin/fairs/${f.id}/finish`);
@@ -624,8 +674,10 @@ export default function PaginaFerias() {
                                 queryKey: ["canonical-fairs"],
                               });
                             }}
+                            confirmLabel="Finalizar"
+                            title="Finalizar"
                           >
-                            Finalizar
+                            <CalendarCheck2 size={16} />
                           </BotonConfirmacion>
                           <BotonConfirmacion
                             question="¿Deshabilitar esta feria?"
@@ -635,11 +687,14 @@ export default function PaginaFerias() {
                                 queryKey: ["canonical-fairs"],
                               });
                             }}
+                            confirmLabel="Deshabilitar"
+                            title="Deshabilitar"
                           >
-                            Deshabilitar
+                            <Ban size={16} />
                           </BotonConfirmacion>
                         </>
                       )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -648,16 +703,6 @@ export default function PaginaFerias() {
           </div>
           <BarraPaginacion pagination={data.pagination} onPageChange={setPage} />
         </>
-      )}{" "}
-      {editing && (
-        <Modal
-          title="Editar feria"
-          onClose={closeForm}
-          wide
-          className="fair-form-modal"
-        >
-          {fairForm}
-        </Modal>
       )}{" "}
       {showCoverPreview && coverPreview && (
         <Modal
@@ -678,139 +723,7 @@ export default function PaginaFerias() {
           </div>
         </Modal>
       )}{" "}
-      {participants && (
-        <ParticipationsModal
-          fair={participants}
-          onClose={() => setParticipants(null)}
-        />
-      )}{" "}
     </section>
   );
 }
-function ParticipationsModal({
-  fair,
-  onClose,
-}: {
-  fair: CanonicalFair;
-  onClose: () => void;
-}) {
-  const [unitId, setUnitId] = useState(""),
-    qc = useQueryClient(),
-    feedback = useRetroalimentacion();
-  const list = useQuery({
-    queryKey: ["fair-participations", fair.id],
-    queryFn: () =>
-      api
-        .get<Paged<FairParticipation>>(
-          `/admin/fairs/${fair.id}/participations`,
-          { params: { per_page: 100 } },
-        )
-        .then((r) => r.data.items),
-  });
-  const units = useQuery({
-    queryKey: ["productive-units", "options"],
-    queryFn: () =>
-      api
-        .get<Paged<ProductiveUnit>>("/admin/productive-units", {
-          params: { per_page: 100, estado: "ACTIVE" },
-        })
-        .then((r) => r.data.items),
-  });
-  const act = async (path: string) => {
-    try {
-      await api.post(path);
-      await qc.invalidateQueries({
-        queryKey: ["fair-participations", fair.id],
-      });
-    } catch (e) {
-      feedback.error("No se pudo actualizar", mensaje(e));
-    }
-  };
-  return (
-    <Modal title={`Participaciones: ${fair.nombre}`} onClose={onClose}>
-      <p>
-        Se asigna la Unidad Productiva completa; sus productos publicables se
-        incorporan automáticamente.
-      </p>
-      <div className="toolbar">
-        <select
-          className="input"
-          value={unitId}
-          onChange={(e) => setUnitId(e.target.value)}
-        >
-          <option value="">Seleccione Unidad Productiva</option>
-          {units.data?.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.nombre_comercial}
-            </option>
-          ))}
-        </select>
-        <button
-          className="btn"
-          disabled={!unitId}
-          onClick={async () => {
-            await api.post(`/admin/fairs/${fair.id}/participations`, {
-              productive_unit_id: unitId,
-              observaciones: null,
-            });
-            setUnitId("");
-            await qc.invalidateQueries({
-              queryKey: ["fair-participations", fair.id],
-            });
-          }}
-        >
-          Asignar unidad
-        </button>
-      </div>
-      {list.isLoading ? (
-        <EstadoCarga />
-      ) : list.data?.length ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Unidad Productiva</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.data.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.nombre_comercial}</td>
-                  <td>
-                    <InsigniaEstado value={p.estado} />
-                  </td>
-                  <td>
-                    <button
-                      className="btn-small"
-                      onClick={() =>
-                        void act(
-                          `/admin/fairs/${fair.id}/participations/${p.id}/authorize`,
-                        )
-                      }
-                    >
-                      Autorizar
-                    </button>
-                    <button
-                      className="btn-small"
-                      onClick={() =>
-                        void act(
-                          `/admin/fairs/${fair.id}/participations/${p.id}/revoke`,
-                        )
-                      }
-                    >
-                      Revocar
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <EstadoVacio title="Sin participaciones" />
-      )}
-    </Modal>
-  );
-}
+

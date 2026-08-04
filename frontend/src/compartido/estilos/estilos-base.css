@@ -889,6 +889,18 @@ textarea.input {
   background: #fff3cd;
   color: #715500;
 }
+.status-draft {
+  background: #fff3cd;
+  color: #715500;
+}
+.status-finished {
+  background: #edf3ff;
+  color: #37507a;
+}
+.status-retired {
+  background: #fde8e6;
+  color: #912319;
+}
 .status-negative {
   background: #fde8e6;
   color: #912319;

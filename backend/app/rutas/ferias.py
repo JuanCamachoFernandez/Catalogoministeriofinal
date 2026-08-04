@@ -599,7 +599,13 @@ def canonical_list_fairs():
         query = query.where(Fair.fecha_fin >= date_from)
     if date_to:
         query = query.where(Fair.fecha_inicio <= date_to)
-    return paginate(query.order_by(Fair.fecha_inicio.desc()), canonical_fair_json)
+    sort_dir = (request.args.get("sort_dir") or "desc").lower()
+    if sort_dir not in {"asc", "desc"}:
+        return error("Dirección de orden inválida")
+    ordered_query = query.order_by(
+        Fair.fecha_inicio.asc() if sort_dir == "asc" else Fair.fecha_inicio.desc()
+    )
+    return paginate(ordered_query, canonical_fair_json)
 
 
 @fair_bp.post("/admin/fairs")
@@ -799,6 +805,19 @@ def _participation_context(fair_id, participation_id=None):
     return fair, item
 
 
+def _authorize_participation_if_eligible(item, unit):
+    if not unit or unit.deleted_at or unit.estado != ProductiveUnitStatus.ACTIVE:
+        return False
+    publicable_count = len(db.session.scalars(Product.publicable_query(unit.id)).all())
+    if publicable_count < 3:
+        return False
+    item.estado = AssignmentStatus.AUTHORIZED
+    item.authorized_by = current_user().id
+    item.authorized_at = datetime.now(timezone.utc)
+    item.revoked_at = None
+    return True
+
+
 @fair_bp.get("/admin/fairs/<uuid:fair_id>/participations")
 @roles(*ROLES_ADMINISTRACION_COMPLETA)
 def canonical_list_participations(fair_id):
@@ -822,16 +841,35 @@ def canonical_create_participation(fair_id):
     unit = db.session.get(ProductiveUnit, data["productive_unit_id"])
     if not unit or unit.deleted_at:
         return error("Unidad Productiva no encontrada", 404)
-    existing = db.session.scalar(select(FairParticipation.id).where(FairParticipation.fair_id == fair.id, FairParticipation.productive_unit_id == unit.id))
-    if existing:
+    existing = db.session.scalar(
+        select(FairParticipation).where(
+            FairParticipation.fair_id == fair.id,
+            FairParticipation.productive_unit_id == unit.id,
+        )
+    )
+    if existing and existing.estado not in (AssignmentStatus.REVOKED, AssignmentStatus.INACTIVE):
         return error("La Unidad Productiva ya participa en la feria", 409)
-    item = FairParticipation(fair_id=fair.id, productive_unit_id=unit.id, observaciones=data.get("observaciones"), estado=AssignmentStatus.PENDING)
-    db.session.add(item)
+    item = existing or FairParticipation(
+        fair_id=fair.id,
+        productive_unit_id=unit.id,
+        observaciones=data.get("observaciones"),
+        estado=AssignmentStatus.PENDING,
+    )
+    item.observaciones = data.get("observaciones")
+    item.estado = AssignmentStatus.PENDING
+    item.authorized_by = None
+    item.authorized_at = None
+    item.revoked_at = None
+    auto_authorized = _authorize_participation_if_eligible(item, unit)
+    if not existing:
+        db.session.add(item)
     db.session.flush()
     audit("ASIGNAR", "FairParticipation", item.id)
+    if auto_authorized:
+        audit("AUTORIZAR", "FairParticipation", item.id)
     db.session.commit()
     invalidate_public_cache()
-    return participation_json(item), 201
+    return participation_json(item), (200 if existing else 201)
 
 
 @fair_bp.get("/admin/fairs/<uuid:fair_id>/participations/<uuid:participation_id>")
@@ -884,13 +922,8 @@ def canonical_authorize_participation(fair_id, participation_id):
     unit = db.session.get(ProductiveUnit, item.productive_unit_id)
     if not unit or unit.deleted_at or unit.estado != ProductiveUnitStatus.ACTIVE:
         return error("La Unidad Productiva no está activa", 409)
-    publicable_count = len(db.session.scalars(Product.publicable_query(unit.id)).all())
-    if publicable_count < 3:
+    if not _authorize_participation_if_eligible(item, unit):
         return error("Se requieren al menos tres productos publicables", 409)
-    item.estado = AssignmentStatus.AUTHORIZED
-    item.authorized_by = current_user().id
-    item.authorized_at = datetime.now(timezone.utc)
-    item.revoked_at = None
     audit("AUTORIZAR", "FairParticipation", item.id)
     db.session.commit()
     invalidate_public_cache()
