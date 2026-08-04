@@ -21,6 +21,7 @@ import {
   InsigniaEstado,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
+import { TarjetaContrasenaPerfil } from "../../autenticacion/componentes/TarjetaContrasenaPerfil";
 import { servicioUnidadProductiva } from "../servicios/servicioUnidadProductiva";
 import "../estilos/unidad-productiva.css";
 import "../estilos/perfil.css";
@@ -698,6 +699,8 @@ export function PaginaPerfilUnidadProductiva() {
           </div>
         </Modal>
       )}
+
+      <TarjetaContrasenaPerfil />
     </section>
   );
 }

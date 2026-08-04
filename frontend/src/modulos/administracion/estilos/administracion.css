@@ -3567,6 +3567,44 @@
   font-size: 0.84rem;
 }
 
+.admin-admins-detail-page .admin-unit-detail-heading .status {
+  flex-shrink: 0;
+}
+.admin-admins-detail-page .admin-unit-detail-section,
+.admin-admins-detail-page .admin-request-review-section,
+.admin-admins-detail-page .admin-request-decision-heading,
+.admin-admins-detail-page .admin-request-decision-confirmed,
+.admin-admins-detail-page .admin-unit-detail-grid > p,
+.admin-admins-detail-page .admin-unit-detail-card {
+  min-width: 0;
+}
+.admin-admins-detail-page .admin-unit-detail-grid strong,
+.admin-admins-detail-page .admin-unit-detail-grid p strong,
+.admin-admins-detail-page .admin-request-decision-confirmed p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 1024px) {
+  .admin-admins-detail-page .admin-unit-detail-identity {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: start;
+  }
+  .admin-admins-detail-page .admin-unit-detail-logo,
+  .admin-admins-detail-page .admin-unit-detail-logo-fallback {
+    width: 72px;
+    height: 72px;
+  }
+  .admin-admins-detail-page .admin-unit-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-admins-detail-page .admin-request-decision-confirmed {
+    align-items: start;
+    gap: 0.8rem;
+  }
+}
+
 @media (max-width: 760px) {
   .admin-admins-detail-grid,
   .admin-admins-form-grid {
@@ -3574,6 +3612,43 @@
   }
   .admin-admins-detail-hero {
     flex-direction: column;
+  }
+  .admin-admins-detail-page {
+    gap: 0.85rem;
+  }
+  .admin-admins-detail-page .admin-unit-detail-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+    padding-bottom: 0.95rem;
+  }
+  .admin-admins-detail-page .admin-unit-detail-heading .status {
+    align-self: flex-start;
+  }
+  .admin-admins-detail-page .admin-unit-detail-identity {
+    grid-template-columns: 1fr;
+  }
+  .admin-admins-detail-page .admin-unit-detail-logo,
+  .admin-admins-detail-page .admin-unit-detail-logo-fallback {
+    width: 68px;
+    height: 68px;
+  }
+  .admin-admins-detail-page .admin-unit-detail-heading h1 {
+    font-size: clamp(1.3rem, 5vw, 1.55rem);
+  }
+  .admin-admins-detail-page .admin-unit-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-admins-detail-page .admin-unit-detail-section,
+  .admin-admins-detail-page .admin-request-review-section {
+    gap: 0.7rem;
+  }
+  .admin-admins-detail-page .admin-request-decision-confirmed {
+    justify-items: stretch;
+  }
+  .admin-admins-detail-page .admin-request-decision-button {
+    width: 100%;
+    justify-content: center;
   }
   .admin-admins-actions {
     justify-content: flex-start;

@@ -445,7 +445,7 @@ export default function PaginaAdministradores() {
                 <span>2</span>
                 <div>
                   <h2>Datos institucionales</h2>
-                  <p>Registra el cargo, la unidad y cualquier observaciÃ³n de apoyo.</p>
+                  <p>Registra el cargo, la unidad y cualquier observación de apoyo.</p>
                 </div>
               </div>
               <div className="admin-admins-form-grid">

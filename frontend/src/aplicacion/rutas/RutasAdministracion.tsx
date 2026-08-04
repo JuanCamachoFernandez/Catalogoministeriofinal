@@ -36,6 +36,10 @@ const PaginaAdministradores = paginaDiferida(
 const PaginaAuditoria = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaAuditoria"), "PaginaAuditoria");
 const PaginaReportesAdministracion = paginaDiferida(
   () => import("../../modulos/reportes/paginas/PaginaReportesAdministracion"),
+    "default",
+);
+const PaginaPerfilAdmin = paginaDiferida(
+  () => import("../../modulos/administracion/paginas/PaginaPerfilAdmin"),
   "default",
 );
 
@@ -73,4 +77,5 @@ export const rutasAdministracion = [
   route("/admin/administradores", "administrator-accounts", <PaginaAdministradores />),
   route("/admin/auditoria", "audit", <PaginaAuditoria />),
   route("/admin/reportes", "reports", <PaginaReportesAdministracion />),
+  route("/admin/perfil", "dashboard", <PaginaPerfilAdmin />),
 ];
