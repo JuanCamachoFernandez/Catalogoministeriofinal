@@ -8,6 +8,7 @@ export function BarraPaginacion({
   mobileLabel = "Ver más resultados",
   scrollTargetId,
   scrollOnDesktop = true,
+  mobileCompact = true,
 }: {
   pagination: Pagination;
   onPage?: (page: number) => void;
@@ -15,9 +16,12 @@ export function BarraPaginacion({
   mobileLabel?: string;
   scrollTargetId?: string;
   scrollOnDesktop?: boolean;
+  mobileCompact?: boolean;
 }) {
   const changePage = onPage ?? onPageChange ?? (() => undefined);
+
   if (!pagination.total) return null;
+
   const selectDesktopPage = (page: number) => {
     changePage(page);
     if (
@@ -33,8 +37,12 @@ export function BarraPaginacion({
       });
     }
   };
+
   return (
-    <div className="pagination" aria-label="Paginación">
+    <div
+      className={`pagination${mobileCompact ? "" : " pagination-full-mobile"}`}
+      aria-label="Paginación"
+    >
       <span className="pagination-summary">
         Página {pagination.page} de {Math.max(1, pagination.pages)} ·{" "}
         {pagination.total} registros
@@ -74,7 +82,7 @@ export function BarraPaginacion({
           <ChevronRight size={18} />
         </button>
       </div>
-      {pagination.has_next && (
+      {mobileCompact && pagination.has_next && (
         <button
           className="btn pagination-mobile-more"
           onClick={(event) => {
@@ -88,5 +96,3 @@ export function BarraPaginacion({
     </div>
   );
 }
-
-

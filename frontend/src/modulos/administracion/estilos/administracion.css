@@ -3586,6 +3586,19 @@
 }
 
 @media (max-width: 1024px) {
+  .admin-unit-detail-identity {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: start;
+  }
+  .admin-unit-detail-logo,
+  .admin-unit-detail-logo-fallback {
+    width: 72px;
+    height: 72px;
+  }
+  .admin-unit-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .admin-admins-detail-page .admin-unit-detail-identity {
     grid-template-columns: 72px minmax(0, 1fr);
     gap: 0.8rem;
@@ -3606,6 +3619,68 @@
 }
 
 @media (max-width: 760px) {
+  .admin-unit-detail-page {
+    gap: 0.85rem;
+  }
+  .admin-unit-detail-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+    padding-bottom: 0.95rem;
+  }
+  .admin-unit-detail-heading .status {
+    align-self: flex-start;
+  }
+  .admin-unit-detail-identity {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+    align-items: start;
+  }
+  .admin-unit-detail-logo,
+  .admin-unit-detail-logo-fallback {
+    width: 68px;
+    height: 68px;
+  }
+  .admin-unit-detail-heading h1 {
+    font-size: clamp(1.3rem, 5vw, 1.55rem);
+  }
+  .admin-unit-detail-heading p,
+  .admin-unit-detail-identity small {
+    line-height: 1.5;
+  }
+  .admin-unit-detail-section,
+  .admin-unit-detail-credentials {
+    gap: 0.7rem;
+  }
+  .admin-unit-detail-grid {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+  .admin-unit-detail-grid > p,
+  .admin-unit-detail-card {
+    padding: 0.85rem;
+  }
+  .admin-unit-detail-grid strong,
+  .admin-unit-detail-card strong,
+  .admin-unit-detail-card p,
+  .admin-unit-detail-grid p strong,
+  .admin-unit-detail-grid p a {
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .admin-unit-detail-grid span,
+  .admin-unit-detail-card > span {
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+  .admin-unit-detail-actions {
+    justify-items: stretch;
+  }
+  .admin-unit-action-button,
+  .admin-unit-detail-actions .admin-request-decision-button {
+    width: 100%;
+    justify-content: center;
+  }
   .admin-admins-detail-grid,
   .admin-admins-form-grid {
     grid-template-columns: 1fr;

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Pencil, UserRoundCheck, UserRoundX } from "lucide-react";
 import { useState } from "react";
 import { api, type Paged, type ProductiveSector } from "../../../compartido";
 import {
@@ -118,33 +118,43 @@ export default function PaginaSectoresProductivos() {
                       <InsigniaEstado value={item.estado} />
                     </td>
                     <td>
-                      <button
-                        className="btn-small admin-sector-action-button admin-sector-action-edit"
-                        onClick={() => open(item)}
-                      >
-                        Editar
-                      </button>{" "}
-                      <button
-                        className={`btn-small admin-sector-action-button ${
-                          item.estado === "ACTIVE"
-                            ? "admin-sector-action-disable"
-                            : "admin-sector-action-enable"
-                        }`}
-                        onClick={async () => {
-                          await api.patch(
-                            `/admin/productive-sectors/${item.id}/status`,
-                            {
-                              estado:
-                                item.estado === "ACTIVE" ? "INACTIVE" : "ACTIVE",
-                            },
-                          );
-                          await qc.invalidateQueries({
-                            queryKey: ["productive-sectors"],
-                          });
-                        }}
-                      >
-                        {item.estado === "ACTIVE" ? "Deshabilitar" : "Activar"}
-                      </button>
+                      <div className="admin-admins-actions">
+                        <button
+                          className="btn-small admin-sector-action-button admin-sector-action-edit"
+                          onClick={() => open(item)}
+                          aria-label={`Editar ${item.nombre}`}
+                          title="Editar"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          className={`btn-small admin-sector-action-button ${
+                            item.estado === "ACTIVE"
+                              ? "admin-sector-action-disable"
+                              : "admin-sector-action-enable"
+                          }`}
+                          aria-label={`${item.estado === "ACTIVE" ? "Deshabilitar" : "Activar"} ${item.nombre}`}
+                          title={item.estado === "ACTIVE" ? "Deshabilitar" : "Activar"}
+                          onClick={async () => {
+                            await api.patch(
+                              `/admin/productive-sectors/${item.id}/status`,
+                              {
+                                estado:
+                                  item.estado === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                              },
+                            );
+                            await qc.invalidateQueries({
+                              queryKey: ["productive-sectors"],
+                            });
+                          }}
+                        >
+                          {item.estado === "ACTIVE" ? (
+                            <UserRoundX size={16} />
+                          ) : (
+                            <UserRoundCheck size={16} />
+                          )}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
