@@ -236,6 +236,7 @@ export default function PaginaUnidadesProductivas() {
                 <tr>
                   <th>Unidad Productiva</th>
                   <th>Representante</th>
+                  <th>Departamento</th>
                   <th>Correo</th>
                   <th>Teléfono</th>
                   <th>Estado</th>
@@ -249,6 +250,7 @@ export default function PaginaUnidadesProductivas() {
                       <strong>{item.nombre_comercial}</strong>
                     </td>
                     <td>{item.nombre_representante}</td>
+                    <td>{item.departamento}</td>
                     <td>{item.correo_electronico}</td>
                     <td>{item.telefono_whatsapp}</td>
                     <td>
