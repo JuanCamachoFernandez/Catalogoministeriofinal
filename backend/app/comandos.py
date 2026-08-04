@@ -328,33 +328,156 @@ def registrar_comandos(app):
             ends_in=12,
             status=FeriaStatus.PUBLISHED,
         )
-        ensure_fair(
-            "Encuentro Nacional de Emprendedores",
-            location="Campo Ferial Alalay",
-            department="Cochabamba",
-            description="Productos nacionales y contacto directo con sus productores.",
-            starts_in=10,
-            ends_in=16,
-            status=FeriaStatus.DRAFT,
-        )
-        ensure_fair(
-            "Feria Hecho en Bolivia 2026",
-            location="Parque Urbano Central",
-            department="La Paz",
-            description="Evento concluido para probar estados finalizados.",
-            starts_in=-25,
-            ends_in=-12,
-            status=FeriaStatus.FINISHED,
-        )
-        ensure_fair(
-            "Expo Regiones Integradas",
-            location="Fexpocruz",
-            department="Santa Cruz",
-            description="Feria deshabilitada para pruebas administrativas.",
-            starts_in=20,
-            ends_in=26,
-            status=FeriaStatus.DISABLED,
-        )
+        demo_fair_specs = [
+            (
+                "Encuentro Nacional de Emprendedores",
+                "Campo Ferial Alalay",
+                "Cochabamba",
+                "Productos nacionales y contacto directo con sus productores.",
+                10,
+                16,
+                FeriaStatus.DRAFT,
+            ),
+            (
+                "Feria Hecho en Bolivia 2026",
+                "Parque Urbano Central",
+                "La Paz",
+                "Evento concluido para probar estados finalizados.",
+                -25,
+                -12,
+                FeriaStatus.FINISHED,
+            ),
+            (
+                "Expo Regiones Integradas",
+                "Fexpocruz",
+                "Santa Cruz",
+                "Feria deshabilitada para pruebas administrativas.",
+                20,
+                26,
+                FeriaStatus.DISABLED,
+            ),
+            (
+                "Ruta Andina de Sabores",
+                "Coliseo Cerrado de El Alto",
+                "La Paz",
+                "Alimentos regionales y bebidas para pruebas de paginacion.",
+                -5,
+                8,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Feria Textil de los Valles",
+                "Centro de Convenciones FexpoSucre",
+                "Chuquisaca",
+                "Tejidos, confeccion y colecciones para pruebas de catalogo.",
+                -4,
+                9,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Expo Cuero y Moda",
+                "Recinto Ferial Chuquiago Marka",
+                "La Paz",
+                "Cuero, calzados y accesorios con identidad nacional.",
+                -3,
+                10,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Feria de Artesania del Oriente",
+                "Campo Ferial de Trinidad",
+                "Beni",
+                "Artesanias y decoracion producidas en la region oriental.",
+                -2,
+                11,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Encuentro de Cosmetica Natural",
+                "Casa de la Cultura",
+                "Oruro",
+                "Cosmetica, bienestar y cuidado personal de origen local.",
+                -1,
+                12,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Mercado Productivo del Sur",
+                "Coliseo Universitario",
+                "Tarija",
+                "Productos del sur para exhibicion y prueba de catalogo.",
+                1,
+                14,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Expo Orfebre Nacional",
+                "Centro de Eventos Potosi",
+                "Potosi",
+                "Joyeria y orfebreria para cargar muchas participaciones.",
+                2,
+                15,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Feria de Innovacion Artesanal",
+                "Plaza Principal",
+                "Cochabamba",
+                "Prototipos, innovacion y artesania para la demo.",
+                3,
+                16,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Jornada de Microempresas",
+                "Centro Ferial de Montero",
+                "Santa Cruz",
+                "Microempresas y emprendimientos en expansion.",
+                4,
+                17,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Feria de Productos Naturales",
+                "Parque Urbano Central",
+                "La Paz",
+                "Productos naturales para mostrar mas catalogo.",
+                5,
+                18,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Encuentro de Emprendimientos del Chaco",
+                "Centro Cultural",
+                "Chuquisaca",
+                "Emprendimientos del Chaco y ferias itinerantes.",
+                6,
+                19,
+                FeriaStatus.PUBLISHED,
+            ),
+            (
+                "Encuentro de Emprendedores Bolivianos",
+                "Estadio Municipal",
+                "Santa Cruz",
+                "Encuentro nacional para pruebas extensas.",
+                7,
+                20,
+                FeriaStatus.PUBLISHED,
+            ),
+        ]
+        demo_fairs = [published_fair]
+        for fair_name, location, department, description, starts_in, ends_in, status in demo_fair_specs:
+            demo_fairs.append(
+                ensure_fair(
+                    fair_name,
+                    location=location,
+                    department=department,
+                    description=description,
+                    starts_in=starts_in,
+                    ends_in=ends_in,
+                    status=status,
+                )
+            )
 
         category_ids = [
             item.id
@@ -366,7 +489,12 @@ def registrar_comandos(app):
         def ensure_demo_unit(index, data):
             name, sector_name, department = data
             email_address = f"expositor.demo{index:02d}@gmail.com"
-            user = db.session.scalar(select(User).where(User.email == email_address))
+            nit = f"99000{index:04d}"
+            user = db.session.scalar(
+                select(User).where(
+                    (User.email == email_address) | (User.username == f"expositor.demo{index:02d}")
+                )
+            )
             if not user:
                 user = User(
                     username=f"expositor.demo{index:02d}",
@@ -383,11 +511,23 @@ def registrar_comandos(app):
                 )
                 db.session.add(user)
                 db.session.flush()
+            else:
+                user.username = f"expositor.demo{index:02d}"
+                user.email = email_address
+                user.role = Role.PRODUCTIVE_UNIT_RESPONSIBLE
+                user.first_name = "Representante"
+                user.last_name = f"Demo {index}"
+                user.apellido_paterno = "Demo"
+                user.apellido_materno = f"Unidad {index}"
+                user.phone = f"70000{index:03d}"
+                user.status = UserStatus.ACTIVE
+                user.must_change_password = False
 
             sector = ensure_sector(sector_name)
             registration = db.session.scalar(
                 select(RegistrationRequest).where(
-                    RegistrationRequest.correo_electronico == email_address
+                    (RegistrationRequest.correo_electronico == email_address)
+                    | (RegistrationRequest.nit == nit)
                 )
             )
             logo_url = logo_images[(index - 1) % len(logo_images)] if logo_images else None
@@ -395,7 +535,7 @@ def registrar_comandos(app):
                 registration = RegistrationRequest(
                     nombre_comercial=name,
                     razon_social=f"{name} SRL",
-                    nit=f"99000{index:04d}",
+                    nit=nit,
                     registro_seprec=f"88000{index:04d}",
                     registro_pro_bolivia=f"77000{index:04d}",
                     nombres_representante="Mariela",
@@ -418,6 +558,29 @@ def registrar_comandos(app):
                 )
                 db.session.add(registration)
                 db.session.flush()
+            else:
+                registration.nombre_comercial = name
+                registration.razon_social = f"{name} SRL"
+                registration.nit = nit
+                registration.registro_seprec = f"88000{index:04d}"
+                registration.registro_pro_bolivia = f"77000{index:04d}"
+                registration.nombres_representante = "Mariela"
+                registration.apellido_paterno_representante = f"Quispe{index}"
+                registration.apellido_materno_representante = "Mamani"
+                registration.departamento = department
+                registration.direccion_fisica = f"Zona comercial {index}, avenida principal"
+                registration.telefono_whatsapp = f"71234{index:03d}"
+                registration.correo_electronico = email_address
+                registration.facebook_url = f"https://facebook.com/demo.unidad.{index:02d}"
+                registration.instagram_url = f"https://instagram.com/demo.unidad.{index:02d}"
+                registration.tiktok_url = f"https://tiktok.com/@demo.unidad.{index:02d}"
+                registration.resena_comercial = f"{name} produce y comercializa bienes bolivianos."
+                registration.logo_url = logo_url
+                registration.estado = RegistrationStatus.APPROVED
+                registration.fecha_revision = now_utc
+                registration.reviewed_by = primary_admin.id
+                registration.notification_status = NotificationStatus.SENT
+                registration.credentials_sent_at = now_utc
             if not db.session.scalar(
                 select(RegistrationRequestSector.id).where(
                     RegistrationRequestSector.registration_request_id == registration.id,
@@ -433,7 +596,9 @@ def registrar_comandos(app):
 
             unit = db.session.scalar(
                 select(ProductiveUnit).where(
-                    ProductiveUnit.registration_request_id == registration.id
+                    (ProductiveUnit.registration_request_id == registration.id)
+                    | (ProductiveUnit.correo_electronico == email_address)
+                    | (ProductiveUnit.nit == nit)
                 )
             )
             if not unit:
@@ -442,7 +607,7 @@ def registrar_comandos(app):
                     registration_request_id=registration.id,
                     nombre_comercial=name,
                     razon_social=registration.razon_social,
-                    nit=registration.nit,
+                    nit=nit,
                     registro_seprec=registration.registro_seprec,
                     registro_pro_bolivia=registration.registro_pro_bolivia,
                     nombres_representante=registration.nombres_representante,
@@ -463,6 +628,25 @@ def registrar_comandos(app):
                 db.session.add(unit)
                 db.session.flush()
             else:
+                unit.user_id = user.id
+                unit.registration_request_id = registration.id
+                unit.nombre_comercial = name
+                unit.razon_social = registration.razon_social
+                unit.nit = nit
+                unit.registro_seprec = registration.registro_seprec
+                unit.registro_pro_bolivia = registration.registro_pro_bolivia
+                unit.nombres_representante = registration.nombres_representante
+                unit.apellido_paterno_representante = registration.apellido_paterno_representante
+                unit.apellido_materno_representante = registration.apellido_materno_representante
+                unit.departamento = department
+                unit.direccion_fisica = registration.direccion_fisica
+                unit.telefono_whatsapp = registration.telefono_whatsapp
+                unit.correo_electronico = email_address
+                unit.facebook_url = registration.facebook_url
+                unit.instagram_url = registration.instagram_url
+                unit.tiktok_url = registration.tiktok_url
+                unit.resena_comercial = registration.resena_comercial
+                unit.logo_url = logo_url
                 unit.estado = ProductiveUnitStatus.ACTIVE
                 unit.deleted_at = None
 
@@ -485,8 +669,8 @@ def registrar_comandos(app):
                 .where(Product.productive_unit_id == unit.id, Product.deleted_at.is_(None))
                 .order_by(Product.created_at)
             ).all()
-            if len(products) < 3:
-                for number in range(len(products) + 1, 4):
+            if len(products) < 15:
+                for number in range(len(products) + 1, 16):
                     product = Product(
                         productive_unit_id=unit.id,
                         category_id=category_ids[(index + number - 2) % len(category_ids)],
@@ -544,36 +728,27 @@ def registrar_comandos(app):
             )
         ]
 
-        for index, unit in enumerate(units):
-            participation = db.session.scalar(
-                select(FairParticipation).where(
-                    FairParticipation.fair_id == published_fair.id,
-                    FairParticipation.productive_unit_id == unit.id,
+        for unit in units:
+            for fair_index, fair in enumerate(demo_fairs):
+                participation = db.session.scalar(
+                    select(FairParticipation).where(
+                        FairParticipation.fair_id == fair.id,
+                        FairParticipation.productive_unit_id == unit.id,
+                    )
                 )
-            )
-            if not participation:
-                participation = FairParticipation(
-                    fair_id=published_fair.id,
-                    productive_unit_id=unit.id,
+                if not participation:
+                    participation = FairParticipation(
+                        fair_id=fair.id,
+                        productive_unit_id=unit.id,
+                    )
+                    db.session.add(participation)
+                participation.estado = AssignmentStatus.AUTHORIZED
+                participation.authorized_by = primary_admin.id
+                participation.authorized_at = now_utc
+                participation.revoked_at = None
+                participation.observaciones = (
+                    f"Participacion aprobada para demostracion #{fair_index + 1}."
                 )
-                db.session.add(participation)
-            participation.estado = (
-                AssignmentStatus.PENDING
-                if index == len(units) - 1
-                else AssignmentStatus.AUTHORIZED
-            )
-            participation.authorized_by = (
-                None if participation.estado == AssignmentStatus.PENDING else primary_admin.id
-            )
-            participation.authorized_at = (
-                None if participation.estado == AssignmentStatus.PENDING else now_utc
-            )
-            participation.revoked_at = None
-            participation.observaciones = (
-                "Pendiente de validacion documental."
-                if participation.estado == AssignmentStatus.PENDING
-                else "Participacion aprobada para demostracion."
-            )
 
         qa_cases = (
             ("Pendiente", RegistrationStatus.PENDING, "qa.pendiente", None),
@@ -652,7 +827,7 @@ def registrar_comandos(app):
         db.session.commit()
         click.echo(
             "Datos de prueba creados: "
-            f"3 administradores, {len(units)} unidades productivas, 4 ferias y 3 solicitudes QA"
+            f"3 administradores, {len(units)} unidades productivas, {len(demo_fairs)} ferias y 3 solicitudes QA"
         )
         click.echo(f"Administrador principal: {email} / {password}")
 
