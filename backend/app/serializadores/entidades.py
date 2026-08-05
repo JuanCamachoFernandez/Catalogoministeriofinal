@@ -47,12 +47,14 @@ def admin_user_json(user):
 def fair_json(fair):
     return {
         "id": str(fair.id),
+        "tipo": fair.tipo,
         "nombre": fair.nombre,
         "slug": fair.slug,
         "descripcion": fair.descripcion,
         "lugar": fair.lugar,
         "direccion": fair.direccion,
         "departamento": fair.departamento,
+        "departamentos": fair.departamentos or [],
         "fecha_inicio": fair.fecha_inicio.isoformat(),
         "fecha_fin": fair.fecha_fin.isoformat(),
         "hora_inicio": fair.hora_inicio.isoformat() if fair.hora_inicio else None,
@@ -63,6 +65,10 @@ def fair_json(fair):
             else None
         ),
         "imagen_portada": fair.imagen_portada,
+        "color_primario": fair.color_primario,
+        "color_secundario": fair.color_secundario,
+        "color_terciario": fair.color_terciario,
+        "animaciones_tema": fair.animaciones_tema or [],
         "observaciones": fair.observaciones,
         "visible_publicamente": fair.visible_publicamente,
         "estado": fair.estado.value,

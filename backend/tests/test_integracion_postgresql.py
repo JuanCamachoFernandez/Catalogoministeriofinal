@@ -67,7 +67,7 @@ def test_postgresql_migrations_run_from_zero():
         }.isdisjoint(tables)
         with db.engine.connect() as connection:
             revision = MigrationContext.configure(connection).get_current_revision()
-        assert revision == "b1c3a5d7e9f0"
+        assert revision == "4ad81f2c6b30"
 
         image_indexes = {item["name"] for item in inspect(db.engine).get_indexes("imagenes_producto")}
         assert "indice_imagenes_producto_producto_id" in image_indexes

@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Link,
   useLocation,
@@ -24,6 +25,7 @@ import {
   errorApi,
   urlRecurso,
   paginacionVacia,
+  type CanonicalFair,
   type CanonicalProduct,
 } from "../../../compartido";
 import { BOLIVIA_DEPARTMENTS } from "../../../compartido/constantes/ubicacionesBolivia";
@@ -33,6 +35,12 @@ import { EstructuraPublica } from "../componentes/EstructuraPublica";
 import { EnlacesSocialesUnidad } from "../componentes/EnlacesSocialesUnidad";
 import { mostrarFecha } from "../utilidades/mostrarFecha";
 import { servicioCatalogoPublico } from "../servicios/servicioCatalogoPublico";
+import {
+  clasesTemaEvento,
+  colorPrecioEvento,
+  esEventoTematico,
+  variablesTemaEvento,
+} from "../utilidades/temaEvento";
 import {
   EstadoVacio,
   CajaError,
@@ -44,6 +52,41 @@ import {
   usePaginacionMovil,
   useElementosPaginacionAdaptable,
 } from "../../../compartido/componentes";
+
+const EVENT_ANIMATION_CLASSES = [
+  "event-animation-aurora",
+  "event-animation-shimmer",
+  "event-animation-float",
+  "event-animation-glow",
+];
+
+function usePublicEventTheme(fair?: CanonicalFair | null) {
+  useEffect(() => {
+    const body = document.body;
+    const root = document.documentElement;
+    body.classList.remove("event-public-page", ...EVENT_ANIMATION_CLASSES);
+    if (!esEventoTematico(fair)) {
+      root.style.removeProperty("--event-color-1");
+      root.style.removeProperty("--event-color-2");
+      root.style.removeProperty("--event-color-3");
+      root.style.removeProperty("--event-price-color");
+      return;
+    }
+    const animationClasses = clasesTemaEvento(fair).split(" ").filter(Boolean);
+    body.classList.add("event-public-page", ...animationClasses);
+    root.style.setProperty("--event-color-1", fair.color_primario ?? "#24453a");
+    root.style.setProperty("--event-color-2", fair.color_secundario ?? "#4f7c67");
+    root.style.setProperty("--event-color-3", fair.color_terciario ?? "#c5964a");
+    root.style.setProperty("--event-price-color", colorPrecioEvento(fair));
+    return () => {
+      body.classList.remove("event-public-page", ...EVENT_ANIMATION_CLASSES);
+      root.style.removeProperty("--event-color-1");
+      root.style.removeProperty("--event-color-2");
+      root.style.removeProperty("--event-color-3");
+      root.style.removeProperty("--event-price-color");
+    };
+  }, [fair]);
+}
 
 export function PaginaCatalogoPublico() {
   const [q, setQ] = useState("");
@@ -92,9 +135,16 @@ export function PaginaCatalogoPublico() {
         <>
         <div className="fair-public-grid">
           {displayedFairs.map((fair) => (
-            <article className="public-card fair-public-card" key={fair.id}>
+            <article
+              className={`public-card fair-public-card${esEventoTematico(fair) ? " event-themed-card" : ""} ${clasesTemaEvento(fair)}`.trim()}
+              key={fair.id}
+              style={variablesTemaEvento(fair)}
+            >
               <ImagenFeria fair={fair} />
               <div className="card-body">
+                <span className="fair-kind-badge">
+                  {fair.tipo === "EVENT" ? "Evento" : "Feria"}
+                </span>
                 <h2>{fair.nombre}</h2>
                 <div className="fair-card-meta">
                   <span>
@@ -108,10 +158,10 @@ export function PaginaCatalogoPublico() {
                   </span>
                 </div>
                 <Link
-                  className="btn fair-entry-button"
+                  className={`btn fair-entry-button${esEventoTematico(fair) ? " event-themed-button" : ""}`}
                   to={`/catalogo/ferias/${fair.id}`}
                 >
-                  Entrar a la feria <span aria-hidden="true">→</span>
+                  Entrar {fair.tipo === "EVENT" ? "al evento" : "a la feria"} <span aria-hidden="true">→</span>
                 </Link>
               </div>
             </article>
@@ -167,6 +217,9 @@ export function PaginaFeriaPublica() {
     queryFn: () => servicioCatalogoPublico.getActiveFairs(),
   });
   const fair = fairs.data?.items.find((item) => item.id === fairId);
+  const fairThemeClasses = clasesTemaEvento(fair);
+  const fairThemeStyle = variablesTemaEvento(fair);
+  usePublicEventTheme(fair);
   const sectors = useQuery({
     queryKey: ["productive-sectors", "public"],
     queryFn: servicioCatalogoPublico.getSectors,
@@ -206,6 +259,10 @@ export function PaginaFeriaPublica() {
 
   return (
     <EstructuraPublica>
+      <div
+        className={esEventoTematico(fair) ? `event-theme-surface ${fairThemeClasses}` : undefined}
+        style={fairThemeStyle}
+      >
       <Link className="back-link fair-back-button" to="/catalogo">
         <ArrowLeft size={18} /> Todas las ferias
       </Link>
@@ -219,7 +276,8 @@ export function PaginaFeriaPublica() {
       ) : (
         <>
           <section
-            className={`fair-detail-banner${fair.imagen_portada ? " has-cover" : ""}`}
+            className={`fair-detail-banner${fair.imagen_portada ? " has-cover" : ""}${esEventoTematico(fair) ? " event-detail-banner" : ""} ${fairThemeClasses}`.trim()}
+            style={fairThemeStyle}
           >
             {fair.imagen_portada && (
               <img
@@ -231,7 +289,7 @@ export function PaginaFeriaPublica() {
             <div className="fair-detail-shade" aria-hidden="true" />
             <div className="fair-detail-content">
               <span className="live-pill">
-                <i /> Feria en curso
+                <i /> {fair.tipo === "EVENT" ? "Evento en curso" : "Feria en curso"}
               </span>
               <h1>{fair.nombre}</h1>
               {fair.descripcion && <p>{fair.descripcion}</p>}
@@ -379,7 +437,7 @@ export function PaginaFeriaPublica() {
                         <MapPin size={15} /> {unit.departamento}
                       </small>
                       <Link
-                        className="btn-outline exhibitor-products-button"
+                        className={`btn-outline exhibitor-products-button${esEventoTematico(fair) ? " event-themed-outline-button" : ""}`}
                         to={`/catalogo/ferias/${fairId}/unidades/${unit.id}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`}
                       >
                         Ver productos <span aria-hidden="true">→</span>
@@ -409,6 +467,7 @@ export function PaginaFeriaPublica() {
           )}
         </>
       )}
+      </div>
     </EstructuraPublica>
   );
 }
@@ -430,6 +489,14 @@ export function PaginaUnidadPublica() {
   const [showLogo, setShowLogo] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const fairs = useQuery({
+    queryKey: ["public", "active-fairs", "all"],
+    queryFn: () => servicioCatalogoPublico.getActiveFairs(),
+  });
+  const fair = fairs.data?.items.find((item) => item.id === fairId);
+  const fairThemeClasses = clasesTemaEvento(fair);
+  const fairThemeStyle = variablesTemaEvento(fair);
+  usePublicEventTheme(fair);
   const unit = useQuery({
     queryKey: ["public", "fair-unit", fairId, unitId],
     queryFn: () => servicioCatalogoPublico.getFairUnit(fairId, unitId),
@@ -549,6 +616,10 @@ export function PaginaUnidadPublica() {
 
   return (
     <EstructuraPublica>
+      <div
+        className={esEventoTematico(fair) ? `event-theme-surface ${fairThemeClasses}` : undefined}
+        style={fairThemeStyle}
+      >
       <Link
         className="back-link fair-back-button"
         to={`/catalogo/ferias/${fairId}${location.search}`}
@@ -706,44 +777,53 @@ export function PaginaUnidadPublica() {
           )}
           {sendError && <div className="selection-error">{sendError}</div>}
           {selectedItems.length > 0 && (
-            <div className="selection-bar">
-              <button
-                type="button"
-                className="selection-summary-trigger"
-                onClick={() => setShowSelection(true)}
+            createPortal(
+              <div
+                className={`public-selection-layer${esEventoTematico(fair) ? ` event-theme-surface ${fairThemeClasses}` : ""}`}
+                style={fairThemeStyle}
               >
-                <ShoppingBag />
-                <span>
-                  <strong>
-                    {selectedQuantity}{" "}
-                    {selectedQuantity === 1 ? "unidad" : "unidades"}
-                  </strong>
-                  <small>
-                    {selectedProducts.length}{" "}
-                    {selectedProducts.length === 1 ? "producto" : "productos"} ·
-                    Bs {selectedTotal.toFixed(2)}
-                  </small>
-                </span>
-              </button>
-              <button
-                className="btn-secondary"
-                disabled={sending}
-                onClick={() => void sendWhatsApp()}
-              >
-                <MessageCircle />
-                {sending ? "Preparando…" : "Consultar por WhatsApp"}
-              </button>
-              <button
-                className="selection-clear"
-                onClick={() => {
-                  setCart({});
-                  setShowSelection(false);
-                }}
-                aria-label="Vaciar selección"
-              >
-                ×
-              </button>
-            </div>
+                <div className="selection-bar" role="region" aria-label="Consulta por WhatsApp">
+                  <button
+                    type="button"
+                    className="selection-summary-trigger"
+                    onClick={() => setShowSelection(true)}
+                  >
+                    <ShoppingBag />
+                    <span>
+                      <strong>
+                        {selectedQuantity}{" "}
+                        {selectedQuantity === 1 ? "unidad" : "unidades"}
+                      </strong>
+                      <small>
+                        {selectedProducts.length}{" "}
+                        {selectedProducts.length === 1 ? "producto" : "productos"} ·
+                        Bs {selectedTotal.toFixed(2)}
+                      </small>
+                    </span>
+                  </button>
+                  <button
+                    className={`btn-secondary${esEventoTematico(fair) ? " event-themed-button" : ""}`}
+                    disabled={sending}
+                    onClick={() => void sendWhatsApp()}
+                  >
+                    <MessageCircle />
+                    {sending ? "Preparando…" : "Consultar por WhatsApp"}
+                  </button>
+                  <button
+                    className="selection-clear"
+                    onClick={() => {
+                      setCart({});
+                      setCartProducts({});
+                      setShowSelection(false);
+                    }}
+                    aria-label="Vaciar selección"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>,
+              document.body,
+            )
           )}
           {showLogo && unit.data.logo_url && (
             <Modal
@@ -835,17 +915,17 @@ export function PaginaUnidadPublica() {
                 </span>
                 <div>
                   <button
-                    className="btn-outline"
-                onClick={() => {
-                  setCart({});
-                  setCartProducts({});
-                  setShowSelection(false);
+                    className={`btn-outline${esEventoTematico(fair) ? " event-themed-outline-button" : ""}`}
+                    onClick={() => {
+                      setCart({});
+                      setCartProducts({});
+                      setShowSelection(false);
                     }}
                   >
                     Vaciar selección
                   </button>
                   <button
-                    className="btn-secondary"
+                    className={`btn-secondary${esEventoTematico(fair) ? " event-themed-button" : ""}`}
                     disabled={sending}
                     onClick={() => void sendWhatsApp()}
                   >
@@ -1016,7 +1096,7 @@ export function PaginaUnidadPublica() {
                       </button>
                     </div>
                     <button
-                      className="btn-secondary modal-selection-done"
+                      className={`btn-secondary modal-selection-done${esEventoTematico(fair) ? " event-themed-button" : ""}`}
                       disabled={(cart[selected.id] ?? 0) === 0}
                       onClick={() => setSelected(null)}
                     >
@@ -1073,6 +1153,7 @@ export function PaginaUnidadPublica() {
           )}
         </>
       )}
+      </div>
     </EstructuraPublica>
   );
 }

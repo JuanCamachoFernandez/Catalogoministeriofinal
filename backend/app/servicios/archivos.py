@@ -25,12 +25,16 @@ class _TestingCloudinaryUploader:
 
 
 def _cloudinary_uploader():
+    if current_app.config.get("TESTING"):
+        return _TestingCloudinaryUploader
     try:
+        import cloudinary
         import cloudinary.uploader
     except ModuleNotFoundError as exc:
-        if current_app and current_app.config.get("TESTING"):
-            return _TestingCloudinaryUploader
         raise ValueError("No fue posible subir la imagen") from exc
+    config = cloudinary.config()
+    if not all((config.cloud_name, config.api_key, config.api_secret)):
+        return None
     return cloudinary.uploader
 
 
@@ -122,8 +126,17 @@ def upload_to_cloudinary(file, folder):
     filename = secure_filename(file.filename)
     identifier = uuid.uuid4().hex
 
+    uploader = _cloudinary_uploader()
+    if uploader is None:
+        local_url = save_upload(file, folder)
+        return {
+            "url": local_url,
+            "public_id": None,
+            "filename": filename,
+        }
+
     try:
-        result = _cloudinary_uploader().upload(
+        result = uploader.upload(
             file.stream,
             folder=cloudinary_folder(folder),
             public_id=identifier,

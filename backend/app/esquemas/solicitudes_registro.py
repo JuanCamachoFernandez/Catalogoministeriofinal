@@ -37,6 +37,14 @@ tiktok_url_validator = validate.Regexp(
     error="Ingrese una URL válida de TikTok que comience con https://.",
 )
 
+commercial_name_validator = validate.And(
+    validate.Length(min=1, max=200),
+    validate.Regexp(
+        r"^(?=.*\S)[^\x00-\x1f\x7f]+$",
+        error="Use letras, numeros, espacios o signos visibles, sin saltos de linea.",
+    ),
+)
+
 
 class RequestedSectorSchema(Schema):
     productive_sector_id = fields.UUID(required=True)
@@ -51,7 +59,7 @@ class RequestedProductSchema(Schema):
 
 
 class RegistrationRequestSchema(Schema):
-    nombre_comercial = fields.String(required=True, validate=validate.Length(min=1, max=200))
+    nombre_comercial = fields.String(required=True, validate=commercial_name_validator)
     razon_social = fields.String(required=True, validate=validate.Length(min=1, max=200))
     nit = fields.String(
         allow_none=True,

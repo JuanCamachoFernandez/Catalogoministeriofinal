@@ -3,6 +3,7 @@ from marshmallow import Schema, fields, validate
 from .solicitudes_registro import (
     RequestedSectorSchema,
     bolivian_mobile_validator,
+    commercial_name_validator,
     email_validator,
     facebook_url_validator,
     instagram_url_validator,
@@ -43,7 +44,7 @@ profile_person_name_validator = validate.And(
 class AdminProductiveUnitCreateSchema(Schema):
     nombre_comercial = fields.String(
         required=True,
-        validate=validate.Length(min=1, max=200),
+        validate=commercial_name_validator,
     )
     razon_social = fields.String(
         required=True,
@@ -132,7 +133,7 @@ class AdminProductiveUnitCreateSchema(Schema):
 
 
 class ProductiveUnitUpdateSchema(Schema):
-    nombre_comercial = fields.String(validate=alphanumeric_profile_validator)
+    nombre_comercial = fields.String(validate=commercial_name_validator)
     razon_social = fields.String(validate=alphanumeric_profile_validator)
     nit = fields.String(
         allow_none=True,

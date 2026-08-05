@@ -2,7 +2,7 @@ from urllib.parse import quote
 import uuid
 
 from flask import Blueprint, request
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 
 from ..extensiones import db
 from ..modelos import (
@@ -62,7 +62,13 @@ def public_fairs():
     if term:
         query = query.where(Fair.nombre.ilike(f"%{term}%"))
     if request.args.get("departamento"):
-        query = query.where(Fair.departamento == request.args["departamento"])
+        department = request.args["departamento"]
+        query = query.where(
+            or_(
+                Fair.departamento == department,
+                cast(Fair.departamentos, String).ilike(f'%"{department}"%'),
+            )
+        )
     payload = paginate(query.order_by(Fair.fecha_inicio.desc()), fair_json)
     return set_public_cache(cache_key, payload)
 
@@ -223,10 +229,21 @@ def _requested_canonical_fair():
 
 def _canonical_fair_payload(fair):
     return {
-        "id": str(fair.id), "nombre": fair.nombre, "descripcion": fair.descripcion,
+        "id": str(fair.id),
+        "tipo": fair.tipo,
+        "nombre": fair.nombre,
+        "descripcion": fair.descripcion,
         "ubicacion": fair.ubicacion or fair.lugar,
-        "fecha_inicio": fair.fecha_inicio.isoformat(), "fecha_fin": fair.fecha_fin.isoformat(),
-        "imagen_portada": fair.imagen_portada, "estado": fair.estado.value,
+        "departamento": fair.departamento,
+        "departamentos": fair.departamentos or [],
+        "fecha_inicio": fair.fecha_inicio.isoformat(),
+        "fecha_fin": fair.fecha_fin.isoformat(),
+        "imagen_portada": fair.imagen_portada,
+        "color_primario": fair.color_primario,
+        "color_secundario": fair.color_secundario,
+        "color_terciario": fair.color_terciario,
+        "animaciones_tema": fair.animaciones_tema or [],
+        "estado": fair.estado.value,
     }
 
 
