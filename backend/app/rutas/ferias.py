@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 import uuid
 
 from flask import Blueprint, request
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from ..extensiones import db
 from ..modelos import (
@@ -38,6 +38,7 @@ from ..esquemas.ferias import (
     CanonicalFairUpdateSchema,
     ParticipationCreateSchema,
     ParticipationUpdateSchema,
+    BOLIVIA_DEPARTMENTS,
 )
 from ..servicios import (
     audit,
@@ -191,6 +192,67 @@ def unique_fair_slug(name, fair_id=None):
     return candidate
 
 
+def _event_theme_payload(data, fair=None):
+    fair_type = data.get("tipo", fair.tipo if fair else "FAIR")
+    if fair_type != "EVENT":
+        return {
+            "tipo": fair_type,
+            "color_primario": None,
+            "color_secundario": None,
+            "color_terciario": None,
+            "animaciones_tema": [],
+        }
+    color_primario = data.get(
+        "color_primario", fair.color_primario if fair else None
+    )
+    color_secundario = data.get(
+        "color_secundario", fair.color_secundario if fair else None
+    )
+    color_terciario = data.get(
+        "color_terciario", fair.color_terciario if fair else None
+    )
+    animaciones_tema = data.get(
+        "animaciones_tema", fair.animaciones_tema if fair else []
+    )
+    if not all((color_primario, color_secundario, color_terciario)):
+        raise ValueError(
+            "Los eventos deben definir los tres colores del degradado."
+        )
+    if not animaciones_tema:
+        raise ValueError(
+            "Los eventos deben definir al menos una animaci\u00f3n visual."
+        )
+    return {
+        "tipo": fair_type,
+        "color_primario": color_primario,
+        "color_secundario": color_secundario,
+        "color_terciario": color_terciario,
+        "animaciones_tema": animaciones_tema,
+    }
+
+
+def _fair_departments_payload(data, fair_type, fair=None):
+    if fair_type != "EVENT":
+        department = data.get("departamento", fair.departamento if fair else None)
+        if not department:
+            raise ValueError("Seleccione un departamento para la feria.")
+        return department, []
+    selected = data.get(
+        "departamentos",
+        fair.departamentos if fair and fair.departamentos else [],
+    )
+    selected = list(dict.fromkeys(selected or []))
+    if not selected:
+        raise ValueError("Seleccione al menos un departamento para el evento.")
+    if set(selected) == set(BOLIVIA_DEPARTMENTS):
+        summary = "Todos los departamentos"
+    elif len(selected) == 1:
+        summary = selected[0]
+    else:
+        summary = f"{len(selected)} departamentos"
+    return summary, selected
+
+
 @fair_bp.get("/fairs")
 @roles(*ROLES_ADMINISTRACION_INSTITUCIONAL)
 def list_fairs():
@@ -205,7 +267,13 @@ def list_fairs():
             return error("Estado de feria inválido")
     query = Fair.admin_query(term, parsed_state)
     if request.args.get("departamento"):
-        query = query.where(Fair.departamento == request.args["departamento"])
+        department = request.args["departamento"]
+        query = query.where(
+            or_(
+                Fair.departamento == department,
+                cast(Fair.departamentos, String).ilike(f'%"{department}"%'),
+            )
+        )
     try:
         date_from = date.fromisoformat(request.args["date_from"]) if request.args.get("date_from") else None
         date_to = date.fromisoformat(request.args["date_to"]) if request.args.get("date_to") else None
@@ -613,15 +681,29 @@ def canonical_list_fairs():
 @validate_json(CanonicalFairCreateSchema())
 def canonical_create_fair():
     data = validated_json()
+    try:
+        event_theme = _event_theme_payload(data)
+    except ValueError as exc:
+        return error(str(exc))
+    try:
+        department, departments = _fair_departments_payload(data, event_theme["tipo"])
+    except ValueError as exc:
+        return error(str(exc))
     fair = Fair(
+        tipo=event_theme["tipo"],
         nombre=data["nombre"].strip(),
         slug=unique_fair_slug(data["nombre"]),
         descripcion=data.get("descripcion"),
         ubicacion=data["ubicacion"].strip(),
         lugar=data["ubicacion"].strip(),
-        departamento=data["departamento"],
+        departamento=department,
+        departamentos=departments,
         fecha_inicio=data["fecha_inicio"],
         fecha_fin=data["fecha_fin"],
+        color_primario=event_theme["color_primario"],
+        color_secundario=event_theme["color_secundario"],
+        color_terciario=event_theme["color_terciario"],
+        animaciones_tema=event_theme["animaciones_tema"],
         created_by=current_user().id,
     )
     fair.estado = fair.expected_status()
@@ -653,17 +735,39 @@ def canonical_update_fair(fair_id):
     if fair.terminal:
         return error("Una feria terminal es inmutable", 409)
     data = validated_json()
+    try:
+        event_theme = _event_theme_payload(data, fair)
+    except ValueError as exc:
+        return error(str(exc))
+    try:
+        department, departments = _fair_departments_payload(
+            data, event_theme["tipo"], fair
+        )
+    except ValueError as exc:
+        return error(str(exc))
     start = data.get("fecha_inicio", fair.fecha_inicio)
     end = data.get("fecha_fin", fair.fecha_fin)
     if end < start:
         return error("La fecha final no puede ser anterior a la inicial")
     if fair.estado == FeriaStatus.PUBLISHED and start > bolivia_today():
         return error("Una feria publicada no puede regresar a preparación", 409)
-    for key in ("nombre", "descripcion", "departamento", "fecha_inicio", "fecha_fin"):
+    for key in (
+        "nombre",
+        "descripcion",
+        "fecha_inicio",
+        "fecha_fin",
+    ):
         if key in data:
             setattr(fair, key, data[key])
     if "ubicacion" in data:
         fair.ubicacion = fair.lugar = data["ubicacion"]
+    fair.tipo = event_theme["tipo"]
+    fair.departamento = department
+    fair.departamentos = departments
+    fair.color_primario = event_theme["color_primario"]
+    fair.color_secundario = event_theme["color_secundario"]
+    fair.color_terciario = event_theme["color_terciario"]
+    fair.animaciones_tema = event_theme["animaciones_tema"]
     if "nombre" in data:
         fair.slug = unique_fair_slug(fair.nombre, fair.id)
     audit("EDITAR", "Fair", fair.id)

@@ -162,6 +162,12 @@ const alphanumericProfileText = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+$/;
 const personNameText = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$/;
 const emailText = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+const isValidCommercialName = (value: string) =>
+  [...value].every((character) => {
+    const code = character.charCodeAt(0);
+    return code > 31 && code !== 127;
+  });
+
 function isWebUrl(value: string) {
   try {
     const url = new URL(value);
@@ -189,11 +195,13 @@ function validateProfileDraft(draft: Partial<ProductiveUnit>): ProfileErrors {
     if (!String(draft[key] ?? "").trim())
       errors[key] = "Este campo es obligatorio.";
   });
-  (["nombre_comercial", "razon_social"] as const).forEach((key) => {
-    const value = String(draft[key] ?? "").trim();
-    if (value && !alphanumericProfileText.test(value))
-      errors[key] = "Use solamente letras, números y espacios.";
-  });
+  const commercialName = String(draft.nombre_comercial ?? "").trim();
+  if (commercialName && !isValidCommercialName(commercialName))
+    errors.nombre_comercial =
+      "Use letras, números, espacios o signos visibles, sin saltos de línea.";
+  const legalName = String(draft.razon_social ?? "").trim();
+  if (legalName && !alphanumericProfileText.test(legalName))
+    errors.razon_social = "Use solamente letras, números y espacios.";
   (
     [
       "nombres_representante",
@@ -315,7 +323,7 @@ export function PaginaPerfilUnidadProductiva() {
     ) {
       value = value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]/g, "");
     }
-    if (["nombre_comercial", "razon_social"].includes(key)) {
+    if (key === "razon_social") {
       value = value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]/g, "");
     }
     if (key === "telefono_whatsapp") {

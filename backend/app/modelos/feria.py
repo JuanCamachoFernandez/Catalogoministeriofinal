@@ -17,6 +17,7 @@ def bolivia_today():
 class Fair(TimestampMixin, db.Model):
     __tablename__ = "ferias"
     id = db.Column(db.Uuid, primary_key=True, default=uid)
+    tipo = db.Column(db.String(20), nullable=False, default="FAIR")
     nombre = db.Column(db.String(200), nullable=False, index=True)
     slug = db.Column(
         "identificador_url", db.String(220), unique=True, nullable=False, index=True
@@ -26,6 +27,7 @@ class Fair(TimestampMixin, db.Model):
     ubicacion = db.Column(db.String(255))
     direccion = db.Column(db.String(255))
     departamento = db.Column(db.String(80), nullable=False, index=True)
+    departamentos = db.Column(db.JSON)
     fecha_inicio = db.Column(db.Date, nullable=False)
     fecha_fin = db.Column(db.Date, nullable=False)
     hora_inicio = db.Column(db.Time)
@@ -33,6 +35,10 @@ class Fair(TimestampMixin, db.Model):
     fecha_limite_registro = db.Column(db.Date)
     imagen_portada = db.Column(db.String(500), nullable=True)
     imagen_portada_public_id = db.Column("identificador_portada_cloudinary", db.String(500), nullable=True)
+    color_primario = db.Column(db.String(7))
+    color_secundario = db.Column(db.String(7))
+    color_terciario = db.Column(db.String(7))
+    animaciones_tema = db.Column(db.JSON)
     observaciones = db.Column(db.Text)
     estado = db.Column(
         db.Enum(FeriaStatus, name="estado_feria"),
@@ -56,6 +62,10 @@ class Fair(TimestampMixin, db.Model):
     @property
     def terminal(self):
         return self.estado in (FeriaStatus.FINISHED, FeriaStatus.DISABLED)
+
+    @property
+    def es_evento(self):
+        return self.tipo == "EVENT"
 
     def expected_status(self, today=None):
         today = today or bolivia_today()
