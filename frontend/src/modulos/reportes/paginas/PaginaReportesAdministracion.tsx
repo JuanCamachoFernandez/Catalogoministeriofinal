@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { FileDown, FileSpreadsheet, FileText, RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, FileDown, FileSpreadsheet, FileText, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorApi } from "../../../compartido";
 import {
   CajaError,
@@ -9,6 +9,7 @@ import {
   SelectorBuscable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
+import { etiquetaAccionAuditoria } from "../../../compartido/utilidades/etiquetasAuditoria";
 
 type Option = { value: string; label: string };
 type ReportOptions = {
@@ -19,7 +20,7 @@ type ReportOptions = {
   departments: string[];
 };
 
-type Filters = Record<string, string>;
+type Filters = Record<string, string | string[]>;
 
 const RESOURCE_OPTIONS: Option[] = [
   { value: "general", label: "Reporte general" },
@@ -27,7 +28,7 @@ const RESOURCE_OPTIONS: Option[] = [
   { value: "unidades_productivas", label: "Unidades productivas" },
   { value: "sectores_productivos", label: "Sectores productivos" },
   { value: "productos", label: "Productos" },
-  { value: "ferias", label: "Ferias" },
+  { value: "ferias", label: "Ferias y eventos" },
   { value: "administradores", label: "Administradores" },
   { value: "auditoria", label: "Auditoría" },
 ];
@@ -79,6 +80,15 @@ const PRESENCE_OPTIONS: Option[] = [
 
 const defaultFilters = (): Filters => ({});
 
+const selectedValues = (value: Filters[string]) =>
+  Array.isArray(value) ? value : value ? [value] : [];
+
+const activeFilterWeight = (value: Filters[string]) =>
+  Array.isArray(value) ? value.length : value ? 1 : 0;
+
+const filterTextValue = (value: Filters[string]) =>
+  (Array.isArray(value) ? value[0] : value) ?? "";
+
 const reportFilename = (label: string, format: "pdf" | "xlsx") => {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -103,6 +113,8 @@ export default function PaginaReportesAdministracion() {
   const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [downloading, setDownloading] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const feedback = useRetroalimentacion();
   const optionsQuery = useQuery({
     queryKey: ["report-options"],
@@ -111,22 +123,50 @@ export default function PaginaReportesAdministracion() {
   const options = optionsQuery.data;
   const selectedLabel = RESOURCE_OPTIONS.find((item) => item.value === resource)?.label ?? "Reporte";
 
-  const setFilter = (name: string, value: string) =>
+  const auditActionOptions = useMemo(
+    () =>
+      (options?.actions ?? []).map((item) => ({
+        value: item,
+        label: etiquetaAccionAuditoria(item),
+      })),
+    [options?.actions],
+  );
+
+  useEffect(() => {
+    const closeOutside = (event: MouseEvent) => {
+      if (!actionMenuRef.current?.contains(event.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOutside);
+    return () => document.removeEventListener("mousedown", closeOutside);
+  }, []);
+
+  const setFilter = (name: string, value: string | string[]) =>
     setFilters((current) => ({ ...current, [name]: value }));
 
   const activeFilterCount = useMemo(
-    () => Object.values(filters).filter(Boolean).length,
+    () => Object.values(filters).reduce((count, value) => count + activeFilterWeight(value), 0),
     [filters],
   );
+
+  const reportParams = useMemo(() => {
+    const params: Record<string, string> = { format };
+    for (const [name, value] of Object.entries(filters)) {
+      if (Array.isArray(value)) {
+        if (value.length) params[name] = value.join(",");
+      } else if (value !== "") {
+        params[name] = value;
+      }
+    }
+    return params;
+  }, [filters, format]);
 
   const download = async () => {
     setDownloading(true);
     try {
       const response = await api.get<Blob>(`/reports/${resource}`, {
-        params: {
-          format,
-          ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "")),
-        },
+        params: reportParams,
         responseType: "blob",
       });
       const filename = reportFilename(selectedLabel, format);
@@ -151,6 +191,14 @@ export default function PaginaReportesAdministracion() {
 
   const statusOptions = STATUS_OPTIONS[resource];
   const organizationReport = ["solicitudes", "unidades_productivas"].includes(resource);
+  const selectedAuditActions = selectedValues(filters.action);
+  const selectedAuditCount = selectedAuditActions.length;
+  const selectedActionLabel =
+    selectedAuditCount === 0
+      ? "Todas las acciones"
+      : selectedAuditCount === 1
+        ? auditActionOptions.find((option) => option.value === selectedAuditActions[0])?.label ?? "1 acción seleccionada"
+        : `${selectedAuditCount} acciones seleccionadas`;
 
   return (
     <section className="admin-page reports-page">
@@ -185,7 +233,10 @@ export default function PaginaReportesAdministracion() {
         <section className="reports-config-section reports-filter-section">
           <div className="reports-section-heading reports-filter-heading">
             <span>02</span>
-            <div><h2>Filtros</h2><p>{resource === "general" ? "Se incluirán todos los registros disponibles." : "Deje los filtros en Todos para obtener el reporte completo."}</p></div>
+            <div>
+              <h2>Filtros</h2>
+              <p>{resource === "general" ? "Se incluirán todos los registros disponibles." : "Deje los filtros en Todos para obtener el reporte completo."}</p>
+            </div>
             {activeFilterCount > 0 && (
               <button type="button" className="reports-clear-button" onClick={() => setFilters(defaultFilters())}>
                 <RotateCcw size={16} /> Limpiar filtros
@@ -197,39 +248,96 @@ export default function PaginaReportesAdministracion() {
             {resource === "general" ? (
               <div className="reports-general-message">
                 <FileText aria-hidden="true" />
-                <div><strong>Reporte consolidado</strong><span>Solicitudes, unidades, sectores, productos, ferias, administradores y auditoría.</span></div>
+                <div>
+                  <strong>Reporte consolidado</strong>
+                  <span>Solicitudes, unidades, sectores, productos, ferias, administradores y auditoría.</span>
+                </div>
               </div>
             ) : (
               <>
                 <Campo label="Búsqueda general">
-                  <input className="input" value={filters.q ?? ""} onChange={(event) => setFilter("q", event.target.value)} placeholder="Nombre o palabra clave" />
+                  <input
+                    className="input"
+                    value={filterTextValue(filters.q)}
+                    onChange={(event) => setFilter("q", event.target.value)}
+                    placeholder="Nombre o palabra clave"
+                  />
                 </Campo>
 
                 {statusOptions && (
                   <Campo label="Estado">
-                    <SelectorBuscable value={filters.status ?? ""} options={statusOptions} onChange={(value) => setFilter("status", value)} searchable={false} placeholder="Todos los estados" ariaLabel="Filtrar por estado" />
+                    <SelectorBuscable
+                      value={filterTextValue(filters.status)}
+                      options={statusOptions}
+                      onChange={(value) => setFilter("status", value)}
+                      searchable={false}
+                      placeholder="Todos los estados"
+                      ariaLabel="Filtrar por estado"
+                    />
                   </Campo>
                 )}
 
                 {organizationReport && (
                   <>
                     <Campo label="Sector productivo">
-                      <SelectorBuscable value={filters.sector_id ?? ""} options={[{ value: "", label: "Todos los sectores" }, ...(options?.sectors ?? [])]} onChange={(value) => setFilter("sector_id", value)} placeholder="Todos los sectores" searchPlaceholder="Buscar sector..." ariaLabel="Filtrar por sector" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.sector_id)}
+                        options={[{ value: "", label: "Todos los sectores" }, ...(options?.sectors ?? [])]}
+                        onChange={(value) => setFilter("sector_id", value)}
+                        placeholder="Todos los sectores"
+                        searchPlaceholder="Buscar sector..."
+                        ariaLabel="Filtrar por sector"
+                      />
                     </Campo>
                     <Campo label="Departamento">
-                      <SelectorBuscable value={filters.department ?? ""} options={[{ value: "", label: "Todos los departamentos" }, ...(options?.departments.map((item) => ({ value: item, label: item })) ?? [])]} onChange={(value) => setFilter("department", value)} placeholder="Todos los departamentos" searchPlaceholder="Buscar departamento..." ariaLabel="Filtrar por departamento" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.department)}
+                        options={[{ value: "", label: "Todos los departamentos" }, ...(options?.departments.map((item) => ({ value: item, label: item })) ?? [])]}
+                        onChange={(value) => setFilter("department", value)}
+                        placeholder="Todos los departamentos"
+                        searchPlaceholder="Buscar departamento..."
+                        ariaLabel="Filtrar por departamento"
+                      />
                     </Campo>
                     <Campo label="NIT">
-                      <SelectorBuscable value={filters.has_nit ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_nit", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por NIT" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.has_nit)}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_nit", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por NIT"
+                      />
                     </Campo>
                     <Campo label="Registro SEPREC">
-                      <SelectorBuscable value={filters.has_seprec ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_seprec", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por SEPREC" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.has_seprec)}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_seprec", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por SEPREC"
+                      />
                     </Campo>
                     <Campo label="Registro PRO-BOLIVIA">
-                      <SelectorBuscable value={filters.has_pro_bolivia ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_pro_bolivia", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por PRO-BOLIVIA" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.has_pro_bolivia)}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_pro_bolivia", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por PRO-BOLIVIA"
+                      />
                     </Campo>
                     <Campo label="Redes sociales">
-                      <SelectorBuscable value={filters.has_social ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_social", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por redes sociales" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.has_social)}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_social", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por redes sociales"
+                      />
                     </Campo>
                   </>
                 )}
@@ -237,28 +345,140 @@ export default function PaginaReportesAdministracion() {
                 {resource === "productos" && (
                   <>
                     <Campo label="Unidad productiva">
-                      <SelectorBuscable value={filters.productive_unit_id ?? ""} options={[{ value: "", label: "Todas las unidades" }, ...(options?.productive_units ?? [])]} onChange={(value) => setFilter("productive_unit_id", value)} placeholder="Todas las unidades" searchPlaceholder="Buscar unidad..." ariaLabel="Filtrar por unidad productiva" />
+                      <SelectorBuscable
+                        value={filterTextValue(filters.productive_unit_id)}
+                        options={[{ value: "", label: "Todas las unidades" }, ...(options?.productive_units ?? [])]}
+                        onChange={(value) => setFilter("productive_unit_id", value)}
+                        placeholder="Todas las unidades"
+                        searchPlaceholder="Buscar unidad..."
+                        ariaLabel="Filtrar por unidad productiva"
+                      />
                     </Campo>
-                    <Campo label="Precio mínimo (Bs)"><input className="input" type="number" min="0" step="0.01" value={filters.price_min ?? ""} onChange={(event) => setFilter("price_min", event.target.value)} /></Campo>
-                    <Campo label="Precio máximo (Bs)"><input className="input" type="number" min={filters.price_min || "0"} step="0.01" value={filters.price_max ?? ""} onChange={(event) => setFilter("price_max", event.target.value)} /></Campo>
+                    <Campo label="Precio mínimo (Bs)">
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={filterTextValue(filters.price_min)}
+                        onChange={(event) => setFilter("price_min", event.target.value)}
+                      />
+                    </Campo>
+                    <Campo label="Precio máximo (Bs)">
+                      <input
+                        className="input"
+                        type="number"
+                        min={filterTextValue(filters.price_min) || "0"}
+                        step="0.01"
+                        value={filterTextValue(filters.price_max)}
+                        onChange={(event) => setFilter("price_max", event.target.value)}
+                      />
+                    </Campo>
                   </>
                 )}
 
                 {resource === "ferias" && (
                   <>
-                    <Campo label="Lugar"><input className="input" value={filters.location ?? ""} onChange={(event) => setFilter("location", event.target.value)} placeholder="Lugar, dirección o departamento" /></Campo>
-                    <Campo label="Desde"><input className="input" type="date" max={filters.date_to || undefined} value={filters.date_from ?? ""} onChange={(event) => setFilter("date_from", event.target.value)} /></Campo>
-                    <Campo label="Hasta"><input className="input" type="date" min={filters.date_from || undefined} value={filters.date_to ?? ""} onChange={(event) => setFilter("date_to", event.target.value)} /></Campo>
+                    <Campo label="Lugar">
+                      <input
+                        className="input"
+                        value={filterTextValue(filters.location)}
+                        onChange={(event) => setFilter("location", event.target.value)}
+                        placeholder="Lugar, dirección o departamento"
+                      />
+                    </Campo>
+                    <Campo label="Desde">
+                      <input
+                        className="input"
+                        type="date"
+                        max={filterTextValue(filters.date_to) || undefined}
+                        value={filterTextValue(filters.date_from)}
+                        onChange={(event) => setFilter("date_from", event.target.value)}
+                      />
+                    </Campo>
+                    <Campo label="Hasta">
+                      <input
+                        className="input"
+                        type="date"
+                        min={filterTextValue(filters.date_from) || undefined}
+                        value={filterTextValue(filters.date_to)}
+                        onChange={(event) => setFilter("date_to", event.target.value)}
+                      />
+                    </Campo>
                   </>
                 )}
 
                 {resource === "auditoria" && (
                   <>
                     <Campo label="Acción">
-                      <SelectorBuscable value={filters.action ?? ""} options={[{ value: "", label: "Todas las acciones" }, ...(options?.actions.map((item) => ({ value: item, label: item.replaceAll("_", " ") })) ?? [])]} onChange={(value) => setFilter("action", value)} placeholder="Todas las acciones" searchPlaceholder="Buscar acción..." ariaLabel="Filtrar por acción" />
+                      <div
+                        className={`admin-sector-filter reports-audit-action-filter ${actionMenuOpen ? "is-open" : ""}`}
+                        ref={actionMenuRef}
+                      >
+                        <button
+                          type="button"
+                          className="admin-sector-filter-trigger"
+                          aria-expanded={actionMenuOpen}
+                          aria-label="Filtrar por acciones"
+                          onClick={() => setActionMenuOpen((current) => !current)}
+                        >
+                          <span>{selectedActionLabel}</span>
+                          <ChevronDown size={18} />
+                        </button>
+                        {actionMenuOpen && (
+                          <div className="admin-sector-filter-menu">
+                            {auditActionOptions.length ? (
+                              <>
+                                <div className="admin-sector-filter-actions">
+                                  <button type="button" onClick={() => setFilter("action", [])}>
+                                    Limpiar
+                                  </button>
+                                </div>
+                                <div className="admin-sector-filter-options">
+                                  {auditActionOptions.map((option) => (
+                                    <label key={option.value}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedAuditActions.includes(option.value)}
+                                        onChange={() =>
+                                          setFilter(
+                                            "action",
+                                            selectedAuditActions.includes(option.value)
+                                              ? selectedAuditActions.filter((item) => item !== option.value)
+                                              : [...selectedAuditActions, option.value],
+                                          )
+                                        }
+                                      />
+                                      <span>{option.label}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              <p className="admin-sector-filter-empty">No hay acciones de auditor�a disponibles.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </Campo>
-                    <Campo label="Desde"><input className="input" type="date" max={filters.date_to || undefined} value={filters.date_from ?? ""} onChange={(event) => setFilter("date_from", event.target.value)} /></Campo>
-                    <Campo label="Hasta"><input className="input" type="date" min={filters.date_from || undefined} value={filters.date_to ?? ""} onChange={(event) => setFilter("date_to", event.target.value)} /></Campo>
+                    <Campo label="Desde">
+                      <input
+                        className="input"
+                        type="date"
+                        max={filterTextValue(filters.date_to) || undefined}
+                        value={filterTextValue(filters.date_from)}
+                        onChange={(event) => setFilter("date_from", event.target.value)}
+                      />
+                    </Campo>
+                    <Campo label="Hasta">
+                      <input
+                        className="input"
+                        type="date"
+                        min={filterTextValue(filters.date_from) || undefined}
+                        value={filterTextValue(filters.date_to)}
+                        onChange={(event) => setFilter("date_to", event.target.value)}
+                      />
+                    </Campo>
                   </>
                 )}
               </>

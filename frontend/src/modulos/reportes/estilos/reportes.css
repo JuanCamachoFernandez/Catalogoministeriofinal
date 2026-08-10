@@ -80,6 +80,7 @@
 
 .reports-dynamic-filters .field {
   min-width: 0;
+  font-weight: 500;
 }
 
 .reports-general-message {

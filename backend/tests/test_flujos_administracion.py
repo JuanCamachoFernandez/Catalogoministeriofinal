@@ -9,6 +9,7 @@ from app.extensiones import db
 from app.modelos import (
     AdminProfile,
     AssignmentStatus,
+    Audit,
     AdminUnit,
     Category,
     DocumentType,
@@ -158,6 +159,9 @@ def test_administrador_puede_restaurar_responsable_y_admin_sin_ci(app, client):
 def test_reportes_pdf_excel_y_opciones(app, client):
     with app.app_context():
         _, token = admin_token(client)
+        admin_user = db.session.scalar(
+            db.select(User).where(User.username == "superadmin")
+        )
         db.session.add(
             Category(
                 nombre="Textiles",
@@ -165,6 +169,22 @@ def test_reportes_pdf_excel_y_opciones(app, client):
                 descripcion="Productos textiles",
                 estado=True,
             )
+        )
+        db.session.add_all(
+            [
+                Audit(
+                    user_id=admin_user.id if admin_user else None,
+                    accion="CREAR",
+                    entidad="Reporte",
+                    descripcion="Creacion de prueba",
+                ),
+                Audit(
+                    user_id=admin_user.id if admin_user else None,
+                    accion="RESTAURAR",
+                    entidad="Reporte",
+                    descripcion="Restauracion de prueba",
+                ),
+            ]
         )
         db.session.commit()
 
@@ -211,12 +231,25 @@ def test_reportes_pdf_excel_y_opciones(app, client):
         "/api/reports/productos?format=xlsx&status=AVAILABLE&price_min=10&price_max=100",
         "/api/reports/ferias?format=xlsx&status=DRAFT&location=La%20Paz",
         "/api/reports/administradores?format=xlsx&status=ACTIVE",
-        "/api/reports/auditoria?format=xlsx&action=GENERAR_REPORTE",
+        "/api/reports/auditoria?format=xlsx&action=CREAR,RESTAURAR",
     )
     for report_url in filtered_reports:
         response = client.get(report_url, headers=auth(token))
         assert response.status_code == 200
         assert response.data.startswith(b"PK")
+
+    audit_report = client.get(
+        "/api/reports/auditoria?format=xlsx&action=CREAR,RESTAURAR",
+        headers=auth(token),
+    )
+    workbook = load_workbook(BytesIO(audit_report.data), read_only=True)
+    sheet = workbook["Auditoria"]
+    audit_actions = {
+        row[2]
+        for row in list(sheet.values)
+        if row and row[2] in {"Crear", "Restaurar"}
+    }
+    assert audit_actions == {"Crear", "Restaurar"}
 
     invalid = client.get(
         "/api/reports/ferias?format=pdf&date_from=no-es-fecha",

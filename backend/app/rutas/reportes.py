@@ -239,6 +239,16 @@ def parse_optional_bool(name):
     return raw == "true"
 
 
+def parse_multi_values(name):
+    values = []
+    for raw in request.args.getlist(name):
+        for item in raw.split(","):
+            cleaned = item.strip()
+            if cleaned:
+                values.append(cleaned)
+    return list(dict.fromkeys(values))
+
+
 def apply_created_dates(query, column):
     start, end = parse_date("date_from"), parse_date("date_to")
     if start:
@@ -490,8 +500,9 @@ def audit_rows():
     if term:
         pattern = f"%{term}%"
         query = query.where(or_(Audit.accion.ilike(pattern), Audit.descripcion.ilike(pattern), User.username.ilike(pattern)))
-    if request.args.get("action"):
-        query = query.where(Audit.accion == request.args["action"])
+    actions = parse_multi_values("action")
+    if actions:
+        query = query.where(Audit.accion.in_(actions))
     query = apply_created_dates(query, Audit.created_at).order_by(Audit.created_at.desc())
     return [{
         "fecha": item.created_at,
