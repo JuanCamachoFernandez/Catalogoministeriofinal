@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { errorApi, type RegistrationRequest } from "../../../compartido";
 import { CajaError, ProveedorRetroalimentacion, Campo, EstadoCarga, useRetroalimentacion } from "../../../compartido/componentes";
 import { BOLIVIA_DEPARTMENTS } from "../../../compartido/constantes/ubicacionesBolivia";
+import { LIMITE_IMAGEN_MB, validarArchivoImagen } from "../../../compartido/validaciones/imagenes";
 import { EstructuraPublica } from "../../catalogo-publico/componentes/EstructuraPublica";
 import {
   EMAIL_PATTERN,
@@ -628,7 +629,7 @@ function PaginaRegistroContent() {
               <Campo
                 label="Logotipo"
                 required
-                hint="Formatos permitidos: PNG, JPG, JPEG y WebP."
+                hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
               >
                 <input
                   className="input registration-file"
@@ -636,7 +637,23 @@ function PaginaRegistroContent() {
                   type="file"
                   required
                   accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (!file) {
+                      setLogo(null);
+                      return;
+                    }
+                    const validation = validarArchivoImagen(file, {
+                      label: "el logotipo",
+                    });
+                    if (!validation.ok) {
+                      e.target.value = "";
+                      setLogo(null);
+                      feedback.error(validation.title, validation.message);
+                      return;
+                    }
+                    setLogo(file);
+                  }}
                 />
               </Campo>{" "}
             </div>
@@ -772,20 +789,34 @@ function PaginaRegistroContent() {
                       </Campo>
                     </div>
                     <div className="registration-product-full">
-                      <Campo label="Imagen" required>
+                      <Campo
+                        label="Imagen"
+                        required
+                        hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+                      >
                         <input
                           className="input registration-file"
                           name={`productos.${index}.imagen`}
                           required
                           type="file"
                           accept="image/png,image/jpeg,image/webp"
-                          onChange={(e) =>
-                            changeProduct(
-                              index,
-                              "imagen",
-                              e.target.files?.[0] ?? null,
-                            )
-                          }
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] ?? null;
+                            if (!file) {
+                              changeProduct(index, "imagen", null);
+                              return;
+                            }
+                            const validation = validarArchivoImagen(file, {
+                              label: `la imagen del producto ${index + 1}`,
+                            });
+                            if (!validation.ok) {
+                              e.target.value = "";
+                              changeProduct(index, "imagen", null);
+                              feedback.error(validation.title, validation.message);
+                              return;
+                            }
+                            changeProduct(index, "imagen", file);
+                          }}
                         />
                       </Campo>
                     </div>

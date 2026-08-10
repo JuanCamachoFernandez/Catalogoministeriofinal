@@ -37,13 +37,13 @@ type CreateAdminResponse = {
   message: string;
   data: AdminUser;
   username: string;
-  temporary_password: string;
+  temporary_password?: string;
 };
 
 type ResetPasswordResponse = {
   message: string;
   username: string;
-  temporary_password: string;
+  temporary_password?: string;
 };
 
 type CreatedCredentials = {
@@ -230,11 +230,13 @@ export default function PaginaAdministradores() {
       const response = await api.post<CreateAdminResponse>("/admin/users", payload);
       await refreshList();
       closeForm();
-      setCreatedCredentials({
-        firstName: response.data.data.first_name,
-        username: response.data.username,
-        temporaryPassword: response.data.temporary_password,
-      });
+      if (response.data.temporary_password) {
+        setCreatedCredentials({
+          firstName: response.data.data.first_name,
+          username: response.data.username,
+          temporaryPassword: response.data.temporary_password,
+        });
+      }
       feedback.success("Administrador creado", response.data.data.email);
     } catch (error) {
       const fieldName = fieldFromServerError(error);

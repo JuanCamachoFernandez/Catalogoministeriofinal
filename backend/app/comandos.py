@@ -14,7 +14,6 @@ from .modelos import (
     Category,
     ExhibitorType,
     Fair,
-    FairImage,
     FairParticipation,
     FeriaStatus,
     NotificationStatus,
@@ -59,7 +58,6 @@ def registrar_comandos(app):
             *db.session.scalars(
                 select(Fair.imagen_portada).where(Fair.imagen_portada.is_not(None))
             ).all(),
-            *db.session.scalars(select(FairImage.url)).all(),
         ]
         referenced = {
             path.resolve()
@@ -120,7 +118,11 @@ def registrar_comandos(app):
         """Carga una base de pruebas amplia e idempotente."""
         require_postgresql_test_database()
         email = os.getenv("CORREO_ADMINISTRADOR_PRUEBAS", "catalogo.test@gmail.com").lower()
-        password = os.getenv("CONTRASENA_ADMINISTRADOR_PRUEBAS", "Catalogo.Test123!")
+        password = os.getenv("CONTRASENA_ADMINISTRADOR_PRUEBAS", "")
+        if not password:
+            raise click.ClickException(
+                "Configure CONTRASENA_ADMINISTRADOR_PRUEBAS para cargar datos de prueba"
+            )
         now_utc = datetime.now(timezone.utc)
         today = bolivia_today()
 
@@ -219,7 +221,7 @@ def registrar_comandos(app):
             maternal_last_name="Lopez",
             status=UserStatus.ACTIVE,
             must_change_password=True,
-            raw_password="Admin.Pruebas2026!",
+            raw_password=password,
         )
         ensure_admin(
             username="jorge.quispe",
@@ -229,7 +231,7 @@ def registrar_comandos(app):
             maternal_last_name="Mamani",
             status=UserStatus.INACTIVE,
             must_change_password=False,
-            raw_password="Admin.Inactivo2026!",
+            raw_password=password,
         )
 
         for name in [
@@ -829,7 +831,7 @@ def registrar_comandos(app):
             "Datos de prueba creados: "
             f"3 administradores, {len(units)} unidades productivas, {len(demo_fairs)} ferias y 3 solicitudes QA"
         )
-        click.echo(f"Administrador principal: {email} / {password}")
+        click.echo(f"Administrador principal: {email}")
 
     @app.cli.command("seed-admin")
     @with_appcontext

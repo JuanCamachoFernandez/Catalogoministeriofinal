@@ -21,6 +21,7 @@ import {
   InsigniaEstado,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
+import { LIMITE_IMAGEN_MB, validarArchivoImagen } from "../../../compartido/validaciones/imagenes";
 import { TarjetaContrasenaPerfil } from "../../autenticacion/componentes/TarjetaContrasenaPerfil";
 import { servicioUnidadProductiva } from "../servicios/servicioUnidadProductiva";
 import "../estilos/unidad-productiva.css";
@@ -459,6 +460,14 @@ export function PaginaPerfilUnidadProductiva() {
               onChange={async (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
+                const validation = validarArchivoImagen(file, {
+                  label: "el logotipo",
+                });
+                if (!validation.ok) {
+                  event.target.value = "";
+                  feedback.error(validation.title, validation.message);
+                  return;
+                }
                 setUploadingLogo(true);
                 try {
                   await servicioUnidadProductiva.uploadLogo(file);
@@ -481,7 +490,7 @@ export function PaginaPerfilUnidadProductiva() {
             />
           </label>
           <small className="unit-profile-logo-hint">
-            Use una imagen clara en formato JPG, PNG o WebP.
+            Use una imagen clara en formato JPG, PNG o WebP de hasta {LIMITE_IMAGEN_MB} MB.
           </small>
         </aside>
 

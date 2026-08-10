@@ -105,26 +105,6 @@ class Fair(TimestampMixin, db.Model):
         return query
 
 
-class FairImage(db.Model):
-    __tablename__ = "imagenes_feria"
-    id = db.Column(db.Uuid, primary_key=True, default=uid)
-    fair_id = db.Column(
-        "feria_id",
-        db.Uuid,
-        db.ForeignKey("ferias.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    filename = db.Column("nombre_archivo", db.String(255), nullable=False)
-    url = db.Column("direccion_url", db.String(500), nullable=False)
-    public_id = db.Column("identificador_cloudinary", db.String(500), nullable=True)
-    alt_text = db.Column("texto_alternativo", db.String(255))
-    is_cover = db.Column("es_portada", db.Boolean, default=False)
-    display_order = db.Column("orden_visualizacion", db.Integer, default=0)
-    created_at = db.Column(
-        "fecha_creacion", db.DateTime(timezone=True), default=now, nullable=False
-    )
-
-
 class FairExhibitor(TimestampMixin, db.Model):
     __tablename__ = "expositores_feria"
     id = db.Column(db.Uuid, primary_key=True, default=uid)

@@ -35,11 +35,32 @@ from ..servicios.autenticacion import contrasena_segura, puede_recuperar_contras
 
 from ..autenticacion.sesiones import current_user
 auth_bp = Blueprint("auth", __name__)
-RECOVERY_ACCOUNT_ERROR = "Este correo no está registrado en ninguna cuenta activa"
+RECOVERY_GENERIC_MESSAGE = "Si la cuenta existe, enviaremos un codigo de recuperacion al correo registrado"
 
 
 _can_recover_password = puede_recuperar_contrasena
 strong_password = contrasena_segura
+
+
+def _as_utc(value):
+    if value and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _invalidate_pending_recoveries(user, now):
+    if not user:
+        return
+    pending = db.session.scalars(
+        select(PasswordRecovery).where(
+            PasswordRecovery.user_id == user.id,
+            PasswordRecovery.used_at.is_(None),
+        )
+    ).all()
+    for recovery in pending:
+        recovery.used_at = now
+    if pending:
+        db.session.commit()
 
 
 @auth_bp.post("/auth/login")
@@ -187,9 +208,22 @@ def forgot_password():
     value = (data.get("email") or "").lower().strip()
     user = db.session.scalar(select(User).where(User.email == value))
     if not _can_recover_password(user):
-        return error(RECOVERY_ACCOUNT_ERROR, 404)
-    response = {"message": "Enviamos un código de 6 dígitos al correo de la cuenta"}
+        _invalidate_pending_recoveries(user, datetime.now(timezone.utc))
+        return {"message": RECOVERY_GENERIC_MESSAGE}
     now = datetime.now(timezone.utc)
+    response = {"message": RECOVERY_GENERIC_MESSAGE}
+    latest_recovery = db.session.scalar(
+        select(PasswordRecovery)
+        .where(
+            PasswordRecovery.user_id == user.id,
+            PasswordRecovery.used_at.is_(None),
+        )
+        .order_by(PasswordRecovery.created_at.desc())
+    )
+    if latest_recovery and (
+        now - _as_utc(latest_recovery.created_at)
+    ).total_seconds() < current_app.config["SEGUNDOS_ENTRE_INTENTOS_RECUPERACION"]:
+        return response
     for previous in db.session.scalars(
         select(PasswordRecovery).where(
             PasswordRecovery.user_id == user.id,
@@ -238,7 +272,8 @@ def verify_recovery_code():
     email = (data.get("email") or "").lower().strip()
     user = db.session.scalar(select(User).where(User.email == email))
     if not _can_recover_password(user):
-        return error(RECOVERY_ACCOUNT_ERROR, 404)
+        _invalidate_pending_recoveries(user, datetime.now(timezone.utc))
+        return error("Codigo invalido o expirado", 400)
     recovery = db.session.scalar(
         select(PasswordRecovery)
         .where(
@@ -249,9 +284,7 @@ def verify_recovery_code():
         .order_by(PasswordRecovery.created_at.desc())
     )
     now = datetime.now(timezone.utc)
-    expires_at = recovery.expires_at if recovery else None
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    expires_at = _as_utc(recovery.expires_at) if recovery else None
     code_hash = sha256((data.get("code") or "").encode()).hexdigest()
     if (
         not recovery
@@ -297,16 +330,16 @@ def reset_password():
         )
     )
     now = datetime.now(timezone.utc)
-    expires_at = recovery.expires_at if recovery else None
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    expires_at = _as_utc(recovery.expires_at) if recovery else None
     if not recovery or expires_at <= now:
         return error("El token es inválido o expiró", 400)
     user = db.session.get(User, recovery.user_id)
     if not _can_recover_password(user):
         recovery.used_at = now
         db.session.commit()
-        return error(RECOVERY_ACCOUNT_ERROR, 404)
+        return error("El token es invalido o expiro", 400)
+    if user.check_password(password):
+        return error("No puede reutilizar la contraseña", 400)
     user.set_password(password)
     user.must_change_password = False
     user.failed_login_attempts = 0

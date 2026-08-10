@@ -260,15 +260,15 @@ def test_recuperacion_verifica_codigo_y_usa_token_una_sola_vez(app, client):
 
 
 def test_recuperacion_rechaza_correos_sin_cuenta_activa_y_no_envia_mensajes(app, client):
-    error_message = "Este correo no está registrado en ninguna cuenta activa"
+    generic_message = "Si la cuenta existe, enviaremos un codigo de recuperacion al correo registrado"
     with patch(
         "app.rutas.autenticacion.BrevoEmailService.send_password_code"
     ) as send_password_code:
         missing = client.post(
             "/api/auth/forgot-password", json={"email": "inexistente@gmail.com"}
         )
-        assert missing.status_code == 404
-        assert missing.json["error"] == error_message
+        assert missing.status_code == 200
+        assert missing.json["message"] == generic_message
 
         with app.app_context():
             user = create_user()
@@ -284,8 +284,8 @@ def test_recuperacion_rechaza_correos_sin_cuenta_activa_y_no_envia_mensajes(app,
                 "/api/auth/forgot-password",
                 json={"email": "admin.prueba@gmail.com"},
             )
-            assert response.status_code == 404
-            assert response.json["error"] == error_message
+            assert response.status_code == 200
+            assert response.json["message"] == generic_message
 
         with app.app_context():
             user = db.session.get(User, user_id)
@@ -296,8 +296,8 @@ def test_recuperacion_rechaza_correos_sin_cuenta_activa_y_no_envia_mensajes(app,
             "/api/auth/forgot-password",
             json={"email": "admin.prueba@gmail.com"},
         )
-        assert deleted.status_code == 404
-        assert deleted.json["error"] == error_message
+        assert deleted.status_code == 200
+        assert deleted.json["message"] == generic_message
 
         send_password_code.assert_not_called()
         with app.app_context():
@@ -359,7 +359,7 @@ def test_recuperacion_de_unidad_productiva_exige_solicitud_aprobada_y_unidad_act
             "/api/auth/forgot-password",
             json={"email": "unidad.pendiente@gmail.com"},
         )
-        assert pending.status_code == 404
+        assert pending.status_code == 200
         send_password_code.assert_not_called()
 
         with app.app_context():
@@ -382,7 +382,7 @@ def test_recuperacion_de_unidad_productiva_exige_solicitud_aprobada_y_unidad_act
             "/api/auth/forgot-password",
             json={"email": "unidad.pendiente@gmail.com"},
         )
-        assert inactive.status_code == 404
+        assert inactive.status_code == 200
         assert send_password_code.call_count == 1
 
 
@@ -408,8 +408,8 @@ def test_recuperacion_se_detiene_si_la_cuenta_deja_de_estar_activa(app, client):
         "/api/auth/verify-recovery-code",
         json={"email": "admin.prueba@gmail.com", "code": code},
     )
-    assert verified.status_code == 404
-    assert verified.json["error"] == "Este correo no está registrado en ninguna cuenta activa"
+    assert verified.status_code == 400
+    assert verified.json["error"] == "Codigo invalido o expirado"
 
     with app.app_context():
         user = db.session.get(User, user_id)
@@ -440,7 +440,7 @@ def test_recuperacion_se_detiene_si_la_cuenta_deja_de_estar_activa(app, client):
             "new_password": "Recuperada2026!",
         },
     )
-    assert reset.status_code == 404
+    assert reset.status_code == 400
     with app.app_context():
         user = db.session.get(User, user_id)
         assert user.status == UserStatus.INACTIVE

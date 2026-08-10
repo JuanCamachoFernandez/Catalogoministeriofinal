@@ -3,10 +3,12 @@ import base64
 from io import BytesIO
 from pathlib import Path
 
+import pytest
+from flask import Flask
 from flask_jwt_extended import create_access_token
 
 from app import create_app
-from app.configuracion import Config
+from app.configuracion import Config, validar_configuracion_segura
 from app.servicios import (
     get_public_cache,
     invalidate_public_cache,
@@ -68,6 +70,56 @@ def test_marshmallow_rechaza_campos_desconocidos(client):
     )
     assert response.status_code == 400
     assert "admin" in response.json["details"]
+
+
+def test_credenciales_temporales_no_se_exponen_si_estan_deshabilitadas(app, client):
+    with app.app_context():
+        create_user("actor")
+        token = login(client, "actor")
+    app.config["MOSTRAR_CREDENCIALES_TEMPORALES"] = False
+
+    response = client.post(
+        "/api/admin/users",
+        headers=headers(token),
+        json={
+            "first_name": "Admin",
+            "apellido_paterno": "Seguro",
+            "email": "admin.seguro@gmail.com",
+            "role": "ADMIN",
+        },
+    )
+
+    assert response.status_code == 201
+    assert "temporary_password" not in response.json
+
+
+def test_produccion_rechaza_configuracion_incompleta(monkeypatch):
+    for name in (
+        "CLOUDINARY_URL",
+        "CLAVE_BREVO",
+        "CORREO_REMITENTE_BREVO",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ENVIO_CORREO_HABILITADO", "true")
+    production_app = Flask(__name__)
+    production_app.config.update(
+        TESTING=False,
+        ENTORNO_APLICACION="produccion",
+        SECRET_KEY=None,
+        JWT_SECRET_KEY=None,
+        SQLALCHEMY_DATABASE_URI="postgresql+psycopg://catalogo@db/catalogo",
+        ORIGENES_PERMITIDOS=["http://localhost:5173"],
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        validar_configuracion_segura(production_app)
+
+    message = str(exc_info.value)
+    assert "SECRET_KEY" in message
+    assert "JWT_SECRET_KEY" in message
+    assert "ORIGENES_PERMITIDOS" in message
+    assert "CLOUDINARY_URL" in message
+    assert "CLAVE_BREVO" in message
 
 
 def test_paginacion_limita_y_reporta_totales(app, client):
@@ -334,6 +386,30 @@ def test_imagen_producto_exige_datos_y_permite_varias(app, client):
         images = ProductImage.query.filter_by(product_id=product_id).all()
         assert len(images) == 2
         assert sorted(image.display_order for image in images) == [0, 1]
+
+    third = client.post(
+        f"/api/exhibitor/products/{product_id}/images",
+        headers=headers(token),
+        data={
+            "file": (BytesIO(png), "imagen-3.png"),
+            "alt_text": "Vista 3 del producto",
+        },
+        content_type="multipart/form-data",
+    )
+    assert third.status_code == 201
+    fourth = client.post(
+        f"/api/exhibitor/products/{product_id}/images",
+        headers=headers(token),
+        data={
+            "file": (BytesIO(png), "imagen-4.png"),
+            "alt_text": "Vista 4 del producto",
+        },
+        content_type="multipart/form-data",
+    )
+    assert fourth.status_code == 409
+    assert client.delete(
+        f"/api/product-images/{third.json['id']}", headers=headers(token)
+    ).status_code == 204
 
     deleted = client.delete(
         f"/api/product-images/{image_ids[0]}", headers=headers(token)

@@ -1,13 +1,31 @@
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 import uuid
+
 from flask import current_app
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 UPLOAD_PREFIX = "/uploads/"
 CLOUDINARY_ROOT_FOLDER = "catalogo-ministerio"
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+WEBP_QUALITY = 82
+
+IMAGE_VARIANTS = {
+    "fair_cover": {"max_size": (1600, 1600)},
+    "generic": {"max_size": None},
+    "product": {"max_size": (1600, 1600)},
+    "profile_photo": {"max_size": None},
+    "unit_logo": {"max_size": (1000, 1000)},
+}
+FOLDER_IMAGE_VARIANTS = {
+    "ferias": "fair_cover",
+    "logos": "unit_logo",
+    "perfiles": "profile_photo",
+    "productos": "product",
+}
 
 
 class _TestingCloudinaryUploader:
@@ -15,7 +33,7 @@ class _TestingCloudinaryUploader:
     def upload(_stream, **kwargs):
         public_id = f"{kwargs['folder']}/{kwargs['public_id']}"
         return {
-            "secure_url": f"https://res.cloudinary.com/testing/image/upload/v1/{public_id}.png",
+            "secure_url": f"https://res.cloudinary.com/testing/image/upload/v1/{public_id}.webp",
             "public_id": public_id,
         }
 
@@ -38,7 +56,32 @@ def _cloudinary_uploader():
     return cloudinary.uploader
 
 
-def _validate_image_file(file):
+def _file_size(stream):
+    position = stream.tell()
+    stream.seek(0, 2)
+    size = stream.tell()
+    stream.seek(position)
+    return size
+
+
+def _resolve_image_variant(folder, image_variant=None):
+    variant = image_variant or FOLDER_IMAGE_VARIANTS.get(folder, "generic")
+    if variant not in IMAGE_VARIANTS:
+        raise ValueError("Configuracion de imagen no soportada")
+    return variant
+
+
+def _normalize_for_webp(image):
+    if image.mode == "RGBA":
+        background = Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(image, mask=image.getchannel("A"))
+        return background
+    if image.mode != "RGB":
+        return image.convert("RGB")
+    return image
+
+
+def _optimize_image(file, image_variant):
     if not file or not file.filename:
         return None
     if "." not in file.filename:
@@ -47,15 +90,35 @@ def _validate_image_file(file):
     extension = file.filename.rsplit(".", 1)[-1].lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise ValueError("Formato de imagen no permitido")
+    if _file_size(file.stream) > MAX_IMAGE_BYTES:
+        raise ValueError("La imagen no puede superar los 10 MB")
 
     try:
-        image = Image.open(file.stream)
-        image.verify()
         file.stream.seek(0)
+        image = Image.open(file.stream)
+        image.load()
     except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError("El archivo no es una imagen válida") from exc
+        raise ValueError("El archivo no es una imagen valida") from exc
 
-    return extension
+    try:
+        optimized = ImageOps.exif_transpose(image)
+    except OSError as exc:
+        raise ValueError("El archivo no es una imagen valida") from exc
+
+    max_size = IMAGE_VARIANTS[image_variant]["max_size"]
+    if max_size:
+        optimized.thumbnail(max_size, Image.Resampling.LANCZOS)
+    optimized = _normalize_for_webp(optimized)
+
+    output = BytesIO()
+    optimized.save(output, format="WEBP", quality=WEBP_QUALITY, method=6)
+    output.seek(0)
+
+    filename_base = secure_filename(file.filename.rsplit(".", 1)[0]) or "imagen"
+    return {
+        "filename": f"{filename_base}.webp",
+        "stream": output,
+    }
 
 
 def cloudinary_folder(folder):
@@ -118,17 +181,23 @@ def validate_image_reference(url, folder, *, allow_none=False):
     raise ValueError("La imagen debe subirse primero")
 
 
-def upload_to_cloudinary(file, folder):
-    extension = _validate_image_file(file)
-    if not extension:
+def upload_to_cloudinary(file, folder, image_variant=None):
+    variant = _resolve_image_variant(folder, image_variant)
+    optimized = _optimize_image(file, variant)
+    if not optimized:
         return None
 
-    filename = secure_filename(file.filename)
+    filename = optimized["filename"]
     identifier = uuid.uuid4().hex
 
     uploader = _cloudinary_uploader()
     if uploader is None:
-        local_url = save_upload(file, folder)
+        local_url = save_upload(
+            file,
+            folder,
+            image_variant=variant,
+            processed=optimized,
+        )
         return {
             "url": local_url,
             "public_id": None,
@@ -137,11 +206,12 @@ def upload_to_cloudinary(file, folder):
 
     try:
         result = uploader.upload(
-            file.stream,
+            optimized["stream"],
             folder=cloudinary_folder(folder),
             public_id=identifier,
             resource_type="image",
             overwrite=False,
+            format="webp",
         )
     except Exception as exc:
         raise ValueError("No fue posible subir la imagen") from exc
@@ -164,14 +234,16 @@ def delete_cloudinary_upload(public_id):
     )
 
 
-def save_upload(file, folder):
-    extension = _validate_image_file(file)
-    if not extension:
+def save_upload(file, folder, image_variant=None, processed=None):
+    variant = _resolve_image_variant(folder, image_variant)
+    optimized = processed or _optimize_image(file, variant)
+    if not optimized:
         return None
-    name = secure_filename(f"{uuid.uuid4().hex}.{extension}")
+    name = secure_filename(f"{uuid.uuid4().hex}.webp")
     target = Path(current_app.config["CARPETA_CARGAS"]) / folder
     target.mkdir(parents=True, exist_ok=True)
-    file.save(target / name)
+    with (target / name).open("wb") as saved_file:
+        saved_file.write(optimized["stream"].getvalue())
     return f"{UPLOAD_PREFIX}{folder}/{name}"
 
 

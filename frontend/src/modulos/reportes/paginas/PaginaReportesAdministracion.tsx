@@ -27,7 +27,7 @@ const RESOURCE_OPTIONS: Option[] = [
   { value: "unidades_productivas", label: "Unidades productivas" },
   { value: "sectores_productivos", label: "Sectores productivos" },
   { value: "productos", label: "Productos" },
-  { value: "ferias", label: "Ferias" },
+  { value: "ferias", label: "Ferias y eventos" },
   { value: "administradores", label: "Administradores" },
   { value: "auditoria", label: "Auditoría" },
 ];

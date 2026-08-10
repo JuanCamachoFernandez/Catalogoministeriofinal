@@ -7,6 +7,7 @@ from app.extensiones import db
 
 class TestConfig(Config):
     TESTING=True
+    MOSTRAR_CREDENCIALES_TEMPORALES=True
     SQLALCHEMY_DATABASE_URI=os.getenv(
         "DIRECCION_BASE_DATOS_PRUEBAS", "sqlite+pysqlite:///:memory:"
     )

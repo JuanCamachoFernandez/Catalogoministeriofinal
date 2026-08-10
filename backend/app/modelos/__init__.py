@@ -18,7 +18,7 @@ from .solicitud_registro import (
 )
 from .sector_unidad import UnitSector
 from .expositor import Exhibitor, ExhibitorType, ExhibitorTypeLink
-from .feria import Fair, FairExhibitor, FairImage, bolivia_today
+from .feria import Fair, FairExhibitor, bolivia_today
 from .producto import Category, Product
 from .imagen_producto import ProductImage
 from .sistema import CacheState
@@ -37,7 +37,6 @@ __all__ = [
     "ExhibitorTypeLink",
     "Fair",
     "FairExhibitor",
-    "FairImage",
     "FeriaStatus",
     "PasswordRecovery",
     "Product",
