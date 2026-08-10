@@ -1120,7 +1120,12 @@
   gap: 0.7rem;
   align-items: end;
   margin: 0;
-  padding: 0.1rem 0;
+  padding: 1.0rem 0.5rem;
+  background: linear-gradient(
+    145deg,
+    rgb(255 255 255 / 0.75),
+    rgb(250 244 225 / 0.85)
+  );
 }
 .admin-requests-toolbar .search-field,
 .admin-requests-toolbar .input,
@@ -3909,6 +3914,38 @@
 .fair-participation-toolbar {
   grid-template-columns: minmax(260px, 1.5fr) minmax(240px, 1fr) auto;
   align-items: end;
+  gap: 0.9rem;
+}
+
+.fair-participation-assignment-panel {
+  position: relative;
+  margin-bottom: 1.15rem;
+  border: 1px solid #e2e2dc;
+  border-radius: 0.8rem;
+  background: #fff;
+  padding: 1rem;
+  box-shadow: none;
+  transition: border-color 0.2s ease;
+}
+
+.fair-participation-assignment-panel:hover {
+  border-color: #babbb3;
+}
+
+.fair-participation-assignment-panel .search-field,
+.fair-participation-assignment-panel .admin-sector-filter-trigger {
+  min-height: 44px;
+  border-color: #e2e2dc;
+  border-radius: 0.65rem;
+  background: #fff;
+  box-shadow: none;
+}
+
+.fair-participation-assignment-panel .search-field:focus-within,
+.fair-participation-assignment-panel .admin-sector-filter.is-open .admin-sector-filter-trigger,
+.fair-participation-assignment-panel .admin-sector-filter-trigger:hover {
+  border-color: #9ab49d;
+  box-shadow: 0 0 0 3px rgb(47 110 62 / 0.1);
 }
 
 .fair-participation-toolbar .fair-participation-search,
@@ -3919,6 +3956,14 @@
 .fair-participation-toolbar > .admin-units-create-button {
   width: 100%;
   min-width: 170px;
+  min-height: 44px;
+  border-radius: 0.65rem;
+  box-shadow: none;
+}
+
+.fair-participation-list-search {
+  max-width: 520px;
+  margin: 0 0 1rem;
 }
 
 .fair-participation-suggestions {

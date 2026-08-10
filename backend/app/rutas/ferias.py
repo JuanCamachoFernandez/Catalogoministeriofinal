@@ -928,7 +928,14 @@ def canonical_list_participations(fair_id):
     fair = db.session.get(Fair, fair_id)
     if not fair:
         return error("Feria no encontrada", 404)
-    return paginate(FairParticipation.for_fair_query(fair_id).order_by(FairParticipation.created_at.desc()), participation_json)
+    query = FairParticipation.for_fair_query(fair_id)
+    term = request.args.get("q", "").strip()
+    if term:
+        query = (
+            query.join(ProductiveUnit, ProductiveUnit.id == FairParticipation.productive_unit_id)
+            .where(ProductiveUnit.nombre_comercial.ilike(f"%{term}%"))
+        )
+    return paginate(query.order_by(FairParticipation.created_at.desc()), participation_json)
 
 
 @fair_bp.post("/admin/fairs/<uuid:fair_id>/participations")
