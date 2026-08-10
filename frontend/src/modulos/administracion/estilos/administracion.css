@@ -3629,6 +3629,43 @@
   font-size: 0.84rem;
 }
 
+.admin-admins-credentials-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.admin-admins-credentials-heading h3 {
+  margin: 0;
+}
+
+.admin-admins-credentials-help {
+  position: relative;
+  flex: none;
+}
+
+.admin-admins-help-button {
+  width: 26px;
+  height: 26px;
+  border-color: #e2e2dc;
+  color: #5e6259;
+  box-shadow: none;
+}
+
+.admin-admins-help-popover {
+  width: min(320px, calc(100vw - 3rem));
+  border-color: #e2dac3;
+  border-radius: 1rem;
+  background: #fffef9;
+  padding: 0.9rem;
+  box-shadow: 0 16px 36px rgb(36 31 19 / 0.14);
+}
+
+.admin-admins-help-popover .admin-inline-help-card-header {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+
 .admin-admins-detail-page .admin-unit-detail-heading .status {
   flex-shrink: 0;
 }

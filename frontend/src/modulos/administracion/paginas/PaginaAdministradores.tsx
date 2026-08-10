@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Plus, Trash2, UserRoundCheck, UserRoundX } from "lucide-react";
-import { useRef, useState } from "react";
+import { Eye, Pencil, Plus, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import { api, type AdminUser, type Paged, type UserStatus } from "../../../compartido";
 import {
   BarraPaginacion,
@@ -131,9 +132,43 @@ export default function PaginaAdministradores() {
   const [draft, setDraft] = useState<DraftAdmin>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<CreatedCredentials | null>(null);
+  const [showCredentialsHelp, setShowCredentialsHelp] = useState(false);
+  const credentialsHelpRef = useRef<HTMLButtonElement | null>(null);
+  const [credentialsHelpPosition, setCredentialsHelpPosition] = useState({
+    left: 16,
+    top: 16,
+    width: 320,
+  });
   const formRef = useRef<HTMLFormElement | null>(null);
   const qc = useQueryClient();
   const feedback = useRetroalimentacion();
+
+  const updateCredentialsHelpPosition = () => {
+    const triggerRect = credentialsHelpRef.current?.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth - 32);
+    setCredentialsHelpPosition({
+      width,
+      left: triggerRect
+        ? Math.min(Math.max(16, triggerRect.right - width), window.innerWidth - width - 16)
+        : 16,
+      top: triggerRect ? Math.min(Math.max(16, triggerRect.top), window.innerHeight - 180) : 16,
+    });
+  };
+
+  useEffect(() => {
+    if (!showCredentialsHelp) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowCredentialsHelp(false);
+      }
+    };
+    window.addEventListener("resize", updateCredentialsHelpPosition);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("resize", updateCredentialsHelpPosition);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showCredentialsHelp]);
 
   const list = useQuery({
     queryKey: ["admin-users", q, status, page],
@@ -625,13 +660,60 @@ export default function PaginaAdministradores() {
 
         <section className="admin-request-review-section admin-request-decision-section">
           <div className="admin-request-decision-heading">
-            <div>
+            <div className="admin-admins-credentials-heading">
               <h3>Credenciales de acceso</h3>
-              <p>
-                Puede reenviar las credenciales si el administrador necesita
-                volver a ingresar al sistema. Se generará una nueva contraseña
-                temporal y se mostrarán nuevamente los datos de acceso.
-              </p>
+              <div className="admin-admins-credentials-help">
+                <button
+                  ref={credentialsHelpRef}
+                  type="button"
+                  className="admin-inline-help-button admin-admins-help-button"
+                  aria-label="Mostrar ayuda sobre credenciales"
+                  aria-expanded={showCredentialsHelp}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    updateCredentialsHelpPosition();
+                    setShowCredentialsHelp((current) => !current);
+                  }}
+                >
+                  ?
+                </button>
+                {showCredentialsHelp ? (
+                  createPortal(
+                    <>
+                      <button
+                        type="button"
+                        className="admin-inline-help-backdrop"
+                        aria-label="Cerrar ayuda"
+                        onClick={() => setShowCredentialsHelp(false)}
+                      />
+                      <div
+                        className="admin-inline-help-card admin-admins-help-popover"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Ayuda sobre credenciales"
+                        style={credentialsHelpPosition}
+                      >
+                        <div className="admin-inline-help-card-header">
+                          <button
+                            type="button"
+                            aria-label="Cerrar ayuda"
+                            onClick={() => setShowCredentialsHelp(false)}
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                        <p>
+                          Puede regenerar una contraseña temporal y mostrar
+                          nuevamente los datos de acceso cuando el usuario no
+                          pueda ingresar al sistema.
+                        </p>
+                      </div>
+                    </>,
+                    document.body,
+                  )
+                ) : null}
+              </div>
             </div>
           </div>
           <div className="admin-request-decision-confirmed">
