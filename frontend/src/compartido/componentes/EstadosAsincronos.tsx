@@ -89,10 +89,10 @@ export function InsigniaEstado({ value }: { value: string | boolean }) {
     AUTHORIZED: "Autorizado",
     PENDING: "Pendiente",
     REJECTED: "Rechazado",
-    REVOKED: "Revocado",
+    REVOKED: "Retirado",
     PUBLISHED: "Publicada",
     APPROVED: "Aprobada",
-    DRAFT: "En preparación",
+    DRAFT: "Preparación",
     RETIRED: "Retirado",
     FINISHED: "Finalizada",
     DISABLED: "Cancelada",
@@ -101,7 +101,21 @@ export function InsigniaEstado({ value }: { value: string | boolean }) {
   };
   return (
     <span
-      className={`status ${positive ? "status-positive" : warning ? "status-warning" : negative ? "status-negative" : "status-neutral"}`}
+      className={`status ${
+        normalized === "DRAFT"
+          ? "status-draft"
+          : normalized === "RETIRED"
+            ? "status-retired"
+          : normalized === "FINISHED"
+            ? "status-finished"
+          : positive
+            ? "status-positive"
+            : warning
+              ? "status-warning"
+              : negative
+                ? "status-negative"
+                : "status-neutral"
+      }`}
     >
       {labels[normalized] ?? etiquetaAccionAuditoria(normalized)}
     </span>

@@ -3,6 +3,8 @@ import type { UserRole } from "../autenticacion/roles";
 export type UserStatus = "ACTIVE" | "INACTIVE" | "LOCKED" | "BLOCKED";
 export type ProductStatus = "DRAFT" | "AVAILABLE" | "OUT_OF_STOCK" | "RETIRED" | "DELETED";
 export type FairStatus = "DRAFT" | "PUBLISHED" | "DISABLED" | "FINISHED";
+export type FairKind = "FAIR" | "EVENT";
+export type EventAnimation = "AURORA" | "SHIMMER" | "FLOAT" | "GLOW";
 export type AssignmentStatus = "PENDING" | "AUTHORIZED" | "REVOKED";
 
 export interface SessionUser {
@@ -164,13 +166,19 @@ export interface CanonicalProduct {
 
 export interface CanonicalFair {
   id: string;
+  tipo: FairKind;
   nombre: string;
   descripcion?: string | null;
   ubicacion: string;
   departamento?: string;
+  departamentos?: string[];
   fecha_inicio: string;
   fecha_fin: string;
   imagen_portada?: string | null;
+  color_primario?: string | null;
+  color_secundario?: string | null;
+  color_terciario?: string | null;
+  animaciones_tema: EventAnimation[];
   estado: FairStatus;
 }
 
@@ -267,17 +275,23 @@ export interface Exhibitor {
 
 export interface Fair {
   id: string;
+  tipo: FairKind;
   nombre: string;
   slug: string;
   descripcion: string | null;
   lugar: string;
   direccion: string | null;
   departamento: string;
+  departamentos?: string[];
   fecha_inicio: string;
   fecha_fin: string;
   hora_inicio?: string | null;
   hora_fin?: string | null;
   imagen_portada: string | null;
+  color_primario?: string | null;
+  color_secundario?: string | null;
+  color_terciario?: string | null;
+  animaciones_tema: EventAnimation[];
   observaciones?: string | null;
   estado: FairStatus;
   visible_publicamente: boolean;

@@ -202,6 +202,28 @@ def registrar_comandos(app):
                 if path.is_file()
             ]
 
+        bolivia_departments = (
+            "Chuquisaca",
+            "La Paz",
+            "Cochabamba",
+            "Oruro",
+            "Potosi",
+            "Tarija",
+            "Santa Cruz",
+            "Beni",
+            "Pando",
+        )
+
+        def event_departments_payload(selected_departments):
+            selected_departments = list(dict.fromkeys(selected_departments or []))
+            if not selected_departments:
+                raise click.ClickException("Los eventos de prueba deben tener al menos un departamento")
+            if set(selected_departments) == set(bolivia_departments):
+                return "Todos los departamentos", selected_departments
+            if len(selected_departments) == 1:
+                return selected_departments[0], selected_departments
+            return f"{len(selected_departments)} departamentos", selected_departments
+
         primary_admin = ensure_admin(
             username="catalogo.test",
             email_address=email,
@@ -280,20 +302,43 @@ def registrar_comandos(app):
                 "No se encontraron imagenes en backend/uploads para completar los datos de prueba"
             )
 
-        def ensure_fair(name, *, location, department, description, starts_in, ends_in, status):
+        def ensure_fair(
+            name,
+            *,
+            location,
+            department,
+            description,
+            starts_in,
+            ends_in,
+            status,
+            tipo="FAIR",
+            departamentos=None,
+            color_primario=None,
+            color_secundario=None,
+            color_terciario=None,
+            animaciones_tema=None,
+        ):
             fair = db.session.scalar(select(Fair).where(Fair.slug == slugify(name)))
+            departamentos = departamentos or []
+            animaciones_tema = animaciones_tema or []
             if not fair:
                 fair = Fair(
+                    tipo=tipo,
                     nombre=name,
                     slug=slugify(name),
                     descripcion=description,
                     lugar=location,
                     ubicacion=location,
                     departamento=department,
+                    departamentos=departamentos,
                     fecha_inicio=today + timedelta(days=starts_in),
                     fecha_fin=today + timedelta(days=ends_in),
                     fecha_limite_registro=today + timedelta(days=max(starts_in - 3, -1)),
                     imagen_portada=fair_images[0] if fair_images else None,
+                    color_primario=color_primario,
+                    color_secundario=color_secundario,
+                    color_terciario=color_terciario,
+                    animaciones_tema=animaciones_tema,
                     estado=status,
                     visible_publicamente=status == FeriaStatus.PUBLISHED,
                     created_by=primary_admin.id,
@@ -308,10 +353,16 @@ def registrar_comandos(app):
             fair.lugar = location
             fair.ubicacion = location
             fair.departamento = department
+            fair.departamentos = departamentos
             fair.fecha_inicio = today + timedelta(days=starts_in)
             fair.fecha_fin = today + timedelta(days=ends_in)
             fair.fecha_limite_registro = today + timedelta(days=max(starts_in - 3, -1))
             fair.imagen_portada = fair.imagen_portada or (fair_images[0] if fair_images else None)
+            fair.tipo = tipo
+            fair.color_primario = color_primario
+            fair.color_secundario = color_secundario
+            fair.color_terciario = color_terciario
+            fair.animaciones_tema = animaciones_tema
             fair.estado = status
             fair.visible_publicamente = status == FeriaStatus.PUBLISHED
             fair.deleted_at = None
@@ -476,6 +527,81 @@ def registrar_comandos(app):
                     starts_in=starts_in,
                     ends_in=ends_in,
                     status=status,
+                )
+            )
+
+        demo_event_specs = [
+            (
+                "Foro Nacional de Innovacion Productiva",
+                "Auditorio del Ministerio",
+                "La Paz",
+                "Dialogo tecnico para validar listados, tema visual y portal publico.",
+                -1,
+                1,
+                FeriaStatus.PUBLISHED,
+                [
+                    "Chuquisaca",
+                    "La Paz",
+                    "Cochabamba",
+                    "Oruro",
+                    "Potosi",
+                    "Tarija",
+                    "Santa Cruz",
+                    "Beni",
+                    "Pando",
+                ],
+                "#0F4C81",
+                "#7C3AED",
+                "#14B8A6",
+                ["AURORA", "GLOW"],
+            ),
+            (
+                "Rueda Regional de Vinculacion",
+                "Centro de Convenciones",
+                "Cochabamba",
+                "Encuentro para pruebas de eventos por varios departamentos.",
+                14,
+                15,
+                FeriaStatus.DRAFT,
+                ["La Paz", "Cochabamba", "Oruro"],
+                "#14532D",
+                "#16A34A",
+                "#86EFAC",
+                ["SHIMMER", "FLOAT"],
+            ),
+            (
+                "Jornada de Emprendimiento del Oriente",
+                "Casa de la Cultura",
+                "Santa Cruz",
+                "Evento concluido para verificar historiales y estados terminales.",
+                -18,
+                -16,
+                FeriaStatus.FINISHED,
+                ["Santa Cruz", "Beni"],
+                "#9A3412",
+                "#F97316",
+                "#FDE68A",
+                ["FLOAT"],
+            ),
+        ]
+        demo_events = []
+        for event_name, location, department, description, starts_in, ends_in, status, selected_departments, color_primario, color_secundario, color_terciario, animaciones_tema in demo_event_specs:
+            event_department, event_departments = event_departments_payload(selected_departments)
+            demo_events.append(
+                ensure_fair(
+                    event_name,
+                    location=location,
+                    department=event_department,
+                    description=description,
+                    starts_in=starts_in,
+                    ends_in=ends_in,
+                    status=status,
+                    tipo="EVENT",
+                    departamentos=event_departments,
+                    color_primario=color_primario,
+                    color_secundario=color_secundario,
+                    color_terciario=color_terciario,
+                    animaciones_tema=animaciones_tema,
                 )
             )
 
@@ -827,7 +953,8 @@ def registrar_comandos(app):
         db.session.commit()
         click.echo(
             "Datos de prueba creados: "
-            f"3 administradores, {len(units)} unidades productivas, {len(demo_fairs)} ferias y 3 solicitudes QA"
+            f"3 administradores, {len(units)} unidades productivas, "
+            f"{len(demo_fairs)} ferias, {len(demo_events)} eventos y 3 solicitudes QA"
         )
         click.echo(f"Administrador principal: {email} / {password}")
 

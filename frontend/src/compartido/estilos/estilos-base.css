@@ -472,7 +472,7 @@ textarea.input {
   padding: 0;
   text-align: left;
   font-size: 1.15rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--color-text);
 }
 .product-title:hover {
@@ -889,6 +889,18 @@ textarea.input {
   background: #fff3cd;
   color: #715500;
 }
+.status-draft {
+  background: #fff3cd;
+  color: #715500;
+}
+.status-finished {
+  background: #edf3ff;
+  color: #37507a;
+}
+.status-retired {
+  background: #fde8e6;
+  color: #912319;
+}
 .status-negative {
   background: #fde8e6;
   color: #912319;
@@ -1251,6 +1263,21 @@ textarea.input {
   }
   .pagination-mobile-more {
     display: inline-flex !important;
+  }
+  .pagination.pagination-full-mobile .pagination-summary,
+  .pagination.pagination-full-mobile .pagination-desktop-controls {
+    display: flex;
+  }
+  .pagination.pagination-full-mobile .pagination-desktop-controls {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .pagination.pagination-full-mobile .pagination-pages {
+    flex-wrap: wrap;
+  }
+  .pagination.pagination-full-mobile .pagination-mobile-more {
+    display: none !important;
   }
 }
 @media (max-width: 520px) {

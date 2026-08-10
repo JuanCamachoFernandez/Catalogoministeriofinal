@@ -29,6 +29,10 @@ const PaginaProductosAdministracion = paginaDiferida(
   "default",
 );
 const PaginaFerias = paginaDiferida(() => import("../../modulos/administracion/paginas/PaginaFerias"), "default");
+const PaginaParticipacionesFeria = paginaDiferida(
+  () => import("../../modulos/administracion/paginas/PaginaParticipacionesFeria"),
+  "default",
+);
 const PaginaAdministradores = paginaDiferida(
   () => import("../../modulos/administracion/paginas/PaginaAdministradores"),
   "default",
@@ -74,6 +78,7 @@ export const rutasAdministracion = [
   route("/admin/sectores-productivos", "productive-sectors", <PaginaSectoresProductivos />),
   route("/admin/productos", "products", <PaginaProductosAdministracion />),
   route("/admin/ferias", "fairs", <PaginaFerias />),
+  route("/admin/ferias/:fairId/participaciones", "fairs", <PaginaParticipacionesFeria />),
   route("/admin/administradores", "administrator-accounts", <PaginaAdministradores />),
   route("/admin/auditoria", "audit", <PaginaAuditoria />),
   route("/admin/reportes", "reports", <PaginaReportesAdministracion />),

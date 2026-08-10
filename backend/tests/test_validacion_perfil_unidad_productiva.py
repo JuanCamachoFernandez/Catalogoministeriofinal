@@ -1,7 +1,11 @@
 import pytest
 from marshmallow import ValidationError
 
-from app.esquemas.unidades_productivas import ProductiveUnitUpdateSchema
+from app.esquemas.solicitudes_registro import RegistrationRequestSchema
+from app.esquemas.unidades_productivas import (
+    AdminProductiveUnitCreateSchema,
+    ProductiveUnitUpdateSchema,
+)
 
 
 VALID_PROFILE = {
@@ -30,9 +34,32 @@ def test_perfil_productivo_acepta_datos_validos():
 
 
 @pytest.mark.parametrize(
+    "schema",
+    [
+        RegistrationRequestSchema(),
+        AdminProductiveUnitCreateSchema(),
+        ProductiveUnitUpdateSchema(),
+    ],
+)
+def test_nombre_comercial_acepta_signos_visibles_en_todos_los_flujos(schema):
+    loaded = schema.load(
+        {"nombre_comercial": "Sabores & Valle S.R.L. #1 (@Centro)"},
+        partial=True,
+    )
+
+    assert loaded["nombre_comercial"] == "Sabores & Valle S.R.L. #1 (@Centro)"
+
+
+@pytest.mark.parametrize("value", ["   ", "Sabores\nValle", "Sabores\tValle"])
+def test_nombre_comercial_rechaza_vacios_y_caracteres_de_control(value):
+    with pytest.raises(ValidationError):
+        ProductiveUnitUpdateSchema().load({"nombre_comercial": value})
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("nombre_comercial", "Sabores @ Valle"),
+        ("nombre_comercial", "Sabores\nValle"),
         ("razon_social", "Sabores & Valle"),
         ("nombres_representante", "María 2"),
         ("apellido_paterno_representante", "Quispe1"),

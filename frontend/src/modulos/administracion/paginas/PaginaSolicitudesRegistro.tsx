@@ -54,6 +54,7 @@ export default function PaginaSolicitudesRegistro() {
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             page,
+            per_page: 10,
           },
         })
         .then((r) => r.data),

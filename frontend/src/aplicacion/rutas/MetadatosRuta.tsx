@@ -11,7 +11,7 @@ export function MetadatosRuta() {
         ? "Unidad Productiva"
         : pathname === "/solicitud-registro"
           ? "Solicitud de registro"
-          : "Ferias activas";
+          : "Ferias y eventos activos";
     document.title = `${title} | Ferias Productivas Bolivia`;
   }, [pathname]);
 

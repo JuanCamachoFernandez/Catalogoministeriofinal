@@ -8,7 +8,6 @@ import {
   type ProductiveUnitFairParticipation,
 } from "../../../compartido";
 import {
-  BotonConfirmacion,
   CajaError,
   EstadoCarga,
   InsigniaEstado,
@@ -45,6 +44,7 @@ export function PaginaDetalleUnidadProductiva({
   );
   const qc = useQueryClient();
   const feedback = useRetroalimentacion();
+
   const unit = useQuery({
     queryKey: ["productive-unit-detail", unitId],
     queryFn: () =>
@@ -52,6 +52,7 @@ export function PaginaDetalleUnidadProductiva({
         .get<ProductiveUnit>(`/admin/productive-units/${unitId}`)
         .then((response) => response.data),
   });
+
   const participations = useQuery({
     queryKey: ["productive-unit-participations", unitId],
     queryFn: () =>
@@ -303,43 +304,6 @@ export function PaginaDetalleUnidadProductiva({
           participations={participations.data ?? []}
         />
       )}
-
-      <section className="admin-unit-detail-section admin-unit-detail-actions">
-        <BotonConfirmacion
-          question="La unidad productiva y su cuenta quedarán inhabilitadas hasta que las restaures."
-          onConfirm={() =>
-            act(
-              `/admin/productive-units/${unitId}`,
-              "delete",
-              "La unidad productiva fue inhabilitada correctamente.",
-            )
-          }
-          className="admin-unit-action-button admin-unit-action-button-danger"
-          title="Inhabilita la unidad productiva y su cuenta asociada sin borrarlas definitivamente."
-          disabled={isDeleted}
-        >
-          Inhabilitar
-        </BotonConfirmacion>
-        <button
-          type="button"
-          className="admin-unit-action-button"
-          disabled={!isDeleted}
-          title={
-            isDeleted
-              ? "Restaura una unidad inhabilitada, reactiva su cuenta asociada y la deja operativa nuevamente."
-              : "Restaurar solo aplica a unidades inhabilitadas."
-          }
-          onClick={() =>
-            act(
-              `/admin/productive-units/${unitId}/restore`,
-              "post",
-              "La unidad productiva fue restaurada correctamente.",
-            )
-          }
-        >
-          Restaurar
-        </button>
-      </section>
     </article>
   );
 }

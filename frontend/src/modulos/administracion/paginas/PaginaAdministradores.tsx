@@ -764,7 +764,11 @@ export default function PaginaAdministradores() {
                           <Pencil size={16} />
                         </button>
                         <BotonConfirmacion
-                          className={`btn-small ${admin.status === "ACTIVE" ? "btn-outline admin-admins-toggle-danger" : "btn-outline"}`}
+                          className={`btn-small ${
+                            admin.status === "ACTIVE"
+                              ? "admin-sector-action-disable"
+                              : "admin-sector-action-enable"
+                          }`}
                           question={statusQuestion(admin)}
                           confirmLabel={statusActionLabel(admin.status)}
                           onConfirm={() => {
@@ -775,7 +779,7 @@ export default function PaginaAdministradores() {
                           {admin.status === "ACTIVE" ? <UserRoundX size={16} /> : <UserRoundCheck size={16} />}
                         </BotonConfirmacion>
                         <BotonConfirmacion
-                          className="btn-small btn-danger"
+                          className="btn-small admin-sector-action-disable"
                           question={`La cuenta de ${admin.first_name} ${admin.apellido_paterno ?? ""} se dara de baja y dejará de formar parte del sistema.`}
                           confirmLabel="Dar de baja"
                           onConfirm={() => {

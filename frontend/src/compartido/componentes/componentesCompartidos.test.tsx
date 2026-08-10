@@ -105,6 +105,33 @@ describe("componentes comunes", () => {
     expect(onPage).toHaveBeenCalledWith(2);
   });
 
+  it("no mueve el scroll cuando la paginación desactiva el auto-scroll", async () => {
+    const onPage = vi.fn();
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    render(
+      <BarraPaginacion
+        pagination={{ page: 1, per_page: 20, pages: 2, total: 21, has_next: true, has_prev: false }}
+        onPage={onPage}
+        scrollOnDesktop={false}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
+    expect(onPage).toHaveBeenCalledWith(2);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("puede mantener la paginación completa en móvil sin mostrar ver más", () => {
+    render(
+      <BarraPaginacion
+        pagination={{ page: 2, per_page: 5, pages: 4, total: 20, has_next: true, has_prev: true }}
+        mobileCompact={false}
+      />,
+    );
+    expect(screen.getByLabelText("Páginas disponibles")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ver más resultados" })).toBeNull();
+  });
+
   it("conserva los elementos anteriores al cargar más en móvil", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({
       matches: true,

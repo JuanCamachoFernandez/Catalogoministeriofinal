@@ -32,7 +32,7 @@ const adminNav: ReadonlyArray<
   ["/admin/unidades-productivas", "Unidades Productivas", Factory, "productive-units"],
   ["/admin/sectores-productivos", "Sectores Productivos", Activity, "productive-sectors"],
   ["/admin/productos", "Productos", Package, "products"],
-  ["/admin/ferias", "Ferias", CalendarDays, "fairs"],
+  ["/admin/ferias", "Ferias y eventos", CalendarDays, "fairs"],
   ["/admin/administradores", "Administradores", UsersRound, "administrator-accounts"],
   ["/admin/auditoria", "Auditoría", History, "audit"],
   ["/admin/reportes", "Reportes", BarChart3, "reports"],

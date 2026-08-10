@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Eye, Plus, UserRoundCheck, UserRoundX } from "lucide-react";
 import {
   api,
   type Paged,
@@ -15,6 +15,8 @@ import {
   CampoBusqueda,
   SelectorBuscable,
   InsigniaEstado,
+  BotonConfirmacion,
+  useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { FormularioDirectoUnidadProductiva } from "../componentes/FormularioDirectoUnidadProductiva";
 import { PaginaDetalleUnidadProductiva } from "../componentes/PaginaDetalleUnidadProductiva";
@@ -36,6 +38,7 @@ export default function PaginaUnidadesProductivas() {
   const [sectorMenuOpen, setSectorMenuOpen] = useState(false);
   const sectorMenuRef = useRef<HTMLDivElement | null>(null);
   const qc = useQueryClient();
+  const feedback = useRetroalimentacion();
   const sectorFilter = useMemo(() => sectorIds.join(","), [sectorIds]);
   const deletedFilter =
     estado === "DISABLED" ? "true" : estado === "ACTIVE" ? "false" : undefined;
@@ -61,6 +64,7 @@ export default function PaginaUnidadesProductivas() {
             estado: statusFilter,
             sector_ids: sectorFilter || undefined,
             page,
+            per_page: 10,
             include_deleted: deletedFilter ? undefined : true,
             deleted: deletedFilter,
           },
@@ -89,6 +93,28 @@ export default function PaginaUnidadesProductivas() {
     document.addEventListener("mousedown", closeOutside);
     return () => document.removeEventListener("mousedown", closeOutside);
   }, []);
+
+  const changeUnitState = async (
+    item: ProductiveUnit,
+    action: "disable" | "restore",
+  ) => {
+    try {
+      if (action === "disable") {
+        await api.delete(`/admin/productive-units/${item.id}`);
+      } else {
+        await api.post(`/admin/productive-units/${item.id}/restore`);
+      }
+      await qc.invalidateQueries({ queryKey: ["productive-units"] });
+      feedback.success(
+        "Operación completada",
+        action === "disable"
+          ? "La unidad productiva fue inhabilitada correctamente."
+          : "La unidad productiva fue restaurada correctamente.",
+      );
+    } catch (error) {
+      feedback.error("No se pudo actualizar", mensaje(error));
+    }
+  };
 
   if (creating) {
     return (
@@ -259,13 +285,46 @@ export default function PaginaUnidadesProductivas() {
                       />
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn-small"
-                        onClick={() => setViewingId(item.id)}
-                      >
-                        Ver
-                      </button>
+                      <div className="admin-admins-actions">
+                        <button
+                          type="button"
+                          className="btn-small"
+                          onClick={() => setViewingId(item.id)}
+                          aria-label={`Ver ${item.nombre_comercial}`}
+                          title="Ver"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <BotonConfirmacion
+                          className="btn-small admin-sector-action-disable"
+                          question="La unidad productiva y su cuenta quedarán inhabilitadas hasta que las restaures."
+                          confirmLabel="Inhabilitar"
+                          onConfirm={() => {
+                            void changeUnitState(item, "disable");
+                          }}
+                          title="Inhabilitar"
+                          aria-label={`Inhabilitar ${item.nombre_comercial}`}
+                          disabled={Boolean(item.deleted_at)}
+                        >
+                          <UserRoundX size={16} />
+                        </BotonConfirmacion>
+                        <button
+                          type="button"
+                          className="btn-small admin-sector-action-enable"
+                          disabled={!item.deleted_at}
+                          aria-label={`Restaurar ${item.nombre_comercial}`}
+                          title={
+                            item.deleted_at
+                              ? "Restaura la unidad productiva y reactiva su cuenta asociada."
+                              : "Restaurar solo aplica a unidades inhabilitadas."
+                          }
+                          onClick={() => {
+                            void changeUnitState(item, "restore");
+                          }}
+                        >
+                          <UserRoundCheck size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

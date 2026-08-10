@@ -216,6 +216,7 @@ export function FormularioDirectoUnidadProductiva({
               className="input"
               name="nombre_comercial"
               required
+              maxLength={200}
               autoComplete="organization"
               placeholder="Nombre con el que se presenta al público"
               value={draft.nombre_comercial}

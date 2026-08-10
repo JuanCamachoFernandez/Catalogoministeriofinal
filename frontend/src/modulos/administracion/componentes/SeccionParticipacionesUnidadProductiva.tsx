@@ -122,7 +122,12 @@ export function SeccionParticipacionesUnidadProductiva({
             />
           )}
 
-          <BarraPaginacion pagination={pagination} onPageChange={setPage} />
+          <BarraPaginacion
+            pagination={pagination}
+            onPageChange={setPage}
+            scrollOnDesktop={false}
+            mobileCompact={false}
+          />
         </>
       ) : (
         <EstadoVacio title="Sin participaciones" />
