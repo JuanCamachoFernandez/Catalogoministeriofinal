@@ -472,7 +472,7 @@ textarea.input {
   padding: 0;
   text-align: left;
   font-size: 1.15rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--color-text);
 }
 .product-title:hover {

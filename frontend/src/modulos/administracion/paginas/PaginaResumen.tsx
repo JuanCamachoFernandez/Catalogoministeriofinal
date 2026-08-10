@@ -81,7 +81,7 @@ export function PaginaInicioAdministracion() {
   const cards = [
     { label: "Unidades Productivas", value: stats.unidades_productivas, detail: `${stats.unidades_productivas_activas} activas`, icon: Factory, to: "/admin/unidades-productivas" },
     { label: "Solicitudes pendientes", value: stats.solicitudes_pendientes, detail: "Requieren revisión", icon: ClipboardCheck, to: "/admin/solicitudes" },
-    { label: "Ferias registradas", value: stats.ferias, detail: `${stats.ferias_publicadas} en curso`, icon: CalendarDays, to: "/admin/ferias" },
+    { label: "Ferias y eventos registrados", value: stats.ferias, detail: `${stats.ferias_publicadas} en curso`, icon: CalendarDays, to: "/admin/ferias" },
     { label: "Productos", value: stats.productos, detail: `${stats.productos_disponibles} disponibles`, icon: PackageCheck, to: "/admin/productos" },
   ];
   const attention = [
@@ -141,7 +141,7 @@ export function PaginaInicioAdministracion() {
           <span className="dashboard-context-icon"><CalendarClock /></span>
           <div>
             <span className="eyebrow">Agenda</span>
-            <h2>Próxima feria</h2>
+            <h2>Próxima feria o evento</h2>
             {nextFair ? (
               <>
                 <p>{nextFair.nombre}</p>
@@ -149,7 +149,7 @@ export function PaginaInicioAdministracion() {
                 <small>{formatFairDate(nextFair.fecha_inicio)} — {formatFairDate(nextFair.fecha_fin)}</small>
                 <span className="dashboard-countdown">{fairCountdown}</span>
               </>
-            ) : <p className="dashboard-muted">No hay ferias próximas programadas.</p>}
+            ) : <p className="dashboard-muted">No hay ferias o eventos próximos programados.</p>}
           </div>
           <ArrowRight className="dashboard-context-arrow" size={17} />
         </Link>

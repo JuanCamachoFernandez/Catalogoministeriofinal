@@ -43,6 +43,7 @@ type HelpPanelId =
   | "publish-kind-fair"
   | "publish-kind-event"
   | "palette"
+  | "palette-recommendation"
   | "color-primary"
   | "color-secondary"
   | "color-tertiary"
@@ -776,7 +777,7 @@ export default function PaginaFerias() {
               <div className="admin-section-heading-with-help">
                 <h2>Tema visual del evento</h2>
                 <AyudaContextual
-                  id="palette"
+                  id="palette-recommendation"
                   activeId={activeHelpPanel}
                   title="Paleta de colores"
                   content="Estos colores definen el fondo del evento, el degradado principal y el estilo base de botones y detalles."

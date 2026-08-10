@@ -276,7 +276,8 @@
 .admin-dashboard .dashboard-monthly-requests {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 18px;
-  align-items: start;
+  align-items: center;
+  align-content: center;
   gap: 0.75rem;
   color: var(--color-text);
   text-decoration: none;
@@ -303,7 +304,7 @@
   font-size: 1.05rem;
 }
 .admin-dashboard .dashboard-context p {
-  margin: 0.2rem 0;
+  margin: 0.22rem 0;
   color: #3f3f3a;
 }
 .admin-dashboard .dashboard-context small {
@@ -334,7 +335,7 @@
 }
 .admin-dashboard .dashboard-monthly-requests strong {
   display: block;
-  margin: 0.15rem 0;
+  margin: 0.12rem 0;
   font-size: 2rem;
   font-weight: 450;
   line-height: 1;
@@ -4425,24 +4426,28 @@
 
 .admin-kind-badge {
   display: inline-flex;
-  min-width: 74px;
+  min-width: 62px;
   justify-content: center;
   border-radius: 999px;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.78rem;
-  font-weight: 700;
+  padding: 0.22rem 0.52rem;
+  font-size: 0.68rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  line-height: 1;
 }
 
 .admin-kind-badge-fair {
-  background: #edf2eb;
-  color: #30553b;
+  background: #edf6ef;
+  color: #2f5a3a;
+  border-color: #8dc29b;
 }
 
 .admin-kind-badge-event {
-  background: linear-gradient(135deg, #1d5f88, #6d4dd6);
-  color: #fff;
+  background: #f3eefc;
+  color: #5e3aa7;
+  border-color: #9f86d8;
 }
 
 @media (max-width: 760px) {
