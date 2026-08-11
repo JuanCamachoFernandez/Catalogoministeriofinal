@@ -28,7 +28,7 @@ type ReportOptions = {
   departments: string[];
 };
 
-type Filters = Record<string, string | string[]>;
+type Filters = Record<string, string>;
 
 const RESOURCE_OPTIONS: Option[] = [
   { value: "general", label: "Reporte general" },
@@ -88,10 +88,7 @@ const PRESENCE_OPTIONS: Option[] = [
 
 const defaultFilters = (): Filters => ({});
 
-const activeFilterWeight = (value: string | string[]) => {
-  if (Array.isArray(value)) return value.length ? 1 : 0;
-  return value.trim() ? 1 : 0;
-};
+const activeFilterWeight = (value: string) => (value.trim() ? 1 : 0);
 
 function SelectorMultipleReportes({
   value,
@@ -273,7 +270,7 @@ export default function PaginaReportesAdministracion() {
     return () => document.removeEventListener("mousedown", closeOutside);
   }, []);
 
-  const setFilter = (name: string, value: string | string[]) =>
+  const setFilter = (name: string, value: string) =>
     setFilters((current) => ({ ...current, [name]: value }));
 
   const activeFilterCount = useMemo(
@@ -301,11 +298,7 @@ export default function PaginaReportesAdministracion() {
   const reportParams = useMemo(() => {
     const params: Record<string, string> = { format };
     for (const [name, value] of Object.entries(filters)) {
-      if (Array.isArray(value)) {
-        if (value.length) params[name] = value.join(",");
-      } else if (value !== "") {
-        params[name] = value;
-      }
+      if (value !== "") params[name] = value;
     }
     return params;
   }, [filters, format]);

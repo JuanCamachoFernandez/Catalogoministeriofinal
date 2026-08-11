@@ -16,15 +16,16 @@ export function validarArchivoImagen(
   if (!IMAGE_ALLOWED_TYPES.includes(file.type as (typeof IMAGE_ALLOWED_TYPES)[number])) {
     return {
       ok: false,
-      title: "Formato no permitido",
-      message: `Seleccione una imagen JPG, PNG o WebP para ${options.label}.`,
+      title: "No se puede usar este archivo",
+      message: `El archivo seleccionado no es una imagen compatible. Elija una imagen JPG, PNG o WebP para ${options.label}.`,
     };
   }
   if (file.size > IMAGE_MAX_BYTES) {
+    const fileSizeMb = (file.size / (1024 * 1024)).toFixed(1);
     return {
       ok: false,
-      title: "Imagen demasiado grande",
-      message: `${options.label} no puede superar los 10 MB.`,
+      title: "La imagen pesa demasiado",
+      message: `El archivo pesa ${fileSizeMb} MB y el máximo permitido para ${options.label} es 10 MB. Elija una imagen más liviana.`,
     };
   }
   return { ok: true };
