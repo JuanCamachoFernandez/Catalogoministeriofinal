@@ -267,6 +267,8 @@
 .reports-format-control {
   display: flex;
   border: 1px solid #cbc7bf;
+  border-radius: 0.8rem;
+  overflow: hidden;
   min-width: 0;
 }
 
@@ -309,6 +311,7 @@
   min-height: 2.85rem;
   padding: 0 1.15rem;
   border: 1px solid #126b3d;
+  border-radius: 0.8rem;
   background: #147b46;
   color: #fff;
   font-weight: 700;
