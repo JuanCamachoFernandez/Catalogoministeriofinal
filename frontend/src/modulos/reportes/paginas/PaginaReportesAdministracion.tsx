@@ -28,7 +28,7 @@ type ReportOptions = {
   departments: string[];
 };
 
-type Filters = Record<string, string>;
+type Filters = Record<string, string | string[]>;
 
 const RESOURCE_OPTIONS: Option[] = [
   { value: "general", label: "Reporte general" },
@@ -234,6 +234,8 @@ export default function PaginaReportesAdministracion() {
   const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [downloading, setDownloading] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const feedback = useRetroalimentacion();
   const optionsQuery = useQuery({
     queryKey: ["report-options"],
@@ -247,11 +249,30 @@ export default function PaginaReportesAdministracion() {
     RESOURCE_OPTIONS.find((item) => item.value === resource)?.label ??
     "Reporte";
 
-  const setFilter = (name: string, value: string) =>
+  const auditActionOptions = useMemo(
+    () =>
+      (options?.actions ?? []).map((item) => ({
+        value: item,
+        label: etiquetaAccionAuditoria(item),
+      })),
+    [options?.actions],
+  );
+
+  useEffect(() => {
+    const closeOutside = (event: MouseEvent) => {
+      if (!actionMenuRef.current?.contains(event.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOutside);
+    return () => document.removeEventListener("mousedown", closeOutside);
+  }, []);
+
+  const setFilter = (name: string, value: string | string[]) =>
     setFilters((current) => ({ ...current, [name]: value }));
 
   const activeFilterCount = useMemo(
-    () => Object.values(filters).filter(Boolean).length,
+    () => Object.values(filters).reduce((count, value) => count + activeFilterWeight(value), 0),
     [filters],
   );
   const minimumPrice =
@@ -271,6 +292,18 @@ export default function PaginaReportesAdministracion() {
     Boolean(filters.date_from) &&
     Boolean(filters.date_to) &&
     filters.date_to <= filters.date_from;
+
+  const reportParams = useMemo(() => {
+    const params: Record<string, string> = { format };
+    for (const [name, value] of Object.entries(filters)) {
+      if (Array.isArray(value)) {
+        if (value.length) params[name] = value.join(",");
+      } else if (value !== "") {
+        params[name] = value;
+      }
+    }
+    return params;
+  }, [filters, format]);
 
   const download = async () => {
     if (invalidPriceRange) {

@@ -10,6 +10,7 @@ from app.extensiones import db
 from app.modelos import (
     AdminProfile,
     AssignmentStatus,
+    Audit,
     AdminUnit,
     Category,
     DocumentType,
@@ -231,7 +232,7 @@ def test_reportes_pdf_excel_y_opciones(app, client):
         "/api/reports/productos?format=xlsx&status=AVAILABLE&price_min=10&price_max=100",
         "/api/reports/ferias?format=xlsx&status=DRAFT&location=Campo%20Ferial%20Chuquiago%20Marka",
         "/api/reports/administradores?format=xlsx&status=ACTIVE",
-        "/api/reports/auditoria?format=xlsx&action=GENERAR_REPORTE",
+        "/api/reports/auditoria?format=xlsx&action=CREAR,RESTAURAR",
     )
     for report_url in filtered_reports:
         response = client.get(report_url, headers=auth(token))

@@ -300,6 +300,16 @@ def parse_optional_bool(name):
     return raw == "true"
 
 
+def parse_multi_values(name):
+    values = []
+    for raw in request.args.getlist(name):
+        for item in raw.split(","):
+            cleaned = item.strip()
+            if cleaned:
+                values.append(cleaned)
+    return list(dict.fromkeys(values))
+
+
 def apply_created_dates(query, column):
     start, end = parse_date("date_from"), parse_date("date_to")
     if start:

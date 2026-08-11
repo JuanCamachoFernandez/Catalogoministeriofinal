@@ -84,6 +84,7 @@
 
 .reports-dynamic-filters .field {
   min-width: 0;
+  font-weight: 500;
 }
 
 .reports-dynamic-filters--auditoria > .field:first-child {
