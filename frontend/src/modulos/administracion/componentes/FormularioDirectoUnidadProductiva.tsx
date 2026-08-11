@@ -9,6 +9,7 @@ import {
 } from "../../../compartido";
 import { BOLIVIA_DEPARTMENTS } from "../../../compartido/constantes/ubicacionesBolivia";
 import { CajaError, Campo, EstadoCarga, useRetroalimentacion } from "../../../compartido/componentes";
+import { LIMITE_IMAGEN_MB, validarArchivoImagen } from "../../../compartido/validaciones/imagenes";
 import { limpiar, mensaje } from "../utilidades/administracionCompartida";
 import {
   EMAIL_PATTERN,
@@ -446,14 +447,30 @@ export function FormularioDirectoUnidadProductiva({
           <Campo
             label="Logotipo"
             optional
-            hint="Formatos permitidos: PNG, JPG, JPEG y WebP."
+            hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
           >
             <input
               className="input registration-file"
               name="logo"
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (!file) {
+                  setLogo(null);
+                  return;
+                }
+                const validation = validarArchivoImagen(file, {
+                  label: "el logotipo",
+                });
+                if (!validation.ok) {
+                  event.target.value = "";
+                  setLogo(null);
+                  feedback.error(validation.title, validation.message);
+                  return;
+                }
+                setLogo(file);
+              }}
             />
           </Campo>{" "}
         </div>
