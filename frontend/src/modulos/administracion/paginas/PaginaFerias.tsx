@@ -58,6 +58,15 @@ type EventPalette = {
   color_terciario: string;
 };
 
+type EventThemePreset = {
+  id: "INSTITUTIONAL" | "MOTHERS_DAY";
+  label: string;
+  teaser: string;
+  description: string;
+  palette: EventPalette;
+  animations: EventAnimation[];
+};
+
 type FairDraft = {
   tipo: FairKind;
   nombre: string;
@@ -99,7 +108,7 @@ const FAIR_TYPE_OPTIONS: Array<{
   {
     value: "EVENT",
     label: "Evento",
-    teaser: "Tema visual inmersivo",
+    teaser: "Tema visual curado",
     helpId: "publish-kind-event",
     helpText:
       "Activa fondo temático, colores personalizados, botones con más estilo y una experiencia pública más visual.",
@@ -115,35 +124,35 @@ const EVENT_ANIMATION_OPTIONS: Array<{
 }> = [
   {
     value: "AURORA",
-    label: "Aurora",
-    teaser: "Movimiento del gradiente",
+    label: "Movimiento suave",
+    teaser: "Gradiente suave y continuo",
     helpId: "animation-aurora",
     helpText:
-      "Desplaza suavemente los colores del fondo para que el evento se sienta vivo.",
+      "Mueve el fondo lentamente para dar una sensacion mas elegante y dinamica.",
   },
   {
     value: "SHIMMER",
-    label: "Brillos",
-    teaser: "Barridos de luz",
+    label: "Brillo sutil",
+    teaser: "Reflejo sutil sobre superficies",
     helpId: "animation-shimmer",
     helpText:
-      "Añade reflejos modernos sobre bloques y cabeceras para dar más dinamismo.",
+      "Agrega un reflejo ligero que hace que la interfaz se vea mas moderna.",
   },
   {
     value: "FLOAT",
-    label: "Flotación",
-    teaser: "Capas suaves en movimiento",
+    label: "Flotacion suave",
+    teaser: "Capas con desplazamiento leve",
     helpId: "animation-float",
     helpText:
-      "Mueve formas difusas de fondo para agregar profundidad visual sin recargar.",
+      "Desplaza suavemente las formas del fondo para dar mas profundidad visual.",
   },
   {
     value: "GLOW",
-    label: "Resplandor",
-    teaser: "Halo en botones y bloques",
+    label: "Resplandor suave",
+    teaser: "Realce suave en bordes y CTA",
     helpId: "animation-glow",
     helpText:
-      "Refuerza botones y contenedores con un brillo suave y más presencia visual.",
+      "Realza botones y bloques con un brillo fino y mas presencia visual.",
   },
 ];
 
@@ -255,7 +264,7 @@ const emptyFair: FairDraft = {
   fecha_inicio: "",
   fecha_fin: "",
   ...defaultEventPalette,
-  animaciones_tema: ["AURORA", "GLOW"],
+  animaciones_tema: ["FLOAT"],
 };
 
 function badgeLabel(kind: FairKind) {
@@ -264,6 +273,11 @@ function badgeLabel(kind: FairKind) {
 
 function animationLabel(value: EventAnimation) {
   return EVENT_ANIMATION_OPTIONS.find((item) => item.value === value)?.label ?? value;
+}
+
+function animationPreviewClass(value?: EventAnimation) {
+  if (!value) return "";
+  return `event-preview-animation-${value.toLowerCase()}`;
 }
 
 function departmentSummary(departments: string[]) {
@@ -467,9 +481,14 @@ export default function PaginaFerias() {
     }));
   };
 
+  const toggleAnimation = (animation: EventAnimation) => {
+    setDraft((current) => ({
+      ...current,
+      animaciones_tema: [animation],
+    }));
+  };
+
   const open = (fair?: CanonicalFair) => {
-    const primary = fair?.color_primario ?? DEFAULT_EVENT_PRIMARY;
-    const palette = recommendGradientPalette(primary);
     setEditing(fair ?? null);
     setCreating(!fair);
     setActiveHelpPanel(null);
@@ -489,19 +508,14 @@ export default function PaginaFerias() {
                   : [],
             fecha_inicio: fair.fecha_inicio,
             fecha_fin: fair.fecha_fin,
-            color_primario: fair.color_primario ?? palette.color_primario,
-            color_secundario: fair.color_secundario ?? palette.color_secundario,
-            color_terciario: fair.color_terciario ?? palette.color_terciario,
+            color_primario: fair.color_primario ?? defaultEventPalette.color_primario,
+            color_secundario: fair.color_secundario ?? defaultEventPalette.color_secundario,
+            color_terciario: fair.color_terciario ?? defaultEventPalette.color_terciario,
             animaciones_tema: fair.animaciones_tema?.length
               ? fair.animaciones_tema
-              : ["AURORA", "GLOW"],
+              : ["FLOAT"],
           }
-        : {
-            ...emptyFair,
-            color_primario: palette.color_primario,
-            color_secundario: palette.color_secundario,
-            color_terciario: palette.color_terciario,
-          },
+        : { ...emptyFair },
     );
     setCover(null);
     setCoverPreview(urlRecurso(fair?.imagen_portada));
@@ -653,15 +667,6 @@ export default function PaginaFerias() {
     setUploadProgress(0);
   };
 
-  const toggleAnimation = (animation: EventAnimation) => {
-    setDraft((current) => ({
-      ...current,
-      animaciones_tema: current.animaciones_tema.includes(animation)
-        ? current.animaciones_tema.filter((item) => item !== animation)
-        : [...current.animaciones_tema, animation],
-    }));
-  };
-
   const coverStep = draft.tipo === "EVENT" ? "03" : "02";
   const locationStep = draft.tipo === "EVENT" ? "04" : "03";
   const datesStep = draft.tipo === "EVENT" ? "05" : "04";
@@ -704,7 +709,7 @@ export default function PaginaFerias() {
                     name="tipo"
                     value={option.value}
                     checked={draft.tipo === option.value}
-                    onChange={() =>
+                    onChange={() => {
                       setDraft((current) => ({
                         ...current,
                         tipo: option.value,
@@ -720,10 +725,16 @@ export default function PaginaFerias() {
                           option.value === "EVENT"
                             ? current.animaciones_tema.length
                               ? current.animaciones_tema
-                              : ["AURORA", "GLOW"]
+                              : ["FLOAT"]
                             : current.animaciones_tema,
-                      }))
-                    }
+                        ...(option.value === "EVENT" &&
+                        !current.color_primario &&
+                        !current.color_secundario &&
+                        !current.color_terciario
+                          ? defaultEventPalette
+                          : {}),
+                      }));
+                    }}
                   />
                   <div className="admin-option-row">
                     <strong>{option.label}</strong>
@@ -779,15 +790,15 @@ export default function PaginaFerias() {
                 <AyudaContextual
                   id="palette-recommendation"
                   activeId={activeHelpPanel}
-                  title="Paleta de colores"
-                  content="Estos colores definen el fondo del evento, el degradado principal y el estilo base de botones y detalles."
+                  title="Tema visual"
+                  content="Ajusta manualmente la paleta y las animaciones del evento para construir una identidad visual propia."
                   onToggle={toggleHelpPanel}
                 />
               </div>
             </div>
             <div className="registration-grid fair-registration-grid-single">
               <div
-                className="event-theme-preview"
+                className={`event-theme-preview ${animationPreviewClass(draft.animaciones_tema[0])}`.trim()}
                 style={{
                   background: `linear-gradient(135deg, ${draft.color_primario}, ${draft.color_secundario}, ${draft.color_terciario})`,
                 }}
@@ -799,24 +810,22 @@ export default function PaginaFerias() {
                   </span>
                   <strong>{draft.nombre || "Vista previa del evento"}</strong>
                   <small>
-                    Animaciones activas:{" "}
-                    {draft.animaciones_tema.length
-                      ? draft.animaciones_tema.map(animationLabel).join(", ")
-                      : "ninguna"}
+                    Animacion activa:{" "}
+                    {draft.animaciones_tema.length ? animationLabel(draft.animaciones_tema[0]) : "ninguna"}
                   </small>
                 </div>
               </div>
 
               <div className="event-recommendation-card">
                 <div className="event-recommendation-copy">
-                  <strong>Paleta de colores</strong>
-                  <p>Al elegir el color principal se sugieren los otros dos.</p>
+                  <strong>Personalizacion del evento</strong>
+                  <p>Define tus colores y elige una sola animacion. La vista previa te ayuda a validar el resultado antes de guardar.</p>
                 </div>
                 <AyudaContextual
                   id="palette"
                   activeId={activeHelpPanel}
-                  title="Paleta de colores"
-                  content="La combinación se genera automáticamente desde el color principal. Después puedes ajustar el segundo y tercer color por separado."
+                  title="Personalizacion"
+                  content="Puedes definir tu propia paleta y elegir una animacion para adaptar el evento a cada ocasion especial."
                   onToggle={toggleHelpPanel}
                 />
               </div>
@@ -836,13 +845,14 @@ export default function PaginaFerias() {
                   <label
                     className="event-color-swatch"
                     style={{ background: draft.color_primario }}
-                    aria-label="Escoger color principal"
+                    aria-label="Color principal"
                   >
                     <input
                       className="event-color-picker"
                       type="color"
                       name="color_primario"
                       required
+                      disabled={false}
                       value={draft.color_primario}
                       onChange={(event) => handlePrimaryColorChange(event.target.value)}
                     />
@@ -852,11 +862,11 @@ export default function PaginaFerias() {
 
                 <div className="event-color-card">
                   <div className="admin-option-row">
-                    <span className="event-color-card-title">Segundo color</span>
+                    <span className="event-color-card-title">Color de apoyo 1</span>
                     <AyudaContextual
                       id="color-secondary"
                       activeId={activeHelpPanel}
-                      title="Segundo color"
+                      title="Color de apoyo 1"
                       content="Refuerza la transición del degradado y aporta variación al fondo."
                       onToggle={toggleHelpPanel}
                     />
@@ -864,13 +874,14 @@ export default function PaginaFerias() {
                   <label
                     className="event-color-swatch"
                     style={{ background: draft.color_secundario }}
-                    aria-label="Escoger segundo color"
+                    aria-label="Color de apoyo 1"
                   >
                     <input
                       className="event-color-picker"
                       type="color"
                       name="color_secundario"
                       required
+                      disabled={false}
                       value={draft.color_secundario}
                       onChange={(event) =>
                         setDraft((current) => ({ ...current, color_secundario: event.target.value }))
@@ -882,11 +893,11 @@ export default function PaginaFerias() {
 
                 <div className="event-color-card">
                   <div className="admin-option-row">
-                    <span className="event-color-card-title">Tercer color</span>
+                    <span className="event-color-card-title">Color de apoyo 2</span>
                     <AyudaContextual
                       id="color-tertiary"
                       activeId={activeHelpPanel}
-                      title="Tercer color"
+                      title="Color de apoyo 2"
                       content="Cierra la paleta y ayuda a dar profundidad al conjunto visual del evento."
                       onToggle={toggleHelpPanel}
                     />
@@ -894,13 +905,14 @@ export default function PaginaFerias() {
                   <label
                     className="event-color-swatch"
                     style={{ background: draft.color_terciario }}
-                    aria-label="Escoger tercer color"
+                    aria-label="Color de apoyo 2"
                   >
                     <input
                       className="event-color-picker"
                       type="color"
                       name="color_terciario"
                       required
+                      disabled={false}
                       value={draft.color_terciario}
                       onChange={(event) =>
                         setDraft((current) => ({ ...current, color_terciario: event.target.value }))
@@ -917,17 +929,17 @@ export default function PaginaFerias() {
                 ))}
               </div>
 
-              <Campo label="Animaciones del evento" required>
+              <Campo label="Animacion del evento" required>
                 <div className="event-animation-grid">
                   {EVENT_ANIMATION_OPTIONS.map((option) => {
-                    const selected = draft.animaciones_tema.includes(option.value);
+                    const selected = draft.animaciones_tema[0] === option.value;
                     return (
                       <label
                         key={option.value}
                         className={`event-animation-card${selected ? " is-selected" : ""}`}
                       >
                         <input
-                          type="checkbox"
+                          type="radio"
                           name="animaciones_tema"
                           checked={selected}
                           onChange={() => toggleAnimation(option.value)}
@@ -979,7 +991,6 @@ export default function PaginaFerias() {
               )}
               <Campo
                 label="Imagen de portada"
-                required
                 hint="Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: 10 MB."
               >
                 <input

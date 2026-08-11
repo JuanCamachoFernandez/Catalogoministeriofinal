@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+import type { CSSProperties, ReactNode } from "react";
 
 const openModalStack: HTMLElement[] = [];
 
@@ -11,13 +12,15 @@ export function Modal({
   wide = false,
   className = "",
   hideHeader = false,
+  style,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   onClose: () => void;
   wide?: boolean;
   className?: string;
   hideHeader?: boolean;
+  style?: CSSProperties;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -75,6 +78,7 @@ export function Modal({
         ref={dialog}
         tabIndex={-1}
         className={`modal ${wide ? "modal-wide" : ""} ${hideHeader ? "modal-headerless" : ""} ${className}`.trim()}
+        style={style}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

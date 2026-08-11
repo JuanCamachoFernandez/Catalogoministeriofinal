@@ -944,7 +944,8 @@ export function PaginaUnidadPublica() {
                 setShowProductImage(false);
               }}
               wide
-              className="product-detail-dialog"
+              className={`product-detail-dialog${esEventoTematico(fair) ? ` event-theme-surface ${fairThemeClasses}` : ""}`}
+              style={esEventoTematico(fair) ? fairThemeStyle : undefined}
             >
               <div className="product-detail">
                 <div className="detail-gallery">
