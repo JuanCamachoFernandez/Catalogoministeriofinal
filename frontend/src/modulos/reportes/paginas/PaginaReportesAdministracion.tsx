@@ -88,6 +88,11 @@ const PRESENCE_OPTIONS: Option[] = [
 
 const defaultFilters = (): Filters => ({});
 
+const activeFilterWeight = (value: string | string[]) => {
+  if (Array.isArray(value)) return value.length ? 1 : 0;
+  return value.trim() ? 1 : 0;
+};
+
 function SelectorMultipleReportes({
   value,
   options,

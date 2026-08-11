@@ -22,6 +22,7 @@
 }
 
 .reports-config-section > .searchable-select {
+  width: min(100%, 520px);
   max-width: 520px;
   margin-left: 3.25rem;
 }
@@ -91,6 +92,16 @@
   grid-column: span 2;
 }
 
+@media (min-width: 961px) {
+  .reports-dynamic-filters--auditoria {
+    grid-template-columns: minmax(240px, 1.2fr) repeat(2, minmax(180px, 0.9fr));
+  }
+
+  .reports-dynamic-filters--auditoria > .field:first-child {
+    grid-column: auto;
+  }
+}
+
 .reports-multiselect {
   position: relative;
   width: 100%;
@@ -99,18 +110,23 @@
 .reports-multiselect-trigger {
   display: flex;
   width: 100%;
-  min-height: 2.75rem;
-  align-items: flex-start;
+  min-height: 40px;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.65rem 0.8rem;
-  border: 1px solid #cbc7bf;
-  border-radius: 0;
-  background: #fff;
-  color: #34322e;
+  gap: 0.5rem;
+  padding: 0.68rem 0.82rem;
+  border: 1px solid #d8ceb1;
+  border-radius: 0.8rem;
+  background: #fffdf8;
+  box-shadow: inset 0 1px 2px rgb(34 29 14 / 0.035);
+  color: var(--color-text, #34322e);
   font-weight: 400;
   text-align: left;
   cursor: pointer;
+}
+
+.reports-multiselect-trigger:hover {
+  border-color: #bda960;
 }
 
 .reports-multiselect-trigger span {
@@ -125,8 +141,9 @@
 }
 
 .reports-multiselect.is-open .reports-multiselect-trigger {
-  border-color: #18804a;
-  box-shadow: 0 0 0 2px rgb(24 128 74 / 12%);
+  border-color: #bda960;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgb(212 175 55 / 0.16);
 }
 
 .reports-multiselect.is-open .reports-multiselect-trigger svg {
@@ -140,18 +157,20 @@
   right: 0;
   left: 0;
   min-width: 100%;
-  border: 1px solid #cbc7bf;
+  overflow: hidden;
+  border: 1px solid #d8ceb1;
+  border-radius: 0.75rem;
   background: #fff;
-  box-shadow: 0 12px 28px rgb(34 39 35 / 16%);
+  box-shadow: 0 14px 35px rgb(8 20 31 / 0.2);
 }
 
 .reports-multiselect-search {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  border-bottom: 1px solid #e4e1da;
-  color: #625f58;
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--color-border, #d8ceb1);
+  color: var(--color-text-secondary, #625f58);
 }
 
 .reports-multiselect-search input {
@@ -164,8 +183,9 @@
 }
 
 .reports-multiselect-options {
+  display: grid;
   max-height: 15rem;
-  overflow-y: auto;
+  overflow: auto;
   padding: 0.35rem;
 }
 
@@ -176,8 +196,9 @@
   gap: 0.65rem;
   padding: 0.6rem;
   border: 0;
+  border-radius: 0.5rem;
   background: #fff;
-  color: #34322e;
+  color: var(--color-text, #34322e);
   font-weight: 400;
   text-align: left;
   cursor: pointer;
@@ -185,7 +206,7 @@
 
 .reports-multiselect-option:hover,
 .reports-multiselect-option[aria-selected="true"] {
-  background: #f0f6f2;
+  background: #e9eff4;
 }
 
 .reports-multiselect-option.select-all {
@@ -313,6 +334,8 @@
 @media (max-width: 960px) {
   .reports-config-section > .searchable-select {
     max-width: none;
+    width: 100%;
+    margin-left: 0;
   }
   .reports-dynamic-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -331,6 +354,7 @@
   }
   .reports-section-heading {
     align-items: flex-start;
+    margin-bottom: 1rem;
   }
   .reports-filter-heading {
     flex-wrap: wrap;

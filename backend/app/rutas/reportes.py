@@ -187,7 +187,6 @@ REPORT_COLUMNS = {
         "estado": "Estado",
         "visible": "Visible para el público",
         "descripcion": "Descripción",
-        "creado": "Fecha de registro",
     },
     "administradores": {
         "nombre": "Nombre completo",
@@ -197,7 +196,6 @@ REPORT_COLUMNS = {
         "cargo": "Cargo",
         "unidad": "Unidad administrativa",
         "estado": "Estado",
-        "creado": "Fecha de registro",
     },
     "auditoria": {
         "fecha": "Fecha y hora",
@@ -222,7 +220,7 @@ REPORT_TITLES = {
     "unidades_productivas": "Unidades productivas",
     "sectores_productivos": "Sectores productivos",
     "productos": "Productos",
-    "ferias": "Ferias",
+    "ferias": "Ferias y eventos",
     "administradores": "Administradores",
     "auditoria": "Auditoría",
     "categorias": "Categorías",
@@ -344,6 +342,24 @@ def apply_social_filter(query, model):
 
 def selected_columns(resource):
     available = REPORT_COLUMNS[resource]
+    if resource == "unidades_productivas":
+        available = {
+            key: label
+            for key, label in available.items()
+            if key != "fecha_aprobacion"
+        }
+    if resource == "sectores_productivos":
+        available = {
+            key: label
+            for key, label in available.items()
+            if key != "creado"
+        }
+    if resource == "productos":
+        available = {
+            key: label
+            for key, label in available.items()
+            if key != "creado"
+        }
     requested = [item.strip() for item in request.args.get("columns", "").split(",") if item.strip()]
     if not requested:
         return list(available)
@@ -360,7 +376,40 @@ def sector_names(link_model, owner_field, owner_id):
         .where(getattr(link_model, owner_field) == owner_id)
         .order_by(ProductiveSector.nombre)
     ).all()
+    return names
+
+
+def format_sector_names(names, *, bulleted=False):
+    if not names:
+        return ""
+    if bulleted:
+        return "\n".join(f"- {name}" for name in names)
     return ", ".join(names)
+
+
+def format_social_networks(item, *, detailed=False):
+    networks = [
+        (name, value)
+        for name, value in (
+            ("Facebook", item.facebook_url),
+            ("Instagram", item.instagram_url),
+            ("TikTok", item.tiktok_url),
+        )
+        if value
+    ]
+    if not networks:
+        return "No"
+    if detailed:
+        return "\n".join(f"{name}: {value}" for name, value in networks)
+    return ", ".join(name for name, _ in networks)
+
+
+def format_departments(item):
+    departments = getattr(item, "departamentos", None) or []
+    if departments:
+        return "\n".join(f"- {department}" for department in departments)
+    department = getattr(item, "departamento", None)
+    return f"- {department}" if department else ""
 
 
 def apply_organization_filters(query, model, link_model, owner_field):
@@ -394,18 +443,30 @@ def apply_organization_filters(query, model, link_model, owner_field):
     return apply_social_filter(query, model)
 
 
-def organization_row(item, link_model, owner_field):
-    networks = [name for name, value in (("Facebook", item.facebook_url), ("Instagram", item.instagram_url), ("TikTok", item.tiktok_url)) if value]
+def organization_row(
+    item,
+    link_model,
+    owner_field,
+    *,
+    bulleted_sectors=False,
+    detailed_social_networks=False,
+):
     return {
         "nombre_comercial": item.nombre_comercial,
         "razon_social": item.razon_social,
         "representante": item.nombre_representante,
         "departamento": item.departamento,
-        "sectores": sector_names(link_model, owner_field, item.id),
+        "sectores": format_sector_names(
+            sector_names(link_model, owner_field, item.id),
+            bulleted=bulleted_sectors,
+        ),
         "nit": item.nit,
         "seprec": item.registro_seprec,
         "pro_bolivia": item.registro_pro_bolivia,
-        "redes_sociales": ", ".join(networks) if networks else "No",
+        "redes_sociales": format_social_networks(
+            item,
+            detailed=detailed_social_networks,
+        ),
         "correo": item.correo_electronico,
         "telefono": item.telefono_whatsapp,
         "estado": item.estado,
@@ -419,7 +480,13 @@ def registration_rows():
     query = apply_created_dates(query, RegistrationRequest.created_at).order_by(RegistrationRequest.created_at.desc())
     rows = []
     for item in db.session.scalars(query.limit(MAX_REPORT_ROWS)):
-        row = organization_row(item, RegistrationRequestSector, "registration_request_id")
+        row = organization_row(
+            item,
+            RegistrationRequestSector,
+            "registration_request_id",
+            bulleted_sectors=True,
+            detailed_social_networks=True,
+        )
         row.update(fecha_solicitud=item.created_at, fecha_revision=item.fecha_revision)
         rows.append(row)
     return rows
@@ -433,8 +500,13 @@ def productive_unit_rows():
     query = apply_created_dates(query, ProductiveUnit.fecha_aprobacion).order_by(ProductiveUnit.fecha_aprobacion.desc())
     rows = []
     for item in db.session.scalars(query.limit(MAX_REPORT_ROWS)):
-        row = organization_row(item, UnitSector, "productive_unit_id")
-        row["fecha_aprobacion"] = item.fecha_aprobacion
+        row = organization_row(
+            item,
+            UnitSector,
+            "productive_unit_id",
+            bulleted_sectors=True,
+            detailed_social_networks=True,
+        )
         rows.append(row)
     return rows
 
@@ -531,7 +603,7 @@ def fair_rows():
     return [{
         "nombre": item.nombre,
         "lugar": item.ubicacion or item.lugar,
-        "departamento": item.departamento,
+        "departamento": format_departments(item),
         "fecha_inicio": item.fecha_inicio,
         "fecha_fin": item.fecha_fin,
         "estado": item.estado,
@@ -677,7 +749,14 @@ def build_xlsx(sections, generated_at):
             cell.alignment = Alignment(horizontal="center", vertical="center")
         for row in rows:
             values = [display(row.get(column)) for column in columns]
-            sheet.append([f"'{value}" if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value for value in values])
+            sheet.append([
+                (
+                    f"'{value}"
+                    if isinstance(value, str) and value.startswith(("=", "+", "@"))
+                    else value
+                )
+                for value in values
+            ])
         sheet.freeze_panes = "A8"
         sheet.auto_filter.ref = f"A7:{get_column_letter(len(headers))}{max(7, sheet.max_row)}"
         sheet.sheet_view.showGridLines = False
@@ -750,7 +829,17 @@ def build_pdf(sections, generated_at):
         story.append(Spacer(1, 4 * mm))
         data = [[Paragraph(REPORT_COLUMNS[resource][column], header_style) for column in columns]]
         for row in rows:
-            data.append([Paragraph(display(row.get(column)).replace("&", "&amp;").replace("<", "&lt;"), cell_style) for column in columns])
+            data.append([
+                Paragraph(
+                    display(row.get(column))
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\n", "<br/>"),
+                    cell_style,
+                )
+                for column in columns
+            ])
         if len(data) == 1:
             data.append([Paragraph("Sin registros para los filtros seleccionados", cell_style)] + [""] * (len(columns) - 1))
         available_width = landscape(A4)[0] - 20 * mm
