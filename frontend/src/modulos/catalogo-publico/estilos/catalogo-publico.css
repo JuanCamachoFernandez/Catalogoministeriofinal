@@ -939,7 +939,7 @@ body.event-public-page.event-animation-glow .public-main {
 }
 .catalog-toolbar.panel {
   position: relative;
-  z-index: 140;
+  z-index: 12;
   margin: 0 0 1.4rem;
   overflow: visible;
   padding: 1rem;
@@ -951,11 +951,11 @@ body.event-public-page.event-animation-glow .public-main {
 }
 
 .catalog-toolbar .searchable-select.is-open {
-  z-index: 220;
+  z-index: 20;
 }
 
 .catalog-toolbar .searchable-select-menu {
-  z-index: 260;
+  z-index: 24;
 }
 .exhibitor-card .unit-logo {
   object-fit: contain;
