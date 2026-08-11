@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import uuid
 import unicodedata
 
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from sqlalchemy import func, select
 
 from ..extensiones import db
@@ -288,8 +288,9 @@ def create_exhibitor():
         "message": "Expositor creado",
         "data": exhibitor_json(exhibitor),
         "username": user.username,
-        "temporary_password": password,
     }
+    if current_app.config.get("MOSTRAR_CREDENCIALES_TEMPORALES"):
+        response["temporary_password"] = password
     return response, 201
 
 

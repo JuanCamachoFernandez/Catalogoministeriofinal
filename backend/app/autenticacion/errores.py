@@ -17,3 +17,11 @@ def registrar_errores_jwt(jwt):
     @jwt.revoked_token_loader
     def token_revocado(_cabecera, _contenido):
         return error("Sesión revocada", 401)
+
+    @jwt.needs_fresh_token_loader
+    def token_no_reciente(_cabecera, _contenido):
+        return error("Se requiere autenticación reciente", 401)
+
+    @jwt.user_lookup_error_loader
+    def usuario_token_no_disponible(_cabecera, _contenido):
+        return error("Sesión no disponible", 401)

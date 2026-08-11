@@ -48,6 +48,7 @@ from ..autenticacion.permisos import (
 )
 product_bp = Blueprint("products", __name__)
 MAX_PRODUCTIVE_UNIT_PRODUCTS = 15
+MAX_PRODUCT_IMAGES = 3
 
 
 def _delete_product_upload(url, public_id):
@@ -136,9 +137,18 @@ def add_product_image(product):
         .where(ProductImage.product_id == product.id)
         .order_by(ProductImage.display_order, ProductImage.created_at, ProductImage.id)
     ).all()
+    if len(existing_images) >= MAX_PRODUCT_IMAGES:
+        return error(
+            f"Un producto admite como máximo {MAX_PRODUCT_IMAGES} imágenes",
+            409,
+        )
     display_order = len(existing_images)
     try:
-        uploaded = upload_to_cloudinary(request.files.get("file"), "productos",)
+        uploaded = upload_to_cloudinary(
+            request.files.get("file"),
+            "productos",
+            image_variant="product",
+        )
 
         if uploaded:
             url = uploaded["url"]
@@ -510,7 +520,7 @@ def update_productive_product_status(product_id):
     if not product:
         return error("Producto no encontrado", 404)
     status = ProductStatus(validated_json()["estado"])
-    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != 3:
+    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != MAX_PRODUCT_IMAGES:
         return error("El producto necesita exactamente tres imágenes para publicarse", 409)
     product.estado = status
     audit("CAMBIAR_ESTADO", "Product", product.id)
@@ -590,7 +600,7 @@ def admin_productive_product_status(product_id):
     if not product:
         return error("Producto no encontrado", 404)
     status = ProductStatus(validated_json()["estado"])
-    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != 3:
+    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != MAX_PRODUCT_IMAGES:
         return error("El producto necesita exactamente tres imágenes para publicarse", 409)
     product.estado = status
     audit("CAMBIAR_ESTADO", "Product", product.id)
@@ -625,8 +635,11 @@ def add_own_productive_product_image(product_id):
     if not product:
         return error("Producto no encontrado", 404)
     product = db.session.scalar(select(Product).where(Product.id == product.id).with_for_update())
-    if _image_count(product.id) >= 3:
-        return error("Un producto admite como máximo tres imágenes", 409)
+    if _image_count(product.id) >= MAX_PRODUCT_IMAGES:
+        return error(
+            f"Un producto admite como máximo {MAX_PRODUCT_IMAGES} imágenes",
+            409,
+        )
     result = add_product_image(product)
     return result
 
@@ -666,7 +679,11 @@ def update_own_productive_product_image(product_id, image_id):
 
     if request.files.get("file"):
         try:
-            uploaded = upload_to_cloudinary(request.files["file"], "productos")
+            uploaded = upload_to_cloudinary(
+                request.files["file"],
+                "productos",
+                image_variant="product",
+            )
         except ValueError as exc:
             return error(str(exc))
 

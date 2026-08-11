@@ -499,6 +499,7 @@ def upload_own_unit_logo():
         uploaded = upload_to_cloudinary(
             request.files.get("file"),
             "unidades_productivas",
+            image_variant="unit_logo",
         )
     except ValueError as exc:
         return error(str(exc))

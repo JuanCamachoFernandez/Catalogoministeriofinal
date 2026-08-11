@@ -17,6 +17,7 @@ import {
   EstadoVacio,
   InsigniaEstado,
   Modal,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { datosPagina, mensaje } from "../utilidades/administracionCompartida";
@@ -64,7 +65,11 @@ export default function PaginaParticipacionesFeria() {
     enabled: Boolean(fairId) && !readOnly,
   });
   const participationData = datosPagina(list.data);
-  const visibleParticipations = participationData.items;
+  const visibleParticipations = useElementosPaginacionAdaptable(
+    participationData.items,
+    participationData.pagination,
+    fairId,
+  );
 
   const units = useQuery({
     queryKey: ["productive-units", "options"],
@@ -324,7 +329,7 @@ export default function PaginaParticipacionesFeria() {
           />
         </div>
 
-{list.isLoading ? (
+{list.isLoading && !visibleParticipations.length ? (
           <EstadoCarga />
         ) : list.error ? (
           <CajaError mensaje={mensaje(list.error)} />
@@ -387,7 +392,7 @@ export default function PaginaParticipacionesFeria() {
             <BarraPaginacion
               pagination={participationData.pagination}
               onPageChange={setPage}
-              mobileCompact={false}
+              mobileLabel="Ver más participaciones"
             />
           </>
         ) : (

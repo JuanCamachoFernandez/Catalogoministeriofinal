@@ -105,6 +105,50 @@ describe("componentes comunes", () => {
     expect(onPage).toHaveBeenCalledWith(2);
   });
 
+  it("muestra la paginación en bloques de cinco sin renderizar todas las páginas", () => {
+    const { rerender } = render(
+      <BarraPaginacion
+        pagination={{ page: 1, per_page: 20, pages: 100, total: 2000, has_next: true, has_prev: false }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Ir a la página 5" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ir a la página 100" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ir a la página 6" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ir a la página 99" })).toBeNull();
+
+    rerender(
+      <BarraPaginacion
+        pagination={{ page: 4, per_page: 20, pages: 100, total: 2000, has_next: true, has_prev: true }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Ir a la página 2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ir a la página 6" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ir a la página 7" })).toBeNull();
+
+    rerender(
+      <BarraPaginacion
+        pagination={{ page: 6, per_page: 20, pages: 100, total: 2000, has_next: true, has_prev: true }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Ir a la página 4" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ir a la página 8" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ir a la página 3" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ir a la página 9" })).toBeNull();
+
+    rerender(
+      <BarraPaginacion
+        pagination={{ page: 10, per_page: 20, pages: 100, total: 2000, has_next: true, has_prev: true }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Ir a la página 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ir a la página 8" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ir a la página 12" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ir a la página 100" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ir a la página 7" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ir a la página 13" })).toBeNull();
+  });
+
   it("no mueve el scroll cuando la paginación desactiva el auto-scroll", async () => {
     const onPage = vi.fn();
     const scrollTo = vi.fn();

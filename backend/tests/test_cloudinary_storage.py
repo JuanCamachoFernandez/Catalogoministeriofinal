@@ -279,7 +279,7 @@ def test_product_image_upload_replace_and_delete_use_cloudinary(app, client, clo
         assert image.public_id.startswith("catalogo-ministerio/productos/")
 
 
-def test_fair_cover_and_gallery_use_cloudinary(app, client, cloudinary_mocks):
+def test_fair_cover_uses_cloudinary(app, client, cloudinary_mocks):
     with app.app_context():
         admin_headers = _admin_headers(client)
     today = bolivia_today().isoformat()
@@ -303,14 +303,6 @@ def test_fair_cover_and_gallery_use_cloudinary(app, client, cloudinary_mocks):
         content_type="multipart/form-data",
     )
     assert cover.status_code == 201
-
-    gallery = client.post(
-        f"/api/fairs/{fair_id}/images",
-        headers=admin_headers,
-        data={"file": (_png_bytes("orange"), "gallery.png"), "alt_text": "Galeria"},
-        content_type="multipart/form-data",
-    )
-    assert gallery.status_code == 201
 
     with app.app_context():
         fair = db.session.get(Fair, UUID(fair_id))

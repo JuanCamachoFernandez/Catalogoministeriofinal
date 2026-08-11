@@ -21,6 +21,7 @@ import {
   type Paged,
 } from "../../../compartido";
 import { BOLIVIA_DEPARTMENTS } from "../../../compartido/constantes/ubicacionesBolivia";
+import { LIMITE_IMAGEN_MB, validarArchivoImagen } from "../../../compartido/validaciones/imagenes";
 import {
   BotonConfirmacion,
   EstadoVacio,
@@ -33,6 +34,7 @@ import {
   InsigniaEstado,
   ProgresoCarga,
   SelectorBuscable,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -398,6 +400,11 @@ export default function PaginaFerias() {
         .then((r) => r.data),
   });
   const data = datosPagina(list.data);
+  const displayedFairs = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${estado}|${sortDir}|${dateFrom}|${dateTo}`,
+  );
 
   useEffect(
     () => () => {
@@ -980,7 +987,7 @@ export default function PaginaFerias() {
               <Campo
                 label="Imagen de portada"
                 required
-                hint="Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: 10 MB."
+                hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
               >
                 <input
                   className="input registration-file"
@@ -990,14 +997,12 @@ export default function PaginaFerias() {
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     if (!file) return;
-                    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+                    const validation = validarArchivoImagen(file, {
+                      label: `la portada de ${entityLabel}`,
+                    });
+                    if (!validation.ok) {
                       event.target.value = "";
-                      feedback.error("Archivo no válido", "Seleccione una imagen JPG, PNG o WebP.");
-                      return;
-                    }
-                    if (file.size > 10 * 1024 * 1024) {
-                      event.target.value = "";
-                      feedback.error("Imagen demasiado grande", "La portada no puede superar los 10 MB.");
+                      feedback.error(validation.title, validation.message);
                       return;
                     }
                     setCover(file);
@@ -1275,11 +1280,11 @@ export default function PaginaFerias() {
           />
         </Campo>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedFairs.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : !data.items.length ? (
+      ) : !displayedFairs.length ? (
         <EstadoVacio title="No hay ferias ni eventos" />
       ) : (
         <>
@@ -1310,7 +1315,7 @@ export default function PaginaFerias() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((fair) => (
+                {displayedFairs.map((fair) => (
                   <tr key={fair.id}>
                     <td>
                       <span className={`admin-kind-badge admin-kind-badge-${fair.tipo.toLowerCase()}`}>

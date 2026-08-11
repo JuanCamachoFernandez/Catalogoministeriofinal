@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { urlRecurso, type CanonicalProduct, type Pagination } from "../../../compartido";
-import { EstadoVacio, BarraPaginacion, CampoBusqueda, InsigniaEstado } from "../../../compartido/componentes";
+import {
+  EstadoVacio,
+  BarraPaginacion,
+  CampoBusqueda,
+  InsigniaEstado,
+  useElementosPaginacionAdaptable,
+} from "../../../compartido/componentes";
 
 const PRODUCTS_PER_PAGE = 5;
 
@@ -28,7 +34,7 @@ export function SeccionProductosUnidadProductiva({
   );
   const safePage = Math.min(page, totalPages);
   const startIndex = (safePage - 1) * PRODUCTS_PER_PAGE;
-  const visibleProducts = filteredProducts.slice(
+  const pageProducts = filteredProducts.slice(
     startIndex,
     startIndex + PRODUCTS_PER_PAGE,
   );
@@ -41,6 +47,11 @@ export function SeccionProductosUnidadProductiva({
     has_prev: safePage > 1,
     has_next: safePage < totalPages,
   };
+  const visibleProducts = useElementosPaginacionAdaptable(
+    pageProducts,
+    pagination,
+    query,
+  );
 
   return (
     <section className="admin-unit-detail-section">
@@ -132,7 +143,7 @@ export function SeccionProductosUnidadProductiva({
             pagination={pagination}
             onPageChange={setPage}
             scrollOnDesktop={false}
-            mobileCompact={false}
+            mobileLabel="Ver más productos"
           />
         </>
       ) : (

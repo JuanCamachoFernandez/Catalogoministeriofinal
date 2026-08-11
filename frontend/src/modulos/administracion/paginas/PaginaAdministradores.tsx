@@ -14,6 +14,7 @@ import {
   InsigniaEstado,
   Modal,
   SelectorBuscable,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { datosPagina, limpiar, mensaje } from "../utilidades/administracionCompartida";
@@ -38,13 +39,13 @@ type CreateAdminResponse = {
   message: string;
   data: AdminUser;
   username: string;
-  temporary_password: string;
+  temporary_password?: string;
 };
 
 type ResetPasswordResponse = {
   message: string;
   username: string;
-  temporary_password: string;
+  temporary_password?: string;
 };
 
 type CreatedCredentials = {
@@ -187,6 +188,11 @@ export default function PaginaAdministradores() {
   });
 
   const data = datosPagina(list.data);
+  const displayedAdmins = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${status}`,
+  );
 
   const closeForm = () => {
     setCreating(false);
@@ -265,11 +271,13 @@ export default function PaginaAdministradores() {
       const response = await api.post<CreateAdminResponse>("/admin/users", payload);
       await refreshList();
       closeForm();
-      setCreatedCredentials({
-        firstName: response.data.data.first_name,
-        username: response.data.username,
-        temporaryPassword: response.data.temporary_password,
-      });
+      if (response.data.temporary_password) {
+        setCreatedCredentials({
+          firstName: response.data.data.first_name,
+          username: response.data.username,
+          temporaryPassword: response.data.temporary_password,
+        });
+      }
       feedback.success("Administrador creado", response.data.data.email);
     } catch (error) {
       const fieldName = fieldFromServerError(error);
@@ -779,11 +787,11 @@ export default function PaginaAdministradores() {
         />
       </div>
 
-      {list.isLoading ? (
+      {list.isLoading && !displayedAdmins.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedAdmins.length ? (
         <>
           <div className="table-wrap admin-requests-table admin-admins-table">
             <table>
@@ -798,7 +806,7 @@ export default function PaginaAdministradores() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((admin) => (
+                {displayedAdmins.map((admin) => (
                   <tr key={admin.id}>
                     <td>
                       <div className="admin-admins-person-cell">

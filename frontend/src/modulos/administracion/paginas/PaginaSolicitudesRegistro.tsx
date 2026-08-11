@@ -18,6 +18,7 @@ import {
   CampoBusqueda,
   SelectorBuscable,
   InsigniaEstado,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -106,6 +107,11 @@ export default function PaginaSolicitudesRegistro() {
     }
   };
   const data = datosPagina(list.data);
+  const displayedRequests = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${estado}|${dateFrom}|${dateTo}`,
+  );
   return (
     <section className="admin-page admin-requests-page">
       {" "}
@@ -160,11 +166,11 @@ export default function PaginaSolicitudesRegistro() {
           />
         </Campo>
       </div>{" "}
-      {list.isLoading ? (
+      {list.isLoading && !displayedRequests.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedRequests.length ? (
         <>
           <div className="table-wrap admin-requests-table">
             <table>
@@ -178,7 +184,7 @@ export default function PaginaSolicitudesRegistro() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => (
+                {displayedRequests.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <strong>{item.nombre_comercial}</strong>
