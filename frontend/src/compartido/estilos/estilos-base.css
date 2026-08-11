@@ -472,7 +472,7 @@ textarea.input {
   padding: 0;
   text-align: left;
   font-size: 1.15rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-text);
 }
 .product-title:hover {
@@ -496,7 +496,7 @@ textarea.input {
   margin: 0.8rem 0;
   color: var(--color-success);
   font-size: 1.15rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 .quantity {
   display: grid;
@@ -947,6 +947,13 @@ textarea.input {
 }
 .pagination-page.active {
   cursor: default;
+}
+.pagination-ellipsis {
+  min-width: 1.25rem;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  text-align: center;
+  user-select: none;
 }
 .pagination-arrow {
   min-width: 38px;
@@ -2733,7 +2740,7 @@ textarea.input {
   border-radius: 999px;
   padding: 0.3rem 0.65rem;
   font-size: 0.72rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.025em;
 }
 .action-pill {

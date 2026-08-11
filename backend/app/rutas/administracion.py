@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 import secrets
 import string
 
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from sqlalchemy import func, select
 
 from ..extensiones import db
@@ -424,8 +424,9 @@ def create_admin_user():
         "message": "Administrador creado",
         "data": admin_user_json(user),
         "username": user.username,
-        "temporary_password": password,
     }
+    if current_app.config.get("MOSTRAR_CREDENCIALES_TEMPORALES"):
+        response["temporary_password"] = password
     _send_admin_credentials(user, password)
     return response, 201
 
@@ -580,11 +581,13 @@ def admin_reset_password(user_id):
     )
     db.session.commit()
     _send_admin_credentials(user, password)
-    return {
+    response = {
         "message": "Contraseña restablecida",
         "username": user.username,
-        "temporary_password": password,
     }
+    if current_app.config.get("MOSTRAR_CREDENCIALES_TEMPORALES"):
+        response["temporary_password"] = password
+    return response
 
 
 @admin_bp.get("/audit")

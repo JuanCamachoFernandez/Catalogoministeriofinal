@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ImagePlus, Star, Trash2 } from "lucide-react";
 import { errorApi, urlRecurso, type CanonicalProduct } from "../../../compartido";
 import { BotonConfirmacion, Modal, useRetroalimentacion } from "../../../compartido/componentes";
+import { validarArchivoImagen } from "../../../compartido/validaciones/imagenes";
 import { servicioProductos } from "../servicios/servicioProductos";
 
 const mensaje = (error: unknown) =>
@@ -141,21 +142,11 @@ export function ModalImagenesProducto({
               onChange={async (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
-                if (
-                  !["image/jpeg", "image/png", "image/webp"].includes(file.type)
-                ) {
-                  feedback.error(
-                    "Formato no permitido",
-                    "Seleccione una imagen JPG, PNG o WebP.",
-                  );
-                  event.target.value = "";
-                  return;
-                }
-                if (file.size > 10 * 1024 * 1024) {
-                  feedback.error(
-                    "Imagen demasiado grande",
-                    "La imagen no puede superar los 10 MB.",
-                  );
+                const validation = validarArchivoImagen(file, {
+                  label: "la imagen del producto",
+                });
+                if (!validation.ok) {
+                  feedback.error(validation.title, validation.message);
                   event.target.value = "";
                   return;
                 }

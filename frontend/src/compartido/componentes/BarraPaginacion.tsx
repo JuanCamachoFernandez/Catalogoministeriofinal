@@ -1,6 +1,47 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Pagination } from "../../compartido";
 
+const PAGINAS_POR_BLOQUE = 5;
+
+type ElementoPaginacion = number | "ellipsis-start" | "ellipsis-end";
+
+function obtenerPaginasVisibles(
+  paginaActual: number,
+  totalPaginas: number,
+): ElementoPaginacion[] {
+  const totalSeguro = Math.max(1, totalPaginas);
+  const paginaSegura = Math.min(Math.max(1, paginaActual), totalSeguro);
+  const mitadBloque = Math.floor(PAGINAS_POR_BLOQUE / 2);
+  let inicioVisible = Math.max(1, paginaSegura - mitadBloque);
+  let finVisible = Math.min(
+    totalSeguro,
+    inicioVisible + PAGINAS_POR_BLOQUE - 1,
+  );
+
+  inicioVisible = Math.max(1, finVisible - PAGINAS_POR_BLOQUE + 1);
+  finVisible = Math.min(
+    totalSeguro,
+    inicioVisible + PAGINAS_POR_BLOQUE - 1,
+  );
+  const elementos: ElementoPaginacion[] = [];
+
+  if (inicioVisible > 1) {
+    elementos.push(1);
+    if (inicioVisible > 2) elementos.push("ellipsis-start");
+  }
+
+  for (let page = inicioVisible; page <= finVisible; page += 1) {
+    elementos.push(page);
+  }
+
+  if (finVisible < totalSeguro) {
+    if (finVisible < totalSeguro - 1) elementos.push("ellipsis-end");
+    elementos.push(totalSeguro);
+  }
+
+  return elementos;
+}
+
 export function BarraPaginacion({
   pagination,
   onPage,
@@ -21,6 +62,12 @@ export function BarraPaginacion({
   const changePage = onPage ?? onPageChange ?? (() => undefined);
 
   if (!pagination.total) return null;
+
+  const totalPaginas = Math.max(1, pagination.pages);
+  const paginasVisibles = obtenerPaginasVisibles(
+    pagination.page,
+    totalPaginas,
+  );
 
   const selectDesktopPage = (page: number) => {
     changePage(page);
@@ -44,7 +91,7 @@ export function BarraPaginacion({
       aria-label="Paginación"
     >
       <span className="pagination-summary">
-        Página {pagination.page} de {Math.max(1, pagination.pages)} ·{" "}
+        Página {pagination.page} de {totalPaginas} ·{" "}
         {pagination.total} registros
       </span>
       <div className="pagination-desktop-controls">
@@ -57,8 +104,20 @@ export function BarraPaginacion({
           <ChevronLeft size={18} />
         </button>
         <div className="pagination-pages" aria-label="Páginas disponibles">
-          {Array.from({ length: Math.max(1, pagination.pages) }, (_, index) => {
-            const page = index + 1;
+          {paginasVisibles.map((elemento) => {
+            if (typeof elemento !== "number") {
+              return (
+                <span
+                  className="pagination-ellipsis"
+                  key={elemento}
+                  aria-hidden="true"
+                >
+                  …
+                </span>
+              );
+            }
+
+            const page = elemento;
             return (
               <button
                 className={`pagination-page${page === pagination.page ? " active" : ""}`}

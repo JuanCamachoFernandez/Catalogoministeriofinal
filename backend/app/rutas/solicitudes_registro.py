@@ -77,7 +77,11 @@ def _validated_sector_rows(items):
 @registration_bp.post("/registration-requests/logo")
 def upload_registration_logo():
     try:
-        uploaded = upload_to_cloudinary(request.files.get("file"), "solicitudes")
+        uploaded = upload_to_cloudinary(
+            request.files.get("file"),
+            "solicitudes",
+            image_variant="unit_logo",
+        )
     except ValueError as exc:
         return error(str(exc))
     if not uploaded:
@@ -91,7 +95,11 @@ def upload_registration_logo():
 @registration_bp.post("/registration-requests/products/image")
 def upload_registration_product_image():
     try:
-        uploaded = upload_to_cloudinary(request.files.get("file"), "solicitudes")
+        uploaded = upload_to_cloudinary(
+            request.files.get("file"),
+            "solicitudes",
+            image_variant="product",
+        )
     except ValueError as exc:
         return error(str(exc))
     if not uploaded:

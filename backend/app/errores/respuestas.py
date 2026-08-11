@@ -2,6 +2,19 @@ from flask import current_app, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 
+HTTP_ERROR_MESSAGES = {
+    400: "Solicitud inválida",
+    401: "Autenticación requerida",
+    403: "No autorizado",
+    404: "Recurso no encontrado",
+    405: "Método no permitido",
+    413: "El contenido enviado excede el tamaño permitido",
+    422: "Datos inválidos",
+    429: "Demasiadas solicitudes",
+    500: "Error interno del servidor",
+}
+
+
 def error(message, status=400, details=None):
     payload = {"error": message}
     if details:
@@ -14,7 +27,8 @@ def registrar_manejadores_errores(app):
     def manejar_error_http(exc):
         if not request.path.startswith("/api/"):
             return exc
-        return error(exc.description or "Solicitud inválida", exc.code or 500)
+        status = exc.code or 500
+        return error(HTTP_ERROR_MESSAGES.get(status, "Error en la solicitud"), status)
 
     @app.errorhandler(Exception)
     def manejar_error_inesperado(exc):
@@ -23,8 +37,4 @@ def registrar_manejadores_errores(app):
         current_app.logger.exception("Error no controlado en la API")
         if current_app.config.get("TESTING"):
             raise exc
-        return error("Error interno del servidor", 500)
-
-    @app.errorhandler(422)
-    def manejar_entidad_invalida(_exc):
-        return error("Datos inválidos", 422)
+        return error(HTTP_ERROR_MESSAGES[500], 500)

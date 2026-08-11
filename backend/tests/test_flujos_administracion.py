@@ -1,6 +1,7 @@
 from datetime import timedelta
 from io import BytesIO
 import re
+import uuid
 
 from PIL import Image
 from openpyxl import load_workbook
@@ -158,10 +159,7 @@ def test_administrador_puede_restaurar_responsable_y_admin_sin_ci(app, client):
 
 def test_reportes_pdf_excel_y_opciones(app, client):
     with app.app_context():
-        _, token = admin_token(client)
-        admin_user = db.session.scalar(
-            db.select(User).where(User.username == "superadmin")
-        )
+        admin_id, token = admin_token(client)
         db.session.add(
             Category(
                 nombre="Textiles",
@@ -170,21 +168,21 @@ def test_reportes_pdf_excel_y_opciones(app, client):
                 estado=True,
             )
         )
-        db.session.add_all(
-            [
-                Audit(
-                    user_id=admin_user.id if admin_user else None,
-                    accion="CREAR",
-                    entidad="Reporte",
-                    descripcion="Creacion de prueba",
-                ),
-                Audit(
-                    user_id=admin_user.id if admin_user else None,
-                    accion="RESTAURAR",
-                    entidad="Reporte",
-                    descripcion="Restauracion de prueba",
-                ),
-            ]
+        today = bolivia_today()
+        db.session.add(
+            Fair(
+                nombre="Feria Test",
+                slug="feria-test-reportes",
+                lugar="Campo Ferial Chuquiago Marka",
+                ubicacion="Campo Ferial Chuquiago Marka",
+                departamento="La Paz",
+                fecha_inicio=today + timedelta(days=10),
+                fecha_fin=today + timedelta(days=12),
+                imagen_portada=None,
+                estado=FeriaStatus.DRAFT,
+                visible_publicamente=False,
+                created_by=admin_id,
+            )
         )
         db.session.commit()
 
@@ -200,6 +198,9 @@ def test_reportes_pdf_excel_y_opciones(app, client):
         "administradores",
         "auditoria",
     }.issubset({item["value"] for item in options.json["resources"]})
+    assert {
+        item["value"] for item in options.json["fair_locations"]
+    } == {"Campo Ferial Chuquiago Marka"}
 
     excel = client.get(
         "/api/reports/categorias?format=xlsx&status=active&columns=nombre,estado",
@@ -229,7 +230,7 @@ def test_reportes_pdf_excel_y_opciones(app, client):
         "/api/reports/unidades_productivas?format=xlsx&status=ACTIVE&has_social=true",
         "/api/reports/sectores_productivos?format=xlsx&status=ACTIVE",
         "/api/reports/productos?format=xlsx&status=AVAILABLE&price_min=10&price_max=100",
-        "/api/reports/ferias?format=xlsx&status=DRAFT&location=La%20Paz",
+        "/api/reports/ferias?format=xlsx&status=DRAFT&location=Campo%20Ferial%20Chuquiago%20Marka",
         "/api/reports/administradores?format=xlsx&status=ACTIVE",
         "/api/reports/auditoria?format=xlsx&action=CREAR,RESTAURAR",
     )
@@ -238,24 +239,56 @@ def test_reportes_pdf_excel_y_opciones(app, client):
         assert response.status_code == 200
         assert response.data.startswith(b"PK")
 
-    audit_report = client.get(
-        "/api/reports/auditoria?format=xlsx&action=CREAR,RESTAURAR",
+    multi_value = f"{uuid.uuid4()},{uuid.uuid4()}"
+    multi_filtered_reports = (
+        f"/api/reports/solicitudes?format=xlsx&sector_ids={multi_value}&departments=La%20Paz,Cochabamba",
+        f"/api/reports/unidades_productivas?format=xlsx&sector_ids={multi_value}&departments=La%20Paz,Cochabamba",
+        f"/api/reports/productos?format=xlsx&productive_unit_ids={multi_value}",
+        "/api/reports/auditoria?format=xlsx&actions=GENERAR_REPORTE,INICIAR_SESION",
+    )
+    for report_url in multi_filtered_reports:
+        response = client.get(report_url, headers=auth(token))
+        assert response.status_code == 200
+        assert response.data.startswith(b"PK")
+
+    audit_excel = client.get(
+        "/api/reports/auditoria?format=xlsx",
         headers=auth(token),
     )
-    workbook = load_workbook(BytesIO(audit_report.data), read_only=True)
-    sheet = workbook["Auditoria"]
-    audit_actions = {
-        row[2]
-        for row in list(sheet.values)
-        if row and row[2] in {"Crear", "Restaurar"}
-    }
-    assert audit_actions == {"Crear", "Restaurar"}
+    audit_workbook = load_workbook(BytesIO(audit_excel.data), read_only=True)
+    audit_headers = list(audit_workbook["Auditoría"].values)[6]
+    assert "Dirección IP" not in audit_headers
+    assert audit_headers == (
+        "Fecha y hora",
+        "Nombre de usuario",
+        "Actividad realizada",
+        "Tipo de información",
+        "Detalle",
+        "Estado de la actividad",
+    )
+
+    invalid_prices = client.get(
+        "/api/reports/productos?format=xlsx&price_min=100&price_max=10",
+        headers=auth(token),
+    )
+    assert invalid_prices.status_code == 400
+    assert invalid_prices.json["error"] == "El precio mínimo no puede ser mayor que el precio máximo"
 
     invalid = client.get(
         "/api/reports/ferias?format=pdf&date_from=no-es-fecha",
         headers=auth(token),
     )
     assert invalid.status_code == 400
+
+    invalid_fair_dates = client.get(
+        "/api/reports/ferias?format=xlsx&date_from=2026-08-20&date_to=2026-08-20",
+        headers=auth(token),
+    )
+    assert invalid_fair_dates.status_code == 400
+    assert (
+        invalid_fair_dates.json["error"]
+        == "La fecha final debe ser posterior a la fecha inicial"
+    )
 
 
 def test_admin_guarda_apellidos_separados(app, client):

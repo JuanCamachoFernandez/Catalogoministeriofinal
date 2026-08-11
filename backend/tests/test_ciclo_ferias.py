@@ -10,7 +10,6 @@ from app.modelos import (
     Exhibitor,
     Fair,
     FairExhibitor,
-    FairImage,
     FeriaStatus,
     Product,
     ProductStatus,
@@ -98,9 +97,7 @@ def test_finalizar_elimina_imagenes_y_conserva_registro(app):
         upload_folder = Path(app.config["CARPETA_CARGAS"]) / "ferias"
         upload_folder.mkdir(parents=True)
         cover = upload_folder / "cover.png"
-        gallery = upload_folder / "gallery.png"
         cover.write_bytes(b"cover")
-        gallery.write_bytes(b"gallery")
         fair = Fair(
             nombre="Feria pasada",
             slug="feria-pasada",
@@ -114,14 +111,6 @@ def test_finalizar_elimina_imagenes_y_conserva_registro(app):
             created_by=admin.id,
         )
         db.session.add(fair)
-        db.session.flush()
-        db.session.add(
-            FairImage(
-                fair_id=fair.id,
-                filename="gallery.png",
-                url="/uploads/ferias/gallery.png",
-            )
-        )
         db.session.commit()
         fair_id = fair.id
 
@@ -129,9 +118,7 @@ def test_finalizar_elimina_imagenes_y_conserva_registro(app):
         saved = db.session.get(Fair, fair_id)
         assert saved.estado == FeriaStatus.FINISHED
         assert saved.imagen_portada is None
-        assert db.session.query(FairImage).filter_by(fair_id=fair_id).count() == 0
         assert not cover.exists()
-        assert not gallery.exists()
 
 
 def test_rechaza_ferias_superpuestas(app, client):

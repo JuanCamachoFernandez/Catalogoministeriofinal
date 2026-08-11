@@ -17,6 +17,7 @@ import {
   EstadoVacio,
   InsigniaEstado,
   Modal,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { datosPagina, mensaje } from "../utilidades/administracionCompartida";
@@ -26,6 +27,7 @@ export default function PaginaParticipacionesFeria() {
   const { fairId = "" } = useParams();
   const [page, setPage] = useState(1);
   const [unitSearch, setUnitSearch] = useState("");
+  const [assignedSearch, setAssignedSearch] = useState("");
   const [showHelp, setShowHelp] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
@@ -40,13 +42,14 @@ export default function PaginaParticipacionesFeria() {
         .then((response) => response.data),
     enabled: Boolean(fairId),
   });
+  const readOnly = ["FINISHED", "DISABLED"].includes(fair.data?.estado ?? "");
 
   const list = useQuery({
-    queryKey: ["fair-participations", fairId, page],
+    queryKey: ["fair-participations", fairId, page, assignedSearch],
     queryFn: () =>
       api
         .get<Paged<FairParticipation>>(`/admin/fairs/${fairId}/participations`, {
-          params: { page, per_page: 10 },
+          params: { page, per_page: 10, q: assignedSearch || undefined },
         })
         .then((response) => response.data),
     enabled: Boolean(fairId),
@@ -59,10 +62,14 @@ export default function PaginaParticipacionesFeria() {
           params: { per_page: 500 },
         })
         .then((response) => response.data.items),
-    enabled: Boolean(fairId),
+    enabled: Boolean(fairId) && !readOnly,
   });
   const participationData = datosPagina(list.data);
-  const visibleParticipations = participationData.items;
+  const visibleParticipations = useElementosPaginacionAdaptable(
+    participationData.items,
+    participationData.pagination,
+    fairId,
+  );
 
   const units = useQuery({
     queryKey: ["productive-units", "options"],
@@ -72,6 +79,7 @@ export default function PaginaParticipacionesFeria() {
           params: { per_page: 100, estado: "ACTIVE" },
         })
         .then((response) => response.data.items),
+    enabled: !readOnly,
   });
 
   const assignedUnitIds = new Set(
@@ -134,6 +142,7 @@ export default function PaginaParticipacionesFeria() {
   };
 
   const assignUnits = async () => {
+    if (readOnly) return;
     if (!selectedUnitIds.length) return;
     try {
       const responses = await Promise.all(
@@ -197,10 +206,12 @@ export default function PaginaParticipacionesFeria() {
           <span className="eyebrow">Participaciones</span>
           <h1>{fair.data.nombre}</h1>
           <p>
-            Al agregar una Unidad Productiva, sus productos disponibles para la
-            feria se incluirán automáticamente.
+            {readOnly
+              ? "La feria ya no admite cambios. Las Unidades Productivas participantes se muestran solo para consulta."
+              : "Al agregar una Unidad Productiva, sus productos disponibles para la feria se incluirán automáticamente."}
           </p>
           </div>
+          {!readOnly && (
           <button
             type="button"
             className="fair-participation-help-button"
@@ -209,11 +220,13 @@ export default function PaginaParticipacionesFeria() {
             <CircleHelp size={18} />
             Cómo funciona
           </button>
+          )}
         </div>
       </div>
 
       <section className="admin-page">
-        <div className="toolbar admin-requests-toolbar admin-fairs-toolbar fair-participation-toolbar">
+        {!readOnly && (
+        <div className="toolbar admin-requests-toolbar admin-fairs-toolbar fair-participation-toolbar fair-participation-assignment-panel">
           <div className="fair-participation-search">
             <CampoBusqueda
               value={unitSearch}
@@ -303,8 +316,20 @@ export default function PaginaParticipacionesFeria() {
             {selectedUnitIds.length > 1 ? "Asignar unidades" : "Asignar unidad"}
           </button>
         </div>
+        )}
 
-{list.isLoading ? (
+        <div className="fair-participation-list-search">
+          <CampoBusqueda
+            value={assignedSearch}
+            onChange={(value) => {
+              setAssignedSearch(value);
+              setPage(1);
+            }}
+            placeholder="Buscar unidad productiva ya asignada..."
+          />
+        </div>
+
+{list.isLoading && !visibleParticipations.length ? (
           <EstadoCarga />
         ) : list.error ? (
           <CajaError mensaje={mensaje(list.error)} />
@@ -316,7 +341,7 @@ export default function PaginaParticipacionesFeria() {
                   <tr>
                     <th>Unidad Productiva</th>
                     <th>Estado</th>
-                    <th>Acciones</th>
+                    {!readOnly && <th>Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -326,6 +351,7 @@ export default function PaginaParticipacionesFeria() {
                       <td>
                         <InsigniaEstado value={participation.estado} />
                       </td>
+                      {!readOnly && (
                       <td>
                         <div className="admin-admins-actions">
                           {participation.estado === "PENDING" ? (
@@ -357,6 +383,7 @@ export default function PaginaParticipacionesFeria() {
                           ) : null}
                         </div>
                       </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -365,7 +392,7 @@ export default function PaginaParticipacionesFeria() {
             <BarraPaginacion
               pagination={participationData.pagination}
               onPageChange={setPage}
-              mobileCompact={false}
+              mobileLabel="Ver más participaciones"
             />
           </>
         ) : (

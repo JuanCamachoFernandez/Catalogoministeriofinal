@@ -1,5 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
-export const API_URL = import.meta.env.VITE_DIRECCION_SERVICIO ?? "http://localhost:5000/api";
+export const API_URL = import.meta.env.VITE_DIRECCION_SERVICIO ?? "/api";
 export const api = axios.create({ baseURL: API_URL });
 
 api.interceptors.request.use((config) => {

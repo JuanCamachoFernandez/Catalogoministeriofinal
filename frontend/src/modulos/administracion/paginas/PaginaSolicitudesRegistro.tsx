@@ -1,5 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   urlRecurso,
@@ -16,6 +18,7 @@ import {
   CampoBusqueda,
   SelectorBuscable,
   InsigniaEstado,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -41,8 +44,42 @@ export default function PaginaSolicitudesRegistro() {
     name: string;
   } | null>(null);
   const [resenaPreview, setResenaPreview] = useState("");
+  const [showCredentialsHelp, setShowCredentialsHelp] = useState(false);
+  const credentialsHelpRef = useRef<HTMLButtonElement | null>(null);
+  const [credentialsHelpPosition, setCredentialsHelpPosition] = useState({
+    left: 16,
+    top: 16,
+    width: 320,
+  });
   const qc = useQueryClient();
   const feedback = useRetroalimentacion();
+
+  const updateCredentialsHelpPosition = () => {
+    const triggerRect = credentialsHelpRef.current?.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth - 32);
+    setCredentialsHelpPosition({
+      width,
+      left: triggerRect
+        ? Math.min(Math.max(16, triggerRect.right - width), window.innerWidth - width - 16)
+        : 16,
+      top: triggerRect ? Math.min(Math.max(16, triggerRect.top), window.innerHeight - 180) : 16,
+    });
+  };
+
+  useEffect(() => {
+    if (!showCredentialsHelp) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowCredentialsHelp(false);
+      }
+    };
+    window.addEventListener("resize", updateCredentialsHelpPosition);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("resize", updateCredentialsHelpPosition);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showCredentialsHelp]);
   const list = useQuery({
     queryKey: ["registration-requests", q, estado, dateFrom, dateTo, page],
     queryFn: () =>
@@ -70,6 +107,11 @@ export default function PaginaSolicitudesRegistro() {
     }
   };
   const data = datosPagina(list.data);
+  const displayedRequests = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${estado}|${dateFrom}|${dateTo}`,
+  );
   return (
     <section className="admin-page admin-requests-page">
       {" "}
@@ -124,11 +166,11 @@ export default function PaginaSolicitudesRegistro() {
           />
         </Campo>
       </div>{" "}
-      {list.isLoading ? (
+      {list.isLoading && !displayedRequests.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedRequests.length ? (
         <>
           <div className="table-wrap admin-requests-table">
             <table>
@@ -142,7 +184,7 @@ export default function PaginaSolicitudesRegistro() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => (
+                {displayedRequests.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <strong>{item.nombre_comercial}</strong>
@@ -450,13 +492,60 @@ export default function PaginaSolicitudesRegistro() {
           {selected.estado === "APPROVED" && (
             <section className="admin-request-review-section admin-request-decision-section">
               <div className="admin-request-decision-heading">
-                <div>
+                <div className="admin-admins-credentials-heading">
                   <h3>Decisión de la solicitud</h3>
-                  <p>
-                    La solicitud ya fue aprobada. Puede regenerar la
-                    contraseña temporal y reenviar el usuario actual si la
-                    Unidad Productiva lo requiere.
-                  </p>
+                  <div className="admin-admins-credentials-help">
+                    <button
+                      ref={credentialsHelpRef}
+                      type="button"
+                      className="admin-inline-help-button admin-admins-help-button"
+                      aria-label="Mostrar ayuda sobre credenciales"
+                      aria-expanded={showCredentialsHelp}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        updateCredentialsHelpPosition();
+                        setShowCredentialsHelp((current) => !current);
+                      }}
+                    >
+                      ?
+                    </button>
+                    {showCredentialsHelp ? (
+                      createPortal(
+                        <>
+                          <button
+                            type="button"
+                            className="admin-inline-help-backdrop"
+                            aria-label="Cerrar ayuda"
+                            onClick={() => setShowCredentialsHelp(false)}
+                          />
+                          <div
+                            className="admin-inline-help-card admin-admins-help-popover"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Ayuda sobre credenciales"
+                            style={credentialsHelpPosition}
+                          >
+                            <div className="admin-inline-help-card-header">
+                              <button
+                                type="button"
+                                aria-label="Cerrar ayuda"
+                                onClick={() => setShowCredentialsHelp(false)}
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                            <p>
+                              La solicitud ya fue aprobada. Aquí puede
+                              regenerar una contraseña temporal y reenviar las
+                              credenciales si la Unidad Productiva lo necesita.
+                            </p>
+                          </div>
+                        </>,
+                        document.body,
+                      )
+                    ) : null}
+                  </div>
                 </div>
                 <InsigniaEstado value={selected.estado} />
               </div>

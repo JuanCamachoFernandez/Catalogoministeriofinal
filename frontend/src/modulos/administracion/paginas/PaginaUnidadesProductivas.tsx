@@ -16,6 +16,7 @@ import {
   SelectorBuscable,
   InsigniaEstado,
   BotonConfirmacion,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { FormularioDirectoUnidadProductiva } from "../componentes/FormularioDirectoUnidadProductiva";
@@ -73,6 +74,11 @@ export default function PaginaUnidadesProductivas() {
   });
 
   const data = datosPagina(list.data);
+  const displayedUnits = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${estado}|${sectorFilter}`,
+  );
   const selectedSectorLabel = useMemo(() => {
     if (!sectorIds.length) return "Todos los sectores";
     if (sectorIds.length === 1) {
@@ -250,11 +256,11 @@ export default function PaginaUnidadesProductivas() {
           )}
         </div>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedUnits.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedUnits.length ? (
         <>
           <div className="table-wrap admin-requests-table admin-units-table">
             <table>
@@ -270,7 +276,7 @@ export default function PaginaUnidadesProductivas() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => (
+                {displayedUnits.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <strong>{item.nombre_comercial}</strong>
