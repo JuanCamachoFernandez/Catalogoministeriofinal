@@ -948,6 +948,13 @@ textarea.input {
 .pagination-page.active {
   cursor: default;
 }
+.pagination-ellipsis {
+  min-width: 1.25rem;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  text-align: center;
+  user-select: none;
+}
 .pagination-arrow {
   min-width: 38px;
   padding-inline: 0.55rem;

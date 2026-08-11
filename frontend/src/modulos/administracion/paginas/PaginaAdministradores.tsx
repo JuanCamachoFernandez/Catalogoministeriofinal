@@ -13,6 +13,7 @@ import {
   InsigniaEstado,
   Modal,
   SelectorBuscable,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { datosPagina, limpiar, mensaje } from "../utilidades/administracionCompartida";
@@ -152,6 +153,11 @@ export default function PaginaAdministradores() {
   });
 
   const data = datosPagina(list.data);
+  const displayedAdmins = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${status}`,
+  );
 
   const closeForm = () => {
     setCreating(false);
@@ -699,11 +705,11 @@ export default function PaginaAdministradores() {
         />
       </div>
 
-      {list.isLoading ? (
+      {list.isLoading && !displayedAdmins.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedAdmins.length ? (
         <>
           <div className="table-wrap admin-requests-table admin-admins-table">
             <table>
@@ -718,7 +724,7 @@ export default function PaginaAdministradores() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((admin) => (
+                {displayedAdmins.map((admin) => (
                   <tr key={admin.id}>
                     <td>
                       <div className="admin-admins-person-cell">

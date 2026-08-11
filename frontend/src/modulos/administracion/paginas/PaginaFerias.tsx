@@ -34,6 +34,7 @@ import {
   InsigniaEstado,
   ProgresoCarga,
   SelectorBuscable,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -398,6 +399,11 @@ export default function PaginaFerias() {
         .then((r) => r.data),
   });
   const data = datosPagina(list.data);
+  const displayedFairs = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${estado}|${sortDir}|${dateFrom}|${dateTo}`,
+  );
 
   useEffect(
     () => () => {
@@ -1273,11 +1279,11 @@ export default function PaginaFerias() {
           />
         </Campo>
       </div>
-      {list.isLoading ? (
+      {list.isLoading && !displayedFairs.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : !data.items.length ? (
+      ) : !displayedFairs.length ? (
         <EstadoVacio title="No hay ferias ni eventos" />
       ) : (
         <>
@@ -1308,7 +1314,7 @@ export default function PaginaFerias() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((fair) => (
+                {displayedFairs.map((fair) => (
                   <tr key={fair.id}>
                     <td>
                       <span className={`admin-kind-badge admin-kind-badge-${fair.tipo.toLowerCase()}`}>

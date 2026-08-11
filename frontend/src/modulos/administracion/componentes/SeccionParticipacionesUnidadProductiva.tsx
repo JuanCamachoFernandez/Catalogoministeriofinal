@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { type Pagination, type ProductiveUnitFairParticipation } from "../../../compartido";
-import { EstadoVacio, BarraPaginacion, CampoBusqueda, InsigniaEstado } from "../../../compartido/componentes";
+import {
+  EstadoVacio,
+  BarraPaginacion,
+  CampoBusqueda,
+  InsigniaEstado,
+  useElementosPaginacionAdaptable,
+} from "../../../compartido/componentes";
 
 const PARTICIPATIONS_PER_PAGE = 5;
 
@@ -41,7 +47,7 @@ export function SeccionParticipacionesUnidadProductiva({
   );
   const safePage = Math.min(page, totalPages);
   const startIndex = (safePage - 1) * PARTICIPATIONS_PER_PAGE;
-  const visibleParticipations = filteredParticipations.slice(
+  const pageParticipations = filteredParticipations.slice(
     startIndex,
     startIndex + PARTICIPATIONS_PER_PAGE,
   );
@@ -54,6 +60,11 @@ export function SeccionParticipacionesUnidadProductiva({
     has_prev: safePage > 1,
     has_next: safePage < totalPages,
   };
+  const visibleParticipations = useElementosPaginacionAdaptable(
+    pageParticipations,
+    pagination,
+    query,
+  );
 
   return (
     <section className="admin-unit-detail-section">
@@ -126,7 +137,7 @@ export function SeccionParticipacionesUnidadProductiva({
             pagination={pagination}
             onPageChange={setPage}
             scrollOnDesktop={false}
-            mobileCompact={false}
+            mobileLabel="Ver más participaciones"
           />
         </>
       ) : (

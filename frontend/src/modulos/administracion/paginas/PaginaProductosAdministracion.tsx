@@ -15,6 +15,7 @@ import {
   CampoBusqueda,
   SelectorBuscable,
   InsigniaEstado,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -67,6 +68,11 @@ export default function PaginaProductosAdministracion() {
   const qc = useQueryClient();
   const feedback = useRetroalimentacion();
   const data = datosPagina(list.data);
+  const displayedProducts = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    `${q}|${status}|${productiveUnitId}`,
+  );
 
   return (
     <section className="admin-page">
@@ -116,11 +122,11 @@ export default function PaginaProductosAdministracion() {
         />
       </div>
 
-      {list.isLoading ? (
+      {list.isLoading && !displayedProducts.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <CajaError mensaje={mensaje(list.error)} />
-      ) : data.items.length ? (
+      ) : displayedProducts.length ? (
         <>
           <div className="table-wrap admin-requests-table admin-units-table">
             <table>
@@ -135,7 +141,7 @@ export default function PaginaProductosAdministracion() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((product) => {
+                {displayedProducts.map((product) => {
                   const unit = productiveUnits.data?.find(
                     (item) => item.id === product.productive_unit_id,
                   );

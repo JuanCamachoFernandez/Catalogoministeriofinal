@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { FileDown, FileSpreadsheet, FileText, RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ChevronDown,
+  FileDown,
+  FileSpreadsheet,
+  FileText,
+  RotateCcw,
+  Search,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorApi } from "../../../compartido";
 import {
   CajaError,
@@ -9,6 +16,7 @@ import {
   SelectorBuscable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
+import { etiquetaAccionAuditoria } from "../../../compartido/utilidades/etiquetasAuditoria";
 
 type Option = { value: string; label: string };
 type ReportOptions = {
@@ -16,6 +24,7 @@ type ReportOptions = {
   actions: string[];
   sectors: Option[];
   productive_units: Option[];
+  fair_locations: Option[];
   departments: string[];
 };
 
@@ -79,14 +88,136 @@ const PRESENCE_OPTIONS: Option[] = [
 
 const defaultFilters = (): Filters => ({});
 
+function SelectorMultipleReportes({
+  value,
+  options,
+  onChange,
+  allLabel,
+  searchPlaceholder,
+  ariaLabel,
+}: {
+  value: string;
+  options: Option[];
+  onChange: (value: string) => void;
+  allLabel: string;
+  searchPlaceholder: string;
+  ariaLabel: string;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const storedValues = value.split(",").filter(Boolean);
+  const selected = new Set(storedValues);
+  const allSelected = !storedValues.length;
+  const normalizedQuery = query.trim().toLocaleLowerCase("es");
+  const filteredOptions = options.filter((option) =>
+    option.label.toLocaleLowerCase("es").includes(normalizedQuery),
+  );
+  const selectedLabels = storedValues
+    .map(
+      (selectedValue) =>
+        options.find((option) => option.value === selectedValue)?.label,
+    )
+    .filter(Boolean) as string[];
+  const summary = !storedValues.length ? allLabel : selectedLabels.join(", ");
+
+  useEffect(() => {
+    const closeOutside = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOutside);
+    return () => document.removeEventListener("mousedown", closeOutside);
+  }, []);
+
+  const toggleOption = (optionValue: string) => {
+    const next = selected.has(optionValue)
+      ? storedValues.filter((item) => item !== optionValue)
+      : [...storedValues, optionValue];
+    onChange(
+      !next.length || next.length === options.length ? "" : next.join(","),
+    );
+  };
+
+  return (
+    <div className={`reports-multiselect ${open ? "is-open" : ""}`} ref={root}>
+      <button
+        type="button"
+        className="reports-multiselect-trigger"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => {
+          setOpen((current) => !current);
+          if (!open) setTimeout(() => searchInput.current?.focus(), 0);
+        }}
+      >
+        <span title={summary}>{summary}</span>
+        <ChevronDown size={18} />
+      </button>
+      {open && (
+        <div className="reports-multiselect-menu">
+          <label className="reports-multiselect-search">
+            <Search size={17} />
+            <input
+              ref={searchInput}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={searchPlaceholder}
+            />
+          </label>
+          <div
+            className="reports-multiselect-options"
+            role="listbox"
+            aria-multiselectable="true"
+          >
+            <button
+              type="button"
+              className="reports-multiselect-option select-all"
+              onClick={() => onChange("")}
+            >
+              <input
+                type="checkbox"
+                checked={allSelected}
+                readOnly
+                tabIndex={-1}
+              />
+              <span>{allLabel}</span>
+            </button>
+            {filteredOptions.map((option) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={selected.has(option.value)}
+                className="reports-multiselect-option"
+                key={option.value}
+                onClick={() => toggleOption(option.value)}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(option.value)}
+                  readOnly
+                  tabIndex={-1}
+                />
+                <span>{option.label}</span>
+              </button>
+            ))}
+            {!filteredOptions.length && (
+              <p className="reports-multiselect-empty">No hay coincidencias</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const reportFilename = (label: string, format: "pdf" | "xlsx") => {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
-  const timestamp = [
-    now.getFullYear(),
-    pad(now.getMonth() + 1),
-    pad(now.getDate()),
-  ].join("-") + `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const timestamp =
+    [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())].join("-") +
+    `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
   const filenameLabel = label.toLocaleLowerCase("es").startsWith("reporte ")
     ? label.slice("Reporte ".length)
     : label;
@@ -106,10 +237,15 @@ export default function PaginaReportesAdministracion() {
   const feedback = useRetroalimentacion();
   const optionsQuery = useQuery({
     queryKey: ["report-options"],
-    queryFn: () => api.get<ReportOptions>("/reports/options").then((response) => response.data),
+    queryFn: () =>
+      api
+        .get<ReportOptions>("/reports/options")
+        .then((response) => response.data),
   });
   const options = optionsQuery.data;
-  const selectedLabel = RESOURCE_OPTIONS.find((item) => item.value === resource)?.label ?? "Reporte";
+  const selectedLabel =
+    RESOURCE_OPTIONS.find((item) => item.value === resource)?.label ??
+    "Reporte";
 
   const setFilter = (name: string, value: string) =>
     setFilters((current) => ({ ...current, [name]: value }));
@@ -118,14 +254,47 @@ export default function PaginaReportesAdministracion() {
     () => Object.values(filters).filter(Boolean).length,
     [filters],
   );
+  const minimumPrice =
+    filters.price_min === "" || filters.price_min === undefined
+      ? null
+      : Number(filters.price_min);
+  const maximumPrice =
+    filters.price_max === "" || filters.price_max === undefined
+      ? null
+      : Number(filters.price_max);
+  const invalidPriceRange =
+    minimumPrice !== null &&
+    maximumPrice !== null &&
+    minimumPrice > maximumPrice;
+  const invalidFairDateRange =
+    resource === "ferias" &&
+    Boolean(filters.date_from) &&
+    Boolean(filters.date_to) &&
+    filters.date_to <= filters.date_from;
 
   const download = async () => {
+    if (invalidPriceRange) {
+      feedback.error(
+        "Revise el rango de precios",
+        "El precio mínimo no puede ser mayor que el precio máximo.",
+      );
+      return;
+    }
+    if (invalidFairDateRange) {
+      feedback.error(
+        "Revise el rango de fechas",
+        "La fecha final debe ser posterior a la fecha inicial.",
+      );
+      return;
+    }
     setDownloading(true);
     try {
       const response = await api.get<Blob>(`/reports/${resource}`, {
         params: {
           format,
-          ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "")),
+          ...Object.fromEntries(
+            Object.entries(filters).filter(([, value]) => value !== ""),
+          ),
         },
         responseType: "blob",
       });
@@ -138,7 +307,10 @@ export default function PaginaReportesAdministracion() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      feedback.success("Reporte generado", `${selectedLabel} en ${format === "pdf" ? "PDF" : "Excel"}.`);
+      feedback.success(
+        "Reporte generado",
+        `${selectedLabel} en ${format === "pdf" ? "PDF" : "Excel"}.`,
+      );
     } catch (error) {
       feedback.error("No se pudo generar el reporte", errorApi(error));
     } finally {
@@ -146,11 +318,15 @@ export default function PaginaReportesAdministracion() {
     }
   };
 
-  if (optionsQuery.isLoading) return <EstadoCarga label="Preparando reportes..." />;
-  if (optionsQuery.error) return <CajaError mensaje={errorApi(optionsQuery.error)} />;
+  if (optionsQuery.isLoading)
+    return <EstadoCarga label="Preparando reportes..." />;
+  if (optionsQuery.error)
+    return <CajaError mensaje={errorApi(optionsQuery.error)} />;
 
   const statusOptions = STATUS_OPTIONS[resource];
-  const organizationReport = ["solicitudes", "unidades_productivas"].includes(resource);
+  const organizationReport = ["solicitudes", "unidades_productivas"].includes(
+    resource,
+  );
 
   return (
     <section className="admin-page reports-page">
@@ -158,16 +334,24 @@ export default function PaginaReportesAdministracion() {
         <div>
           <span className="eyebrow">Información institucional</span>
           <h1>Reportes</h1>
-          <p>Seleccione el contenido, aplique los filtros necesarios y elija el formato de descarga.</p>
+          <p>
+            Seleccione el contenido, aplique los filtros necesarios y elija el
+            formato de descarga.
+          </p>
         </div>
-        <span className="heading-icon"><FileDown /></span>
+        <span className="heading-icon">
+          <FileDown />
+        </span>
       </header>
 
       <div className="reports-workspace">
         <section className="reports-config-section">
           <div className="reports-section-heading">
             <span>01</span>
-            <div><h2>Contenido del reporte</h2><p>El reporte general incluye todos los apartados.</p></div>
+            <div>
+              <h2>Contenido del reporte</h2>
+              <p>El reporte general incluye todos los apartados.</p>
+            </div>
           </div>
           <SelectorBuscable
             value={resource}
@@ -185,51 +369,125 @@ export default function PaginaReportesAdministracion() {
         <section className="reports-config-section reports-filter-section">
           <div className="reports-section-heading reports-filter-heading">
             <span>02</span>
-            <div><h2>Filtros</h2><p>{resource === "general" ? "Se incluirán todos los registros disponibles." : "Deje los filtros en Todos para obtener el reporte completo."}</p></div>
+            <div>
+              <h2>Filtros</h2>
+              <p>
+                {resource === "general"
+                  ? "Se incluirán todos los registros disponibles."
+                  : "Deje los filtros en Todos para obtener el reporte completo."}
+              </p>
+            </div>
             {activeFilterCount > 0 && (
-              <button type="button" className="reports-clear-button" onClick={() => setFilters(defaultFilters())}>
+              <button
+                type="button"
+                className="reports-clear-button"
+                onClick={() => setFilters(defaultFilters())}
+              >
                 <RotateCcw size={16} /> Limpiar filtros
               </button>
             )}
           </div>
 
-          <div className="reports-dynamic-filters" key={resource}>
+          <div
+            className={`reports-dynamic-filters ${
+              resource === "auditoria" ? "reports-dynamic-filters--auditoria" : ""
+            }`}
+            key={resource}
+          >
             {resource === "general" ? (
               <div className="reports-general-message">
                 <FileText aria-hidden="true" />
-                <div><strong>Reporte consolidado</strong><span>Solicitudes, unidades, sectores, productos, ferias, administradores y auditoría.</span></div>
+                <div>
+                  <strong>Reporte consolidado</strong>
+                  <span>
+                    Solicitudes, unidades, sectores, productos, ferias,
+                    administradores y auditoría.
+                  </span>
+                </div>
               </div>
             ) : (
               <>
-                <Campo label="Búsqueda general">
-                  <input className="input" value={filters.q ?? ""} onChange={(event) => setFilter("q", event.target.value)} placeholder="Nombre o palabra clave" />
-                </Campo>
-
                 {statusOptions && (
                   <Campo label="Estado">
-                    <SelectorBuscable value={filters.status ?? ""} options={statusOptions} onChange={(value) => setFilter("status", value)} searchable={false} placeholder="Todos los estados" ariaLabel="Filtrar por estado" />
+                    <SelectorBuscable
+                      value={filters.status ?? ""}
+                      options={statusOptions}
+                      onChange={(value) => setFilter("status", value)}
+                      searchable={false}
+                      placeholder="Todos los estados"
+                      ariaLabel="Filtrar por estado"
+                    />
                   </Campo>
                 )}
 
                 {organizationReport && (
                   <>
                     <Campo label="Sector productivo">
-                      <SelectorBuscable value={filters.sector_id ?? ""} options={[{ value: "", label: "Todos los sectores" }, ...(options?.sectors ?? [])]} onChange={(value) => setFilter("sector_id", value)} placeholder="Todos los sectores" searchPlaceholder="Buscar sector..." ariaLabel="Filtrar por sector" />
+                      <SelectorMultipleReportes
+                        value={filters.sector_ids ?? ""}
+                        options={options?.sectors ?? []}
+                        onChange={(value) => setFilter("sector_ids", value)}
+                        allLabel="Todos los sectores"
+                        searchPlaceholder="Buscar sector..."
+                        ariaLabel="Seleccionar sectores productivos"
+                      />
                     </Campo>
                     <Campo label="Departamento">
-                      <SelectorBuscable value={filters.department ?? ""} options={[{ value: "", label: "Todos los departamentos" }, ...(options?.departments.map((item) => ({ value: item, label: item })) ?? [])]} onChange={(value) => setFilter("department", value)} placeholder="Todos los departamentos" searchPlaceholder="Buscar departamento..." ariaLabel="Filtrar por departamento" />
+                      <SelectorMultipleReportes
+                        value={filters.departments ?? ""}
+                        options={
+                          options?.departments.map((item) => ({
+                            value: item,
+                            label: item,
+                          })) ?? []
+                        }
+                        onChange={(value) => setFilter("departments", value)}
+                        allLabel="Todos los departamentos"
+                        searchPlaceholder="Buscar departamento..."
+                        ariaLabel="Seleccionar departamentos"
+                      />
                     </Campo>
                     <Campo label="NIT">
-                      <SelectorBuscable value={filters.has_nit ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_nit", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por NIT" />
+                      <SelectorBuscable
+                        value={filters.has_nit ?? ""}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_nit", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por NIT"
+                      />
                     </Campo>
                     <Campo label="Registro SEPREC">
-                      <SelectorBuscable value={filters.has_seprec ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_seprec", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por SEPREC" />
+                      <SelectorBuscable
+                        value={filters.has_seprec ?? ""}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_seprec", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por SEPREC"
+                      />
                     </Campo>
                     <Campo label="Registro PRO-BOLIVIA">
-                      <SelectorBuscable value={filters.has_pro_bolivia ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_pro_bolivia", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por PRO-BOLIVIA" />
+                      <SelectorBuscable
+                        value={filters.has_pro_bolivia ?? ""}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) =>
+                          setFilter("has_pro_bolivia", value)
+                        }
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por PRO-BOLIVIA"
+                      />
                     </Campo>
                     <Campo label="Redes sociales">
-                      <SelectorBuscable value={filters.has_social ?? ""} options={PRESENCE_OPTIONS} onChange={(value) => setFilter("has_social", value)} searchable={false} placeholder="Todos" ariaLabel="Filtrar por redes sociales" />
+                      <SelectorBuscable
+                        value={filters.has_social ?? ""}
+                        options={PRESENCE_OPTIONS}
+                        onChange={(value) => setFilter("has_social", value)}
+                        searchable={false}
+                        placeholder="Todos"
+                        ariaLabel="Filtrar por redes sociales"
+                      />
                     </Campo>
                   </>
                 )}
@@ -237,28 +495,151 @@ export default function PaginaReportesAdministracion() {
                 {resource === "productos" && (
                   <>
                     <Campo label="Unidad productiva">
-                      <SelectorBuscable value={filters.productive_unit_id ?? ""} options={[{ value: "", label: "Todas las unidades" }, ...(options?.productive_units ?? [])]} onChange={(value) => setFilter("productive_unit_id", value)} placeholder="Todas las unidades" searchPlaceholder="Buscar unidad..." ariaLabel="Filtrar por unidad productiva" />
+                      <SelectorMultipleReportes
+                        value={filters.productive_unit_ids ?? ""}
+                        options={options?.productive_units ?? []}
+                        onChange={(value) =>
+                          setFilter("productive_unit_ids", value)
+                        }
+                        allLabel="Todas las unidades productivas"
+                        searchPlaceholder="Buscar unidad productiva..."
+                        ariaLabel="Seleccionar unidades productivas"
+                      />
                     </Campo>
-                    <Campo label="Precio mínimo (Bs)"><input className="input" type="number" min="0" step="0.01" value={filters.price_min ?? ""} onChange={(event) => setFilter("price_min", event.target.value)} /></Campo>
-                    <Campo label="Precio máximo (Bs)"><input className="input" type="number" min={filters.price_min || "0"} step="0.01" value={filters.price_max ?? ""} onChange={(event) => setFilter("price_max", event.target.value)} /></Campo>
+                    <Campo label="Precio mínimo (Bs)">
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={filters.price_min ?? ""}
+                        aria-invalid={invalidPriceRange || undefined}
+                        onChange={(event) =>
+                          setFilter("price_min", event.target.value)
+                        }
+                      />
+                    </Campo>
+                    <Campo label="Precio máximo (Bs)">
+                      <input
+                        className="input"
+                        type="number"
+                        min={filters.price_min || "0"}
+                        step="0.01"
+                        value={filters.price_max ?? ""}
+                        aria-invalid={invalidPriceRange || undefined}
+                        aria-describedby={
+                          invalidPriceRange ? "report-price-error" : undefined
+                        }
+                        onChange={(event) =>
+                          setFilter("price_max", event.target.value)
+                        }
+                      />
+                      {invalidPriceRange && (
+                        <small
+                          id="report-price-error"
+                          className="field-error"
+                          role="alert"
+                        >
+                          El precio máximo debe ser igual o mayor que el precio
+                          mínimo.
+                        </small>
+                      )}
+                    </Campo>
                   </>
                 )}
 
                 {resource === "ferias" && (
                   <>
-                    <Campo label="Lugar"><input className="input" value={filters.location ?? ""} onChange={(event) => setFilter("location", event.target.value)} placeholder="Lugar, dirección o departamento" /></Campo>
-                    <Campo label="Desde"><input className="input" type="date" max={filters.date_to || undefined} value={filters.date_from ?? ""} onChange={(event) => setFilter("date_from", event.target.value)} /></Campo>
-                    <Campo label="Hasta"><input className="input" type="date" min={filters.date_from || undefined} value={filters.date_to ?? ""} onChange={(event) => setFilter("date_to", event.target.value)} /></Campo>
+                    <Campo label="Lugar">
+                      <SelectorBuscable
+                        value={filters.location ?? ""}
+                        options={[
+                          { value: "", label: "Todos los lugares" },
+                          ...(options?.fair_locations ?? []),
+                        ]}
+                        onChange={(value) => setFilter("location", value)}
+                        placeholder="Todos los lugares"
+                        ariaLabel="Filtrar por lugar registrado"
+                      />
+                    </Campo>
+                    <Campo label="Desde">
+                      <input
+                        className="input"
+                        type="date"
+                        max={filters.date_to || undefined}
+                        value={filters.date_from ?? ""}
+                        aria-invalid={invalidFairDateRange || undefined}
+                        onChange={(event) =>
+                          setFilter("date_from", event.target.value)
+                        }
+                      />
+                    </Campo>
+                    <Campo label="Hasta">
+                      <input
+                        className="input"
+                        type="date"
+                        min={filters.date_from || undefined}
+                        value={filters.date_to ?? ""}
+                        aria-invalid={invalidFairDateRange || undefined}
+                        aria-describedby={
+                          invalidFairDateRange ? "report-fair-date-error" : undefined
+                        }
+                        onChange={(event) =>
+                          setFilter("date_to", event.target.value)
+                        }
+                      />
+                      {invalidFairDateRange && (
+                        <small
+                          id="report-fair-date-error"
+                          className="field-error"
+                          role="alert"
+                        >
+                          La fecha final debe ser posterior a la fecha inicial.
+                        </small>
+                      )}
+                    </Campo>
                   </>
                 )}
 
                 {resource === "auditoria" && (
                   <>
                     <Campo label="Acción">
-                      <SelectorBuscable value={filters.action ?? ""} options={[{ value: "", label: "Todas las acciones" }, ...(options?.actions.map((item) => ({ value: item, label: item.replaceAll("_", " ") })) ?? [])]} onChange={(value) => setFilter("action", value)} placeholder="Todas las acciones" searchPlaceholder="Buscar acción..." ariaLabel="Filtrar por acción" />
+                      <SelectorMultipleReportes
+                        value={filters.actions ?? ""}
+                        options={
+                          options?.actions.map((item) => ({
+                            value: item,
+                            label: etiquetaAccionAuditoria(item),
+                          })) ?? []
+                        }
+                        onChange={(value) => setFilter("actions", value)}
+                        allLabel="Todas las acciones"
+                        searchPlaceholder="Buscar acción..."
+                        ariaLabel="Seleccionar acciones"
+                      />
                     </Campo>
-                    <Campo label="Desde"><input className="input" type="date" max={filters.date_to || undefined} value={filters.date_from ?? ""} onChange={(event) => setFilter("date_from", event.target.value)} /></Campo>
-                    <Campo label="Hasta"><input className="input" type="date" min={filters.date_from || undefined} value={filters.date_to ?? ""} onChange={(event) => setFilter("date_to", event.target.value)} /></Campo>
+                    <Campo label="Desde">
+                      <input
+                        className="input"
+                        type="date"
+                        max={filters.date_to || undefined}
+                        value={filters.date_from ?? ""}
+                        onChange={(event) =>
+                          setFilter("date_from", event.target.value)
+                        }
+                      />
+                    </Campo>
+                    <Campo label="Hasta">
+                      <input
+                        className="input"
+                        type="date"
+                        min={filters.date_from || undefined}
+                        value={filters.date_to ?? ""}
+                        onChange={(event) =>
+                          setFilter("date_to", event.target.value)
+                        }
+                      />
+                    </Campo>
                   </>
                 )}
               </>
@@ -269,14 +650,39 @@ export default function PaginaReportesAdministracion() {
         <section className="reports-config-section reports-export-section">
           <div className="reports-section-heading">
             <span>03</span>
-            <div><h2>Formato de descarga</h2><p>Ambos formatos incluyen la información filtrada.</p></div>
+            <div>
+              <h2>Formato de descarga</h2>
+              <p>Ambos formatos incluyen la información filtrada.</p>
+            </div>
           </div>
-          <div className="reports-format-control" role="group" aria-label="Formato del reporte">
-            <button type="button" className={format === "pdf" ? "active" : ""} onClick={() => setFormat("pdf")}><FileText /> PDF</button>
-            <button type="button" className={format === "xlsx" ? "active" : ""} onClick={() => setFormat("xlsx")}><FileSpreadsheet /> Excel</button>
+          <div
+            className="reports-format-control"
+            role="group"
+            aria-label="Formato del reporte"
+          >
+            <button
+              type="button"
+              className={format === "pdf" ? "active" : ""}
+              onClick={() => setFormat("pdf")}
+            >
+              <FileText /> PDF
+            </button>
+            <button
+              type="button"
+              className={format === "xlsx" ? "active" : ""}
+              onClick={() => setFormat("xlsx")}
+            >
+              <FileSpreadsheet /> Excel
+            </button>
           </div>
-          <button type="button" className="reports-download-button" disabled={downloading} onClick={() => void download()}>
-            <FileDown /> {downloading ? "Generando reporte..." : "Generar y descargar"}
+          <button
+            type="button"
+            className="reports-download-button"
+            disabled={downloading || invalidPriceRange || invalidFairDateRange}
+            onClick={() => void download()}
+          >
+            <FileDown />{" "}
+            {downloading ? "Generando reporte..." : "Generar y descargar"}
           </button>
         </section>
       </div>

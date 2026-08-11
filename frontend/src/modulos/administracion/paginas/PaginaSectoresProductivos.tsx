@@ -9,6 +9,7 @@ import {
   Modal,
   BarraPaginacion,
   InsigniaEstado,
+  useElementosPaginacionAdaptable,
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { limpiar, mensaje, datosPagina } from "../utilidades/administracionCompartida";
@@ -68,7 +69,11 @@ export default function PaginaSectoresProductivos() {
   };
 
   const data = datosPagina(list.data);
-  const items = data.items;
+  const items = useElementosPaginacionAdaptable(
+    data.items,
+    data.pagination,
+    "sectores-productivos",
+  );
 
   return (
     <section className="admin-page">
@@ -83,7 +88,7 @@ export default function PaginaSectoresProductivos() {
         </button>
       </div>
 
-      {list.isLoading ? (
+      {list.isLoading && !items.length ? (
         <EstadoCarga />
       ) : list.error ? (
         <EstadoVacio
