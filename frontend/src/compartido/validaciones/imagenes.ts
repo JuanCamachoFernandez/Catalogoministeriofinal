@@ -1,5 +1,9 @@
-const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-const IMAGE_ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+export const LIMITE_IMAGEN_BYTES = 10 * 1024 * 1024;
+export const TIPOS_IMAGEN_PERMITIDOS = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
 
 type ImageValidationOptions = {
   label: string;
@@ -13,14 +17,18 @@ export function validarArchivoImagen(
   file: File,
   options: ImageValidationOptions,
 ): ImageValidationResult {
-  if (!IMAGE_ALLOWED_TYPES.includes(file.type as (typeof IMAGE_ALLOWED_TYPES)[number])) {
+  if (
+    !TIPOS_IMAGEN_PERMITIDOS.includes(
+      file.type as (typeof TIPOS_IMAGEN_PERMITIDOS)[number],
+    )
+  ) {
     return {
       ok: false,
       title: "No se puede usar este archivo",
       message: `El archivo seleccionado no es una imagen compatible. Elija una imagen JPG, PNG o WebP para ${options.label}.`,
     };
   }
-  if (file.size > IMAGE_MAX_BYTES) {
+  if (file.size > LIMITE_IMAGEN_BYTES) {
     const fileSizeMb = (file.size / (1024 * 1024)).toFixed(1);
     return {
       ok: false,

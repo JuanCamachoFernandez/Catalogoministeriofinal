@@ -1,4 +1,5 @@
 import { api } from "../../../compartido/servicios/clienteHttp";
+import { prepararFormularioImagenParaSubida } from "../../../compartido/servicios/optimizacionImagen";
 import type {
   Paged,
   ProductiveSector,
@@ -12,16 +13,17 @@ export const servicioRegistro = {
         params: { per_page: 100 },
       })
       .then(({ data }) => data.items),
-  uploadLogo: (file: File) => {
-    const form = new FormData();
-    form.append("file", file);
+  uploadLogo: async (file: File) => {
+    const { form } = await prepararFormularioImagenParaSubida(
+      file,
+      "unit_logo",
+    );
     return api
       .post<{ url: string }>("/registration-requests/logo", form)
       .then(({ data }) => data.url);
   },
-  uploadProductImage: (file: File) => {
-    const form = new FormData();
-    form.append("file", file);
+  uploadProductImage: async (file: File) => {
+    const { form } = await prepararFormularioImagenParaSubida(file, "product");
     return api
       .post<{ url: string }>("/registration-requests/products/image", form)
       .then(({ data }) => data.url);

@@ -5,6 +5,7 @@ import {
   type ProductiveSectorLink,
   type ProductiveUnit,
 } from "../../../compartido";
+import { prepararFormularioImagenParaSubida } from "../../../compartido/servicios/optimizacionImagen";
 
 export const servicioUnidadProductiva = {
   getProfile: () =>
@@ -15,9 +16,11 @@ export const servicioUnidadProductiva = {
   updateProfile: (profile: Partial<ProductiveUnit>) =>
     api.patch("/productive-unit/profile", profile),
 
-  uploadLogo: (file: File) => {
-    const form = new FormData();
-    form.append("file", file);
+  uploadLogo: async (file: File) => {
+    const { form } = await prepararFormularioImagenParaSubida(
+      file,
+      "unit_logo",
+    );
     return api.post("/productive-unit/logo", form);
   },
 

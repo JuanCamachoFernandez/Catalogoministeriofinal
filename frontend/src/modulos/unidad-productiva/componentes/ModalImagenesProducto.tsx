@@ -129,11 +129,11 @@ export function ModalImagenesProducto({
             <span className="product-image-upload-icon">
               <ImagePlus size={28} />
             </span>
-            <strong>{busy ? "Subiendo imagen…" : "Agregar imagen"}</strong>
+            <strong>{busy ? "Procesando y subiendo…" : "Agregar imagen"}</strong>
             <span>Seleccione una fotografía clara del producto.</span>
             <small>JPG, PNG o WebP · Máximo 10 MB</small>
             <span className="product-image-upload-button">
-              {busy ? "Procesando…" : "Seleccionar archivo"}
+              {busy ? "Procesando localmente…" : "Seleccionar archivo"}
             </span>
             <input
               disabled={busy}
@@ -152,19 +152,16 @@ export function ModalImagenesProducto({
                 }
                 setBusy(true);
                 try {
-                  const form = new FormData();
-                  form.append("file", file);
-                  form.append(
-                    "alt_text",
-                    `Imagen de ${product.nombre_comercial}`,
-                  );
-                  await servicioProductos.uploadImage(product.id, form);
+                  await servicioProductos.uploadImage(product.id, file, {
+                    alt_text: `Imagen de ${product.nombre_comercial}`,
+                  });
                   await refresh();
                   onClose();
                 } catch (error) {
                   feedback.error("No se pudo cargar", mensaje(error));
                 } finally {
                   setBusy(false);
+                  event.target.value = "";
                 }
               }}
             />

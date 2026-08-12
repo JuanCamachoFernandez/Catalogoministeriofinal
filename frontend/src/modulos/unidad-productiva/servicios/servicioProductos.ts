@@ -1,4 +1,5 @@
 import { api } from "../../../compartido/servicios/clienteHttp";
+import { prepararFormularioImagenParaSubida } from "../../../compartido/servicios/optimizacionImagen";
 import type {
   CanonicalProduct,
   Paged,
@@ -26,6 +27,16 @@ export const servicioProductos = {
     api.patch(`${baseFor()}/${productId}/images/${imageId}/main`),
   removeImage: (productId: string, imageId: string) =>
     api.delete(`${baseFor()}/${productId}/images/${imageId}`),
-  uploadImage: (productId: string, form: FormData) =>
-    api.post(`${baseFor()}/${productId}/images`, form),
+  uploadImage: async (
+    productId: string,
+    file: File,
+    fields?: Record<string, string>,
+  ) => {
+    const { form } = await prepararFormularioImagenParaSubida(
+      file,
+      "product",
+      fields,
+    );
+    return api.post(`${baseFor()}/${productId}/images`, form);
+  },
 };
