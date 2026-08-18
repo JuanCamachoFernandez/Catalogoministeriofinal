@@ -139,35 +139,45 @@ def test_admin_puede_registrar_una_unidad_sin_logo_ni_productos(app, client):
         assert user.must_change_password is True
 
 
-def test_solicitud_valida_formato_numerico_del_nit(app, client):
+def test_solicitud_valida_identificadores_con_separadores_y_e_final_en_pro_bolivia(
+    app, client
+):
     with app.app_context():
         sector = ProductiveSector(nombre="Manufactura", es_otro=False)
         db.session.add(sector)
         db.session.commit()
         sector_id = sector.id
 
-    for invalid_nit in ("1234", "1234567890123", "123-456789", "ABC123456"):
+    for invalid_nit in ("1234", "1234567890123", "ABC123456", "12A34"):
         payload = _registration_payload(client, sector_id)
         payload["nit"] = invalid_nit
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-    for invalid_seprec in ("1234", "1234567890123", "123-456789", "SEPREC123"):
+    for invalid_seprec in ("1234", "1234567890123", "SEPREC123", "12B34"):
         payload = _registration_payload(client, sector_id)
         payload["registro_seprec"] = invalid_seprec
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
-    for invalid_pro_bolivia in ("1234", "1234567890123", "123-456789", "PROBOL123"):
+    for invalid_pro_bolivia in ("1234", "1234567890123", "PROBOL123", "22E7630", "227630EX"):
         payload = _registration_payload(client, sector_id)
         payload["registro_pro_bolivia"] = invalid_pro_bolivia
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
 
     valid_payload = _registration_payload(client, sector_id)
+    valid_payload["nit"] = "12_345/67-89"
+    valid_payload["registro_seprec"] = "12/345_67-89"
+    valid_payload["registro_pro_bolivia"] = "228770-E"
+    response = client.post("/api/registration-requests", json=valid_payload)
+    assert response.status_code == 201
+
+    valid_payload = _registration_payload(client, sector_id)
+    valid_payload["correo_electronico"] = "ana.probolivia@manos.bo"
     valid_payload["nit"] = "12345"
     valid_payload["registro_seprec"] = "12345"
-    valid_payload["registro_pro_bolivia"] = "12345"
+    valid_payload["registro_pro_bolivia"] = "227630E"
     response = client.post("/api/registration-requests", json=valid_payload)
     assert response.status_code == 201
 

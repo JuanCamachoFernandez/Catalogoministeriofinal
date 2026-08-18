@@ -1,6 +1,7 @@
 import type { BorradorProducto, ErroresBorradorProducto } from "../tipos/formularioProducto";
 
 const alphanumericProductText = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+$/;
+const packagingProductText = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ,/\-]+$/;
 const lettersOnlyProductText = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$/;
 
 export function validarBorradorProducto(draft: BorradorProducto): ErroresBorradorProducto {
@@ -17,12 +18,18 @@ export function validarBorradorProducto(draft: BorradorProducto): ErroresBorrado
     if (!draft[key].trim()) errors[key] = "Este campo es obligatorio.";
   });
   (
-    ["nombre_comercial", "materia_prima", "presentacion_empaque"] as const
+    ["nombre_comercial", "materia_prima"] as const
   ).forEach((key) => {
     const value = draft[key].trim();
     if (value && !alphanumericProductText.test(value))
       errors[key] = "Use solamente letras, números y espacios.";
   });
+  if (
+    draft.presentacion_empaque.trim() &&
+    !packagingProductText.test(draft.presentacion_empaque.trim())
+  )
+    errors.presentacion_empaque =
+      "Use letras, números, espacios y también /, coma o guion.";
   if (
     draft.precio_referencia &&
     !/^\d+(\.\d{1,2})?$/.test(draft.precio_referencia)

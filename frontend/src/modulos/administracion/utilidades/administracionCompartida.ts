@@ -1,5 +1,7 @@
 import { errorApi, paginacionVacia, type Paged } from "../../../compartido";
 
+export const AUDITORIA_HABILITADA = false;
+
 export const datosPagina = <T,>(value?: Paged<T>) =>
   value ?? { items: [], pagination: paginacionVacia };
 

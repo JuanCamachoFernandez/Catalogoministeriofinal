@@ -46,6 +46,43 @@ commercial_name_validator = validate.And(
 )
 
 
+def _validar_registro_base(value: str, *, permitir_e_final: bool = False) -> bool:
+    if not isinstance(value, str):
+        return False
+    trimmed = value.strip()
+    if not trimmed:
+        return False
+    if permitir_e_final and trimmed[-1:].upper() == "E":
+        trimmed = trimmed[:-1]
+    if not trimmed:
+        return False
+    if any(character not in "0123456789-_/" for character in trimmed):
+        return False
+    solo_digitos = trimmed.replace("-", "").replace("_", "").replace("/", "")
+    return solo_digitos.isdigit() and 5 <= len(solo_digitos) <= 12
+
+
+def registro_nit_validator(value: str) -> None:
+    if not _validar_registro_base(value):
+        raise validate.ValidationError(
+            "El NIT debe contener entre 5 y 12 dígitos; también puede incluir guiones (-), guion bajo (_) o barras (/)."
+        )
+
+
+def registro_seprec_validator(value: str) -> None:
+    if not _validar_registro_base(value):
+        raise validate.ValidationError(
+            "El registro SEPREC debe contener entre 5 y 12 dígitos; también puede incluir guiones (-), guion bajo (_) o barras (/)."
+        )
+
+
+def registro_pro_bolivia_validator(value: str) -> None:
+    if not _validar_registro_base(value, permitir_e_final=True):
+        raise validate.ValidationError(
+            "El registro PRO-BOLIVIA debe contener entre 5 y 12 dígitos; puede incluir guiones (-), guion bajo (_) o barras (/), y una E final opcional."
+        )
+
+
 class RequestedSectorSchema(Schema):
     productive_sector_id = fields.UUID(required=True)
     detalle_otro = fields.String(allow_none=True, validate=validate.Length(max=255))
@@ -63,24 +100,15 @@ class RegistrationRequestSchema(Schema):
     razon_social = fields.String(required=True, validate=validate.Length(min=1, max=200))
     nit = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El NIT debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_nit_validator,
     )
     registro_seprec = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El registro SEPREC debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_seprec_validator,
     )
     registro_pro_bolivia = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El registro PRO-BOLIVIA debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_pro_bolivia_validator,
     )
     nombres_representante = fields.String(
         required=True, validate=representative_name_validator

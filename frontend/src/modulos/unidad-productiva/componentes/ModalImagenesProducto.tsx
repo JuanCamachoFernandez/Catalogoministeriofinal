@@ -34,7 +34,8 @@ export function ModalImagenesProducto({
           <span>GESTIÓN DE IMÁGENES</span>
           <h3>{product.nombre_comercial}</h3>
           <p>
-            Agregue tres imágenes claras y elija una como portada del producto.
+            Agregue al menos una imagen clara. Puede cargar hasta tres y elegir
+            una como portada del producto.
           </p>
         </div>
         <div

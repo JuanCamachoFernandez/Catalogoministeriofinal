@@ -118,7 +118,7 @@ class Product(TimestampMixin, db.Model):
                 cls.productive_unit_id.is_not(None),
                 cls.estado.in_([ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK]),
                 cls.deleted_at.is_(None),
-                image_counts.c.image_count == 3,
+                image_counts.c.image_count >= 1,
             )
         )
         if productive_unit_id:

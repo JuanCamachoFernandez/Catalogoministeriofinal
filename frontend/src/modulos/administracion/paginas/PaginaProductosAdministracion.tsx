@@ -128,7 +128,7 @@ export default function PaginaProductosAdministracion() {
         <CajaError mensaje={mensaje(list.error)} />
       ) : displayedProducts.length ? (
         <>
-          <div className="table-wrap admin-requests-table admin-units-table">
+          <div className="table-wrap admin-requests-table admin-units-table admin-products-table">
             <table>
               <thead>
                 <tr>
@@ -198,14 +198,14 @@ export default function PaginaProductosAdministracion() {
                         />
                       </td>
                       <td>
-                        <SelectorBuscable
-                          className="admin-products-state-filter"
-                          value={product.estado}
-                          options={stateOptions}
-                          searchable={false}
-                          placeholder="Actualizar estado"
-                          ariaLabel={`Actualizar estado de ${product.nombre_comercial}`}
-                          onChange={async (value) => {
+                        <label className="admin-products-state-filter">
+                          <span className="sr-only">Actualizar estado</span>
+                          <select
+                            className="input admin-products-state-select"
+                            value={product.estado}
+                            aria-label={`Actualizar estado de ${product.nombre_comercial}`}
+                            onChange={async (event) => {
+                              const value = event.target.value;
                             try {
                               await api.patch(
                                 `/admin/products/${product.id}/status`,
@@ -225,7 +225,14 @@ export default function PaginaProductosAdministracion() {
                               );
                             }
                           }}
-                        />
+                          >
+                            {stateOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </td>
                     </tr>
                   );

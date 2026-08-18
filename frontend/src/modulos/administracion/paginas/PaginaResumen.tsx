@@ -17,6 +17,9 @@ import { errorApi, type AuditItem } from "../../../compartido";
 import { etiquetaAccionAuditoria, etiquetaDescripcionAuditoria, etiquetaEntidadAuditoria } from "../../../compartido/utilidades/etiquetasAuditoria";
 import { EstadoVacio, CajaError, EstadoCarga, InsigniaEstado } from "../../../compartido/componentes";
 import { servicioResumen } from "../servicios/servicioResumen";
+import { AUDITORIA_HABILITADA } from "../utilidades/administracionCompartida";
+
+const MOSTRAR_CAMBIOS_RELEVANTES = false;
 
 type DashboardResponse = {
   stats: {
@@ -104,9 +107,11 @@ export function PaginaInicioAdministracion() {
           <h1>Resumen</h1>
           <p>Una vista breve del catálogo y de las tareas que necesitan atención.</p>
         </div>
-        <Link className="btn-outline" to="/admin/auditoria">
-          <History size={18} /> Ver auditoría
-        </Link>
+        {AUDITORIA_HABILITADA ? (
+          <Link className="btn-outline" to="/admin/auditoria">
+            <History size={18} /> Ver auditoría
+          </Link>
+        ) : null}
       </header>
 
       <div className="dashboard-stats dashboard-stats-overview">
@@ -186,11 +191,12 @@ export function PaginaInicioAdministracion() {
         </article>
       </div>
 
-      <article className="panel dashboard-audit-panel">
-        <div className="panel-heading">
-          <div><span className="eyebrow">Cambios relevantes</span><h2>Actividad administrativa reciente</h2></div>
-          <Link className="link-arrow" to="/admin/auditoria">Ver historial completo <ArrowRight size={15} /></Link>
-        </div>
+      {MOSTRAR_CAMBIOS_RELEVANTES ? (
+        <article className="panel dashboard-audit-panel">
+          <div className="panel-heading">
+            <div><span className="eyebrow">Cambios relevantes</span><h2>Actividad administrativa reciente</h2></div>
+            <Link className="link-arrow" to="/admin/auditoria">Ver historial completo <ArrowRight size={15} /></Link>
+          </div>
           {audits.length ? (
             <div className="audit-feed">
               {audits.map((item) => (
@@ -209,7 +215,8 @@ export function PaginaInicioAdministracion() {
               ))}
             </div>
           ) : <EstadoVacio title="Todavía no hay actividad registrada" />}
-      </article>
+        </article>
+      ) : null}
     </section>
   );
 }

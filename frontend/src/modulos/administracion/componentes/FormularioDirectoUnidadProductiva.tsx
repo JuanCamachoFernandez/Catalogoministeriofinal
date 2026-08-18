@@ -13,10 +13,15 @@ import { LIMITE_IMAGEN_MB, validarArchivoImagen } from "../../../compartido/vali
 import { limpiar, mensaje } from "../utilidades/administracionCompartida";
 import {
   EMAIL_PATTERN,
+  IDENTIFICADOR_REGISTRO_PATTERN,
+  PRO_BOLIVIA_PATTERN,
+  REGISTRATION_FIELD_HELP,
   registroVacio,
   REGISTRATION_FIELD_LABELS,
   REPRESENTATIVE_NAME_PATTERN,
+  sanearIdentificadorRegistro,
   sanearNombreRepresentante,
+  sanearRegistroProBolivia,
   SOCIAL_URL_PATTERNS,
   CampoUrlSocial,
   type BorradorRegistro,
@@ -212,7 +217,7 @@ export function FormularioDirectoUnidadProductiva({
         </div>
         <div className="registration-grid">
           {" "}
-          <Campo label="Nombre comercial" required>
+          <Campo label="Nombre comercial" required hint={REGISTRATION_FIELD_HELP.nombre_comercial} hintAsHelp>
             <input
               className="input"
               name="nombre_comercial"
@@ -224,7 +229,7 @@ export function FormularioDirectoUnidadProductiva({
               onChange={(e) => change("nombre_comercial", e.target.value)}
             />
           </Campo>{" "}
-          <Campo label="Razón social" required>
+          <Campo label="Razón social" required hint={REGISTRATION_FIELD_HELP.razon_social} hintAsHelp>
             <input
               className="input"
               name="razon_social"
@@ -234,52 +239,40 @@ export function FormularioDirectoUnidadProductiva({
               onChange={(e) => change("razon_social", e.target.value)}
             />
           </Campo>{" "}
-          <Campo label="NIT" optional>
+          <Campo label="NIT" optional hint={REGISTRATION_FIELD_HELP.nit} hintAsHelp>
             <input
               className="input"
               name="nit"
-              inputMode="numeric"
-              pattern="[0-9]{5,12}"
-              maxLength={12}
+              inputMode="text"
+              pattern={IDENTIFICADOR_REGISTRO_PATTERN}
+              maxLength={21}
               placeholder="Número de identificación tributaria"
               value={draft.nit}
-              onChange={(e) =>
-                change("nit", e.target.value.replace(/\D/g, "").slice(0, 12))
-              }
+              onChange={(e) => change("nit", sanearIdentificadorRegistro(e.target.value))}
             />
           </Campo>{" "}
-          <Campo label="Registro SEPREC" optional>
+          <Campo label="Registro SEPREC" optional hint={REGISTRATION_FIELD_HELP.registro_seprec} hintAsHelp>
             <input
               className="input"
               name="registro_seprec"
-              inputMode="numeric"
-              pattern="[0-9]{5,12}"
-              maxLength={12}
+              inputMode="text"
+              pattern={IDENTIFICADOR_REGISTRO_PATTERN}
+              maxLength={21}
               placeholder="Número de Matrícula de Comercio"
               value={draft.registro_seprec}
-              onChange={(e) =>
-                change(
-                  "registro_seprec",
-                  e.target.value.replace(/\D/g, "").slice(0, 12),
-                )
-              }
+              onChange={(e) => change("registro_seprec", sanearIdentificadorRegistro(e.target.value))}
             />
           </Campo>{" "}
-          <Campo label="Registro PRO-BOLIVIA" optional>
+          <Campo label="Registro PRO-BOLIVIA" optional hint={REGISTRATION_FIELD_HELP.registro_pro_bolivia} hintAsHelp>
             <input
               className="input"
               name="registro_pro_bolivia"
-              inputMode="numeric"
-              pattern="[0-9]{5,12}"
-              maxLength={12}
+              inputMode="text"
+              pattern={PRO_BOLIVIA_PATTERN}
+              maxLength={22}
               placeholder="Número de registro PRO-BOLIVIA"
               value={draft.registro_pro_bolivia}
-              onChange={(e) =>
-                change(
-                  "registro_pro_bolivia",
-                  e.target.value.replace(/\D/g, "").slice(0, 12),
-                )
-              }
+              onChange={(e) => change("registro_pro_bolivia", sanearRegistroProBolivia(e.target.value))}
             />
           </Campo>{" "}
         </div>
@@ -294,7 +287,7 @@ export function FormularioDirectoUnidadProductiva({
         </div>
         <div className="registration-grid">
           {" "}
-          <Campo label="Nombres del representante" required>
+          <Campo label="Nombres del representante" required hint={REGISTRATION_FIELD_HELP.nombres_representante} hintAsHelp>
             <input
               className="input"
               name="nombres_representante"
@@ -311,7 +304,7 @@ export function FormularioDirectoUnidadProductiva({
               }
             />
           </Campo>{" "}
-          <Campo label="Apellido paterno" required>
+          <Campo label="Apellido paterno" required hint={REGISTRATION_FIELD_HELP.apellido_paterno_representante} hintAsHelp>
             <input
               className="input"
               name="apellido_paterno_representante"
@@ -328,7 +321,7 @@ export function FormularioDirectoUnidadProductiva({
               }
             />
           </Campo>{" "}
-          <Campo label="Apellido materno" required>
+          <Campo label="Apellido materno" required hint={REGISTRATION_FIELD_HELP.apellido_materno_representante} hintAsHelp>
             <input
               className="input"
               name="apellido_materno_representante"
@@ -345,7 +338,7 @@ export function FormularioDirectoUnidadProductiva({
               }
             />
           </Campo>{" "}
-          <Campo label="Departamento" required>
+          <Campo label="Departamento" required hint={REGISTRATION_FIELD_HELP.departamento} hintAsHelp>
             <select
               className="input"
               name="departamento"
@@ -362,6 +355,8 @@ export function FormularioDirectoUnidadProductiva({
           <Campo
             label="Dirección física de la Planta de Producción o Taller"
             required
+            hint={REGISTRATION_FIELD_HELP.direccion_fisica}
+            hintAsHelp
           >
             <input
               className="input"
@@ -372,7 +367,7 @@ export function FormularioDirectoUnidadProductiva({
               onChange={(e) => change("direccion_fisica", e.target.value)}
             />
           </Campo>{" "}
-          <Campo label="Teléfono o WhatsApp" required>
+          <Campo label="Teléfono o WhatsApp" required hint={REGISTRATION_FIELD_HELP.telefono_whatsapp} hintAsHelp>
             <input
               className="input"
               name="telefono_whatsapp"
@@ -391,7 +386,7 @@ export function FormularioDirectoUnidadProductiva({
               }
             />
           </Campo>{" "}
-          <Campo label="Correo electrónico" required>
+          <Campo label="Correo electrónico" required hint={REGISTRATION_FIELD_HELP.correo_electronico} hintAsHelp>
             <input
               className="input"
               name="correo_electronico"
@@ -424,6 +419,7 @@ export function FormularioDirectoUnidadProductiva({
             example="https://facebook.com/mi.unidad"
             pattern={SOCIAL_URL_PATTERNS.facebook}
             error="Ingrese una URL válida de Facebook que comience con https://"
+            hint={REGISTRATION_FIELD_HELP.facebook_url}
             onChange={(value) => change("facebook_url", value)}
           />{" "}
           <CampoUrlSocial
@@ -433,6 +429,7 @@ export function FormularioDirectoUnidadProductiva({
             example="https://instagram.com/mi.unidad"
             pattern={SOCIAL_URL_PATTERNS.instagram}
             error="Ingrese una URL válida de Instagram que comience con https://"
+            hint={REGISTRATION_FIELD_HELP.instagram_url}
             onChange={(value) => change("instagram_url", value)}
           />{" "}
           <CampoUrlSocial
@@ -442,12 +439,14 @@ export function FormularioDirectoUnidadProductiva({
             example="https://tiktok.com/@mi.unidad"
             pattern={SOCIAL_URL_PATTERNS.tiktok}
             error="Ingrese una URL válida de TikTok que comience con https://"
+            hint={REGISTRATION_FIELD_HELP.tiktok_url}
             onChange={(value) => change("tiktok_url", value)}
           />{" "}
           <Campo
             label="Logotipo"
             optional
-            hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+            hint={`${REGISTRATION_FIELD_HELP.logo} Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+            hintAsHelp
           >
             <input
               className="input registration-file"
@@ -485,7 +484,7 @@ export function FormularioDirectoUnidadProductiva({
             </p>
           </div>
         </div>{" "}
-        <Campo label="Sectores Productivos" required>
+        <Campo label="Sectores Productivos" required hint={REGISTRATION_FIELD_HELP.sectores} hintAsHelp>
           {sectors.isLoading ? (
             <EstadoCarga label="Cargando sectores..." />
           ) : sectors.error ? (
@@ -551,7 +550,7 @@ export function FormularioDirectoUnidadProductiva({
           )}
         </Campo>{" "}
         {otherSelected && (
-          <Campo label="Detalle de Otros" required>
+          <Campo label="Detalle de Otros" required hint={REGISTRATION_FIELD_HELP.detalle_otro} hintAsHelp>
             <input
               className="input"
               name="detalle_otro"
@@ -563,7 +562,7 @@ export function FormularioDirectoUnidadProductiva({
           </Campo>
         )}{" "}
         <div className="registration-review-field">
-          <Campo label="Reseña comercial" required>
+          <Campo label="Reseña comercial" required hint={REGISTRATION_FIELD_HELP.resena_comercial} hintAsHelp>
             <textarea
               className="input"
               name="resena_comercial"

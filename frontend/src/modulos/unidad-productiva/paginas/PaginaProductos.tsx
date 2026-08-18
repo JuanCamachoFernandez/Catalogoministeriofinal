@@ -126,11 +126,11 @@ export function PaginaProductos({ admin = false }: { admin?: boolean }) {
         <div className="page-heading">
           <div>
             <span className="eyebrow">Oferta productiva</span>
-            <h1>Productos registrados</h1>
-            <p>
-              Cada producto requiere exactamente tres imágenes para ser
-              publicable.
-            </p>
+              <h1>Productos registrados</h1>
+              <p>
+                Cada producto requiere al menos una imagen para ser publicable
+                y admite un máximo de tres.
+              </p>
           </div>
         </div>
       ) : (
@@ -424,6 +424,7 @@ export function PaginaProductos({ admin = false }: { admin?: boolean }) {
                   hint={field.hint}
                   hintAsHelp
                   required={field.required}
+                  optional={!field.required}
                 >
                   <input
                     className={`input ${validationErrors[key] ? "input-error" : ""}`}

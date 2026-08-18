@@ -9,11 +9,16 @@ import { LIMITE_IMAGEN_MB, validarArchivoImagen } from "../../../compartido/vali
 import { EstructuraPublica } from "../../catalogo-publico/componentes/EstructuraPublica";
 import {
   EMAIL_PATTERN,
+  IDENTIFICADOR_REGISTRO_PATTERN,
+  PRO_BOLIVIA_PATTERN,
+  REGISTRATION_FIELD_HELP,
   registroVacio,
   productoSolicitadoVacio,
   REGISTRATION_FIELD_LABELS,
   REPRESENTATIVE_NAME_PATTERN,
+  sanearIdentificadorRegistro,
   sanearNombreRepresentante,
+  sanearRegistroProBolivia,
   SOCIAL_URL_PATTERNS,
   CampoUrlSocial,
   type BorradorRegistro,
@@ -328,7 +333,7 @@ function PaginaRegistroContent() {
             </div>
             <div className="registration-grid">
               {" "}
-              <Campo label="Nombre comercial" required>
+              <Campo label="Nombre comercial" required hint={REGISTRATION_FIELD_HELP.nombre_comercial} hintAsHelp>
                 <input
                   className="input"
                   name="nombre_comercial"
@@ -340,7 +345,7 @@ function PaginaRegistroContent() {
                   onChange={(e) => change("nombre_comercial", e.target.value)}
                 />
               </Campo>{" "}
-              <Campo label="Razón social" required>
+              <Campo label="Razón social" required hint={REGISTRATION_FIELD_HELP.razon_social} hintAsHelp>
                 <input
                   className="input"
                   name="razon_social"
@@ -350,73 +355,58 @@ function PaginaRegistroContent() {
                   onChange={(e) => change("razon_social", e.target.value)}
                 />
               </Campo>{" "}
-              <Campo label="NIT" optional>
+              <Campo label="NIT" optional hint={REGISTRATION_FIELD_HELP.nit} hintAsHelp>
                 <input
                   className="input"
                   name="nit"
-                  inputMode="numeric"
-                  pattern="[0-9]{5,12}"
-                  maxLength={12}
+                  inputMode="text"
+                  pattern={IDENTIFICADOR_REGISTRO_PATTERN}
+                  maxLength={21}
                   placeholder="Número de identificación tributaria"
                   value={draft.nit}
                   onInvalid={(e) =>
                     e.currentTarget.setCustomValidity(
-                      "Solo números, de 5 a 12 dígitos.",
+                      "Ingrese entre 5 y 12 dígitos. También puede usar -, _ o /.",
                     )
                   }
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
-                  onChange={(e) =>
-                    change(
-                      "nit",
-                      e.target.value.replace(/\D/g, "").slice(0, 12),
-                    )
-                  }
+                  onChange={(e) => change("nit", sanearIdentificadorRegistro(e.target.value))}
                 />
               </Campo>{" "}
-              <Campo label="Registro SEPREC" optional>
+              <Campo label="Registro SEPREC" optional hint={REGISTRATION_FIELD_HELP.registro_seprec} hintAsHelp>
                 <input
                   className="input"
                   name="registro_seprec"
-                  inputMode="numeric"
-                  pattern="[0-9]{5,12}"
-                  maxLength={12}
+                  inputMode="text"
+                  pattern={IDENTIFICADOR_REGISTRO_PATTERN}
+                  maxLength={21}
                   placeholder="Número de Matrícula de Comercio"
                   value={draft.registro_seprec}
                   onInvalid={(e) =>
                     e.currentTarget.setCustomValidity(
-                      "Solo números, de 5 a 12 dígitos.",
+                      "Ingrese entre 5 y 12 dígitos. También puede usar -, _ o /.",
                     )
                   }
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
-                  onChange={(e) =>
-                    change(
-                      "registro_seprec",
-                      e.target.value.replace(/\D/g, "").slice(0, 12),
-                    )
-                  }
+                  onChange={(e) => change("registro_seprec", sanearIdentificadorRegistro(e.target.value))}
                 />
               </Campo>{" "}
-              <Campo label="Registro PRO-BOLIVIA" optional>
+              <Campo label="Registro PRO-BOLIVIA" optional hint={REGISTRATION_FIELD_HELP.registro_pro_bolivia} hintAsHelp>
                 <input
                   className="input"
                   name="registro_pro_bolivia"
-                  inputMode="numeric"
-                  pattern="[0-9]{5,12}"
-                  maxLength={12}
+                  inputMode="text"
+                  pattern={PRO_BOLIVIA_PATTERN}
+                  maxLength={22}
                   placeholder="Número de registro PRO-BOLIVIA"
                   value={draft.registro_pro_bolivia}
                   onInvalid={(e) =>
                     e.currentTarget.setCustomValidity(
-                      "Solo números, de 5 a 12 dígitos.",
+                      "Ingrese entre 5 y 12 dígitos. También puede usar -, _ o /, y una E final opcional.",
                     )
                   }
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
-                  onChange={(e) =>
-                    change(
-                      "registro_pro_bolivia",
-                      e.target.value.replace(/\D/g, "").slice(0, 12),
-                    )
-                  }
+                  onChange={(e) => change("registro_pro_bolivia", sanearRegistroProBolivia(e.target.value))}
                 />
               </Campo>{" "}
             </div>
@@ -431,7 +421,7 @@ function PaginaRegistroContent() {
             </div>
             <div className="registration-grid">
               {" "}
-              <Campo label="Nombres del representante" required>
+              <Campo label="Nombres del representante" required hint={REGISTRATION_FIELD_HELP.nombres_representante} hintAsHelp>
                 <input
                   className="input"
                   name="nombres_representante"
@@ -455,7 +445,7 @@ function PaginaRegistroContent() {
                   }
                 />
               </Campo>{" "}
-              <Campo label="Apellido paterno" required>
+              <Campo label="Apellido paterno" required hint={REGISTRATION_FIELD_HELP.apellido_paterno_representante} hintAsHelp>
                 <input
                   className="input"
                   name="apellido_paterno_representante"
@@ -479,7 +469,7 @@ function PaginaRegistroContent() {
                   }
                 />
               </Campo>{" "}
-              <Campo label="Apellido materno" required>
+              <Campo label="Apellido materno" required hint={REGISTRATION_FIELD_HELP.apellido_materno_representante} hintAsHelp>
                 <input
                   className="input"
                   name="apellido_materno_representante"
@@ -502,7 +492,7 @@ function PaginaRegistroContent() {
                   }
                 />
               </Campo>{" "}
-              <Campo label="Departamento" required>
+              <Campo label="Departamento" required hint={REGISTRATION_FIELD_HELP.departamento} hintAsHelp>
                 <select
                   className="input"
                   name="departamento"
@@ -519,6 +509,8 @@ function PaginaRegistroContent() {
               <Campo
                 label="Dirección física de la Planta de Producción o Taller"
                 required
+                hint={REGISTRATION_FIELD_HELP.direccion_fisica}
+                hintAsHelp
               >
                 <input
                   className="input"
@@ -530,7 +522,7 @@ function PaginaRegistroContent() {
                   onChange={(e) => change("direccion_fisica", e.target.value)}
                 />
               </Campo>{" "}
-              <Campo label="Teléfono o WhatsApp" required>
+              <Campo label="Teléfono o WhatsApp" required hint={REGISTRATION_FIELD_HELP.telefono_whatsapp} hintAsHelp>
                 <input
                   className="input"
                   name="telefono_whatsapp"
@@ -556,7 +548,7 @@ function PaginaRegistroContent() {
                   }
                 />
               </Campo>{" "}
-              <Campo label="Correo electrónico" required>
+              <Campo label="Correo electrónico" required hint={REGISTRATION_FIELD_HELP.correo_electronico} hintAsHelp>
                 <input
                   className="input"
                   name="correo_electronico"
@@ -606,6 +598,7 @@ function PaginaRegistroContent() {
                 example="https://facebook.com/mi.unidad"
                 pattern={SOCIAL_URL_PATTERNS.facebook}
                 error="Ingrese una URL válida de Facebook que comience con https://, por ejemplo: https://facebook.com/mi.unidad"
+                hint={REGISTRATION_FIELD_HELP.facebook_url}
                 onChange={(value) => change("facebook_url", value)}
               />{" "}
               <CampoUrlSocial
@@ -615,6 +608,7 @@ function PaginaRegistroContent() {
                 example="https://instagram.com/mi.unidad"
                 pattern={SOCIAL_URL_PATTERNS.instagram}
                 error="Ingrese una URL válida de Instagram que comience con https://, por ejemplo: https://instagram.com/mi.unidad"
+                hint={REGISTRATION_FIELD_HELP.instagram_url}
                 onChange={(value) => change("instagram_url", value)}
               />{" "}
               <CampoUrlSocial
@@ -624,12 +618,14 @@ function PaginaRegistroContent() {
                 example="https://tiktok.com/@mi.unidad"
                 pattern={SOCIAL_URL_PATTERNS.tiktok}
                 error="Ingrese una URL válida de TikTok que comience con https://, por ejemplo: https://tiktok.com/@mi.unidad"
+                hint={REGISTRATION_FIELD_HELP.tiktok_url}
                 onChange={(value) => change("tiktok_url", value)}
               />{" "}
               <Campo
                 label="Logotipo"
                 required
-                hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+                hint={`${REGISTRATION_FIELD_HELP.logo} Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+                hintAsHelp
               >
                 <input
                   className="input registration-file"
@@ -668,7 +664,7 @@ function PaginaRegistroContent() {
                 </p>
               </div>
             </div>{" "}
-            <Campo label="Sectores Productivos" required>
+            <Campo label="Sectores Productivos" required hint={REGISTRATION_FIELD_HELP.sectores} hintAsHelp>
               {sectors.isLoading ? (
                 <EstadoCarga label="Cargando sectores…" />
               ) : sectors.error ? (
@@ -696,7 +692,7 @@ function PaginaRegistroContent() {
               )}
             </Campo>{" "}
             {otherSelected && (
-              <Campo label="Detalle de Otros" required>
+              <Campo label="Detalle de Otros" required hint={REGISTRATION_FIELD_HELP.detalle_otro} hintAsHelp>
                 <input
                   className="input"
                   name="detalle_otro"
@@ -708,7 +704,7 @@ function PaginaRegistroContent() {
               </Campo>
             )}{" "}
             <div className="registration-review-field">
-              <Campo label="Reseña comercial" required>
+              <Campo label="Reseña comercial" required hint={REGISTRATION_FIELD_HELP.resena_comercial} hintAsHelp>
                 <textarea
                   className="input"
                   name="resena_comercial"
@@ -737,7 +733,7 @@ function PaginaRegistroContent() {
                 <article key={index} className="registration-product-card">
                   <h3>Producto {index + 1}</h3>
                   <div className="registration-product-grid">
-                    <Campo label="Nombre del producto" required>
+                    <Campo label="Nombre del producto" required hint={REGISTRATION_FIELD_HELP["productos.nombre_comercial"]} hintAsHelp>
                       <input
                         className="input"
                         name={`productos.${index}.nombre_comercial`}
@@ -752,7 +748,7 @@ function PaginaRegistroContent() {
                         }
                       />
                     </Campo>
-                    <Campo label="Precio" required>
+                    <Campo label="Precio" required hint={REGISTRATION_FIELD_HELP["productos.precio_referencia"]} hintAsHelp>
                       <input
                         className="input"
                         name={`productos.${index}.precio_referencia`}
@@ -771,7 +767,7 @@ function PaginaRegistroContent() {
                       />
                     </Campo>
                     <div className="registration-product-full">
-                      <Campo label="Reseña o descripción" required>
+                      <Campo label="Reseña o descripción" required hint={REGISTRATION_FIELD_HELP["productos.descripcion_tecnica"]} hintAsHelp>
                         <textarea
                           className="input"
                           name={`productos.${index}.descripcion_tecnica`}
@@ -792,7 +788,8 @@ function PaginaRegistroContent() {
                       <Campo
                         label="Imagen"
                         required
-                        hint={`Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+                        hint={`${REGISTRATION_FIELD_HELP["productos.imagen"]} Formatos permitidos: PNG, JPG, JPEG y WebP. Tamaño máximo: ${LIMITE_IMAGEN_MB} MB.`}
+                        hintAsHelp
                       >
                         <input
                           className="input registration-file"
