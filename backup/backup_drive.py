@@ -15,7 +15,7 @@ SCOPES = [
 
 TOKEN_PATH = os.getenv(
     "GOOGLE_TOKEN_PATH",
-    "/secrets/token.json",
+    "/secrets/google-drive-token.json",
 )
 
 FOLDER_NAME = os.getenv(
