@@ -18,6 +18,6 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /app
 
-COPY backup_drive.py /app/backup_drive.py
+COPY backup/backup_drive.py /app/backup_drive.py
 
 CMD ["python", "/app/backup_drive.py"]
