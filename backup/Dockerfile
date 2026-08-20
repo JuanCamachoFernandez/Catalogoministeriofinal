@@ -14,7 +14,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir \
     google-api-python-client \
     google-auth \
-    google-auth-httplib2
+    google-auth-httplib2 \
+    cloudinary==1.45.0
 
 WORKDIR /app
 
