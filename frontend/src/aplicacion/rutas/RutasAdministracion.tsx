@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import { Route } from "react-router-dom";
+import { Navigate, Route } from "react-router-dom";
 import { DisenioGestion } from "../disenios/DisenioGestion";
 import { RutaProtegida } from "../../modulos/autenticacion/contexto/ContextoAutenticacion";
 import {
   rolesParaFuncionAdministracion,
   type FuncionAdministracion,
 } from "../../compartido/autenticacion/roles";
+import { AUDITORIA_HABILITADA } from "../../modulos/administracion/utilidades/administracionCompartida";
 import { paginaDiferida } from "./paginaDiferida";
 import "../../modulos/registro/estilos/registro.css";
 import "../../modulos/administracion/estilos/administracion.css";
@@ -80,7 +81,9 @@ export const rutasAdministracion = [
   route("/admin/ferias", "fairs", <PaginaFerias />),
   route("/admin/ferias/:fairId/participaciones", "fairs", <PaginaParticipacionesFeria />),
   route("/admin/administradores", "administrator-accounts", <PaginaAdministradores />),
-  route("/admin/auditoria", "audit", <PaginaAuditoria />),
+  ...(AUDITORIA_HABILITADA
+    ? [route("/admin/auditoria", "audit", <PaginaAuditoria />)]
+    : [<Route key="/admin/auditoria" path="/admin/auditoria" element={<Navigate to="/admin" replace />} />]),
   route("/admin/reportes", "reports", <PaginaReportesAdministracion />),
   route("/admin/perfil", "dashboard", <PaginaPerfilAdmin />),
 ];

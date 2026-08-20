@@ -96,6 +96,90 @@
   flex-wrap: wrap;
   row-gap: 0.15rem;
 }
+.registration-form .field-with-help {
+  position: relative;
+}
+.registration-form .field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.registration-form .field-help-control {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.registration-form .field-help-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid #d7cfbc;
+  border-radius: 999px;
+  background: #fffaf0;
+  padding: 0.15rem 0.5rem;
+  color: #5a513f;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.registration-form .field-help-button span {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: #efe5bf;
+  color: #433918;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.registration-form .field-help-button:hover {
+  border-color: #b8a25e;
+  background: #fff5d9;
+}
+.registration-form .field-help-card {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  width: min(320px, calc(100vw - 2.5rem));
+  border: 1px solid #d8cdab;
+  border-radius: 0.8rem;
+  background: #fffdf7;
+  padding: 0.8rem 0.85rem;
+  box-shadow: 0 16px 34px rgb(31 26 11 / 0.14);
+}
+.registration-form .field-help-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+.registration-form .field-help-card-header strong {
+  color: #2f2a21;
+  font-size: 0.82rem;
+}
+.registration-form .field-help-card-header button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5f5747;
+}
+.registration-form .field-help-card-header button:hover {
+  background: #f0e6c8;
+}
+.registration-form .field-help-card p {
+  margin: 0;
+  color: #5d5649;
+  font-size: 0.79rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
 .registration-form .input {
   min-width: 0;
   min-height: 46px;
@@ -467,6 +551,15 @@
   .registration-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .registration-form .field-help-control {
+    position: static;
+  }
+  .registration-form .field-help-card {
+    position: relative;
+    top: 0;
+    right: auto;
+    width: 100%;
   }
   .registration-submit {
     width: 100%;

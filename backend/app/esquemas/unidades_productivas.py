@@ -7,6 +7,9 @@ from .solicitudes_registro import (
     email_validator,
     facebook_url_validator,
     instagram_url_validator,
+    registro_nit_validator,
+    registro_pro_bolivia_validator,
+    registro_seprec_validator,
     representative_name_validator,
     tiktok_url_validator,
 )
@@ -52,24 +55,15 @@ class AdminProductiveUnitCreateSchema(Schema):
     )
     nit = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El NIT debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_nit_validator,
     )
     registro_seprec = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El registro SEPREC debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_seprec_validator,
     )
     registro_pro_bolivia = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El registro PRO-BOLIVIA debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_pro_bolivia_validator,
     )
     nombres_representante = fields.String(
         required=True,
@@ -137,24 +131,15 @@ class ProductiveUnitUpdateSchema(Schema):
     razon_social = fields.String(validate=alphanumeric_profile_validator)
     nit = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El NIT debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_nit_validator,
     )
     registro_seprec = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El registro SEPREC debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_seprec_validator,
     )
     registro_pro_bolivia = fields.String(
         allow_none=True,
-        validate=validate.Regexp(
-            r"^[0-9]{5,12}$",
-            error="El registro PRO-BOLIVIA debe contener entre 5 y 12 dígitos, sin guiones ni otros caracteres.",
-        ),
+        validate=registro_pro_bolivia_validator,
     )
     nombres_representante = fields.String(validate=profile_person_name_validator)
     apellido_paterno_representante = fields.String(

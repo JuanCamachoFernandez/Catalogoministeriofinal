@@ -17,6 +17,7 @@ import {
   useRetroalimentacion,
 } from "../../../compartido/componentes";
 import { etiquetaAccionAuditoria } from "../../../compartido/utilidades/etiquetasAuditoria";
+import { AUDITORIA_HABILITADA } from "../../administracion/utilidades/administracionCompartida";
 
 type Option = { value: string; label: string };
 type ReportOptions = {
@@ -38,8 +39,11 @@ const RESOURCE_OPTIONS: Option[] = [
   { value: "productos", label: "Productos" },
   { value: "ferias", label: "Ferias y eventos" },
   { value: "administradores", label: "Administradores" },
-  { value: "auditoria", label: "Auditoría" },
 ];
+
+const REPORT_RESOURCE_OPTIONS = AUDITORIA_HABILITADA
+  ? [...RESOURCE_OPTIONS, { value: "auditoria", label: "Auditoría" }]
+  : RESOURCE_OPTIONS;
 
 const STATUS_OPTIONS: Record<string, Option[]> = {
   solicitudes: [
@@ -386,7 +390,7 @@ export default function PaginaReportesAdministracion() {
           </div>
           <SelectorBuscable
             value={resource}
-            options={RESOURCE_OPTIONS}
+            options={REPORT_RESOURCE_OPTIONS}
             onChange={(value) => {
               setResource(value);
               setFilters(defaultFilters());

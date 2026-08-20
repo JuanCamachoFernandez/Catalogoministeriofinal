@@ -23,6 +23,7 @@ import { useAutenticacion } from "../../modulos/autenticacion/contexto/ContextoA
 import { ProtectorInactividadSesion } from "../../modulos/autenticacion/componentes/ProtectorInactividadSesion";
 import { puedeAccederFuncionAdministracion, type FuncionAdministracion } from "../../compartido/autenticacion/roles";
 import { ProveedorRetroalimentacion } from "../../compartido/componentes";
+import { AUDITORIA_HABILITADA } from "../../modulos/administracion/utilidades/administracionCompartida";
 
 const adminNav: ReadonlyArray<
   readonly [string, string, typeof LayoutDashboard, FuncionAdministracion]
@@ -34,7 +35,7 @@ const adminNav: ReadonlyArray<
   ["/admin/productos", "Productos", Package, "products"],
   ["/admin/ferias", "Ferias y eventos", CalendarDays, "fairs"],
   ["/admin/administradores", "Administradores", UsersRound, "administrator-accounts"],
-  ["/admin/auditoria", "Auditoría", History, "audit"],
+  ...(AUDITORIA_HABILITADA ? [["/admin/auditoria", "Auditoría", History, "audit"] as const] : []),
   ["/admin/reportes", "Reportes", BarChart3, "reports"],
 ] as const;
 

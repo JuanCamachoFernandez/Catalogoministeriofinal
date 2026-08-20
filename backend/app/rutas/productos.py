@@ -49,6 +49,7 @@ from ..autenticacion.permisos import (
 product_bp = Blueprint("products", __name__)
 MAX_PRODUCTIVE_UNIT_PRODUCTS = 15
 MAX_PRODUCT_IMAGES = 3
+MIN_PUBLICABLE_PRODUCT_IMAGES = 1
 
 
 def _delete_product_upload(url, public_id):
@@ -108,6 +109,17 @@ def _set_productive_product_fields(product, data):
 
 def _image_count(product_id):
     return db.session.scalar(select(func.count(ProductImage.id)).where(ProductImage.product_id == product_id)) or 0
+
+
+def _sync_product_status_with_images(product, image_count=None):
+    current_image_count = _image_count(product.id) if image_count is None else image_count
+    if product.estado == ProductStatus.DRAFT and current_image_count >= MIN_PUBLICABLE_PRODUCT_IMAGES:
+        product.estado = ProductStatus.AVAILABLE
+    elif (
+        product.estado in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK)
+        and current_image_count < MIN_PUBLICABLE_PRODUCT_IMAGES
+    ):
+        product.estado = ProductStatus.DRAFT
 
 
 def product_or_404(product_id, exhibitor_id=None):
@@ -183,6 +195,7 @@ def add_product_image(product):
         for other in existing_images:
             other.is_cover = False
     db.session.add(image)
+    _sync_product_status_with_images(product, len(existing_images) + 1)
     audit("AGREGAR_IMAGEN", "Producto", product.id, "Imagen agregada")
     try:
         db.session.commit()
@@ -520,8 +533,8 @@ def update_productive_product_status(product_id):
     if not product:
         return error("Producto no encontrado", 404)
     status = ProductStatus(validated_json()["estado"])
-    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != MAX_PRODUCT_IMAGES:
-        return error("El producto necesita exactamente tres imágenes para publicarse", 409)
+    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) < MIN_PUBLICABLE_PRODUCT_IMAGES:
+        return error("El producto necesita al menos una imagen para publicarse", 409)
     product.estado = status
     audit("CAMBIAR_ESTADO", "Product", product.id)
     db.session.commit()
@@ -600,8 +613,8 @@ def admin_productive_product_status(product_id):
     if not product:
         return error("Producto no encontrado", 404)
     status = ProductStatus(validated_json()["estado"])
-    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) != MAX_PRODUCT_IMAGES:
-        return error("El producto necesita exactamente tres imágenes para publicarse", 409)
+    if status in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and _image_count(product.id) < MIN_PUBLICABLE_PRODUCT_IMAGES:
+        return error("El producto necesita al menos una imagen para publicarse", 409)
     product.estado = status
     audit("CAMBIAR_ESTADO", "Product", product.id)
     db.session.commit()
@@ -732,13 +745,12 @@ def delete_own_productive_product_image(product_id, image_id):
     product, image = _own_product_image_context(product_id, image_id)
     if not image:
         return error("Imagen no encontrada", 404)
-    if product.estado in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK):
-        product.estado = ProductStatus.DRAFT
     url = image.url
     public_id = image.public_id
     db.session.delete(image)
     db.session.flush()
     remaining = db.session.scalars(select(ProductImage).where(ProductImage.product_id == product.id).order_by(ProductImage.display_order)).all()
+    _sync_product_status_with_images(product, len(remaining))
     for order, item in enumerate(remaining):
         item.display_order = order
     if remaining and not any(item.is_cover for item in remaining):

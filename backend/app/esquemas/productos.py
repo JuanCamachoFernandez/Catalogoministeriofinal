@@ -9,6 +9,18 @@ def _letters_numbers_spaces(value):
         raise ValidationError("Use solamente letras, números y espacios")
 
 
+def _letters_numbers_spaces_packaging(value):
+    text = value.strip()
+    allowed_symbols = {"/", ",", "-"}
+    if not text or any(
+        not (character.isalnum() or character.isspace() or character in allowed_symbols)
+        for character in text
+    ):
+        raise ValidationError(
+            "Use letras, números, espacios y también /, coma o guion"
+        )
+
+
 def _letters_spaces(value):
     text = value.strip()
     if not text or any(not (character.isalpha() or character.isspace()) for character in text):
@@ -85,7 +97,7 @@ class ProductiveProductCreateSchema(Schema):
     dimensiones = fields.String(allow_none=True, validate=validate.Length(max=255))
     colores_disponibles = fields.String(allow_none=True, validate=validate.And(validate.Length(max=255), _letters_spaces))
     certificaciones = fields.String(allow_none=True, validate=validate.Length(max=2000))
-    presentacion_empaque = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces))
+    presentacion_empaque = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces_packaging))
     precio_referencia = fields.Decimal(required=True, places=2, as_string=True, validate=validate.Range(min=0))
     capacidad_produccion_stock = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=255), _integer_text))
 
@@ -97,7 +109,7 @@ class ProductiveProductUpdateSchema(Schema):
     dimensiones = fields.String(allow_none=True, validate=validate.Length(max=255))
     colores_disponibles = fields.String(allow_none=True, validate=validate.And(validate.Length(max=255), _letters_spaces))
     certificaciones = fields.String(allow_none=True, validate=validate.Length(max=2000))
-    presentacion_empaque = fields.String(validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces))
+    presentacion_empaque = fields.String(validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces_packaging))
     precio_referencia = fields.Decimal(places=2, as_string=True, validate=validate.Range(min=0))
     capacidad_produccion_stock = fields.String(validate=validate.And(validate.Length(min=1, max=255), _integer_text))
 
@@ -148,5 +160,5 @@ def productive_product_json(product):
             }
             for image in images
         ],
-        "publicable": product.estado in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and len(images) == 3 and product.deleted_at is None,
+        "publicable": product.estado in (ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK) and len(images) >= 1 and product.deleted_at is None,
     }

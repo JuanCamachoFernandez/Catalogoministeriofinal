@@ -2849,22 +2849,22 @@
   display: block;
 }
 .admin-products-state-filter {
+  display: block;
   min-width: 150px;
   width: 150px;
   max-width: 100%;
 }
-.admin-products-state-filter .searchable-select-trigger {
+.admin-products-state-select {
   min-height: 42px;
   border-color: #deded7;
   border-radius: 0.65rem;
   background: #fffdf8;
   box-shadow: none;
+  font-weight: 500;
 }
-.admin-products-state-filter .searchable-select-menu {
-  inset: calc(100% + 0.35rem) 0 auto auto;
-}
-.admin-products-state-filter .searchable-select-option > button:first-child {
-  width: 100%;
+.admin-products-state-select:focus {
+  border-color: #c8a93d;
+  box-shadow: 0 0 0 3px rgb(212 175 55 / 0.18);
 }
 .admin-request-product-fields {
   display: grid;

@@ -8,13 +8,13 @@ from app.esquemas.productos import (
 
 
 VALID_PRODUCT = {
-    "nombre_comercial": "Miel Andina 500",
+    "nombre_comercial": "Miel Andina 500 g",
     "descripcion_tecnica": "Miel natural, presentación 500 g; lote N.º 12/2026.",
     "materia_prima": "Miel 100",
     "dimensiones": "20 x 15 cm",
     "colores_disponibles": "Dorado ámbar",
     "certificaciones": "SENASAG N.º 123/2026",
-    "presentacion_empaque": "Caja 12 unidades",
+    "presentacion_empaque": "Caja 12 unidades, pack/bolsa - promoción",
     "precio_referencia": "55.00",
     "capacidad_produccion_stock": "100",
 }
@@ -23,9 +23,10 @@ VALID_PRODUCT = {
 def test_producto_productivo_acepta_datos_validos_y_texto_mixto():
     loaded = ProductiveProductCreateSchema().load(VALID_PRODUCT)
 
-    assert loaded["nombre_comercial"] == "Miel Andina 500"
+    assert loaded["nombre_comercial"] == "Miel Andina 454gr"
     assert loaded["capacidad_produccion_stock"] == "100"
     assert loaded["certificaciones"] == "SENASAG N.º 123/2026"
+    assert loaded["presentacion_empaque"] == "Caja 12 unidades, pack/bolsa - promoción"
 
 
 @pytest.mark.parametrize(
@@ -33,7 +34,7 @@ def test_producto_productivo_acepta_datos_validos_y_texto_mixto():
     [
         ("nombre_comercial", "Miel @ Andina"),
         ("materia_prima", "Miel #1"),
-        ("presentacion_empaque", "Caja x 12/bolsas"),
+        ("presentacion_empaque", "Caja x 12 + bolsas"),
         ("colores_disponibles", "Rojo 2"),
         ("capacidad_produccion_stock", "100 unidades"),
     ],

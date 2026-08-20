@@ -34,6 +34,21 @@ def test_perfil_productivo_acepta_datos_validos():
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("nit", "12-345/67_89"),
+        ("registro_seprec", "12/345-67_89"),
+        ("registro_pro_bolivia", "228770-E"),
+        ("registro_pro_bolivia", "227630E"),
+    ],
+)
+def test_perfil_productivo_acepta_identificadores_con_formato_legacy(field, value):
+    loaded = ProductiveUnitUpdateSchema().load({field: value})
+
+    assert loaded[field] == value
+
+
+@pytest.mark.parametrize(
     "schema",
     [
         RegistrationRequestSchema(),
@@ -68,6 +83,10 @@ def test_nombre_comercial_rechaza_vacios_y_caracteres_de_control(value):
         ("telefono_whatsapp", "7123456"),
         ("telefono_whatsapp", "59171234567"),
         ("correo_electronico", "correo-invalido"),
+        ("nit", "12A34"),
+        ("registro_seprec", "12B34"),
+        ("registro_pro_bolivia", "22E7630"),
+        ("registro_pro_bolivia", "227630EX"),
         ("facebook_url", "facebook.com/miunidad"),
         ("instagram_url", "mi perfil"),
         ("tiktok_url", "@miunidad"),
