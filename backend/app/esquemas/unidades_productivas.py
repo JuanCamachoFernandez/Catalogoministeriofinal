@@ -7,6 +7,7 @@ from .solicitudes_registro import (
     email_validator,
     facebook_url_validator,
     instagram_url_validator,
+    optional_representative_name_validator,
     registro_nit_validator,
     registro_pro_bolivia_validator,
     registro_seprec_validator,
@@ -75,7 +76,7 @@ class AdminProductiveUnitCreateSchema(Schema):
     )
     apellido_materno_representante = fields.String(
         required=True,
-        validate=representative_name_validator,
+        validate=optional_representative_name_validator,
     )
     departamento = fields.String(
         required=True,
@@ -146,7 +147,7 @@ class ProductiveUnitUpdateSchema(Schema):
         validate=profile_person_name_validator
     )
     apellido_materno_representante = fields.String(
-        validate=profile_person_name_validator
+        validate=optional_representative_name_validator
     )
     departamento = fields.String(
         validate=validate.OneOf(

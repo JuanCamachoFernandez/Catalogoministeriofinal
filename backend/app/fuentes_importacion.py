@@ -52,7 +52,7 @@ ALIASES = {
 
 REQUIRED_UNIT_FIELDS = (
     "business_name", "legal_name", "email", "phone", "first_names", "paternal_name",
-    "maternal_name", "department", "address", "review",
+    "department", "address", "review",
 )
 CORE_HEADER_FIELDS = ("business_name", "email", "phone", "representative_name", "first_names")
 DEPARTMENTS = {
@@ -658,14 +658,16 @@ def row_products(source_row):
 
 
 def _split_representative(row, first_names, paternal_name, maternal_name):
-    if first_names and paternal_name and maternal_name:
-        return first_names, paternal_name, maternal_name, None
+    if first_names and paternal_name:
+        return first_names, paternal_name, maternal_name or "", None
     full_name = field(row, "representative_name")
     if not full_name:
         return first_names, paternal_name, maternal_name, None
     parts = [part for part in re.split(r"\s+", full_name.strip()) if part]
-    if len(parts) < 3:
+    if len(parts) < 2:
         return first_names, paternal_name, maternal_name, "representante_no_divisible"
+    if len(parts) == 2:
+        return parts[0], parts[1], "", None
     return " ".join(parts[:-2]), parts[-2], parts[-1], None
 
 
@@ -706,7 +708,7 @@ def _validation_reasons(group):
         return [{"reason": "encabezado_no_encontrado"}]
     reasons = []
     missing = [key for key in REQUIRED_UNIT_FIELDS if not unit.get(key)]
-    representative_missing = {"first_names", "paternal_name", "maternal_name"}.intersection(missing)
+    representative_missing = {"first_names", "paternal_name"}.intersection(missing)
     if representative_missing:
         reasons.append({"reason": "representante_no_divisible"})
         missing = [key for key in missing if key not in representative_missing]

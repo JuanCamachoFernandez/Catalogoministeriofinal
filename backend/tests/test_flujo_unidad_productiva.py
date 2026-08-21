@@ -182,7 +182,7 @@ def test_solicitud_valida_identificadores_con_separadores_y_e_final_en_pro_boliv
     assert response.status_code == 201
 
 
-def test_solicitud_requiere_nombres_y_ambos_apellidos_del_representante(app, client):
+def test_solicitud_requiere_nombres_y_apellido_paterno_y_admite_materno_vacio(app, client):
     with app.app_context():
         sector = ProductiveSector(nombre="Madera", es_otro=False)
         db.session.add(sector)
@@ -192,7 +192,6 @@ def test_solicitud_requiere_nombres_y_ambos_apellidos_del_representante(app, cli
     representative_fields = (
         "nombres_representante",
         "apellido_paterno_representante",
-        "apellido_materno_representante",
     )
     for field in representative_fields:
         payload = _registration_payload(client, sector_id)
@@ -209,6 +208,19 @@ def test_solicitud_requiere_nombres_y_ambos_apellidos_del_representante(app, cli
         payload[field] = "   "
         response = client.post("/api/registration-requests", json=payload)
         assert response.status_code == 400
+
+    payload = _registration_payload(client, sector_id)
+    payload.pop("apellido_materno_representante")
+    assert client.post("/api/registration-requests", json=payload).status_code == 400
+
+    payload = _registration_payload(client, sector_id)
+    payload["apellido_materno_representante"] = ""
+    assert client.post("/api/registration-requests", json=payload).status_code == 201
+
+    payload = _registration_payload(client, sector_id)
+    payload["correo_electronico"] = "materno-espacios@example.com"
+    payload["apellido_materno_representante"] = "   "
+    assert client.post("/api/registration-requests", json=payload).status_code == 400
 
 
 def test_solicitud_valida_nombres_telefono_boliviano_y_correo(app, client):

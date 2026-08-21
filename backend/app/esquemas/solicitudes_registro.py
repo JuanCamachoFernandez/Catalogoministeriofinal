@@ -9,6 +9,11 @@ representative_name_validator = validate.And(
     ),
 )
 
+def optional_representative_name_validator(value):
+    if value == "":
+        return
+    representative_name_validator(value)
+
 bolivian_mobile_validator = validate.Regexp(
     r"^[67][0-9]{7}$",
     error="Ingrese 8 dígitos de un celular boliviano que comience con 6 o 7.",
@@ -117,7 +122,7 @@ class RegistrationRequestSchema(Schema):
         required=True, validate=representative_name_validator
     )
     apellido_materno_representante = fields.String(
-        required=True, validate=representative_name_validator
+        required=True, validate=optional_representative_name_validator
     )
     departamento = fields.String(required=True, validate=validate.Length(min=1, max=80))
     direccion_fisica = fields.String(required=True, validate=validate.Length(min=1, max=255))

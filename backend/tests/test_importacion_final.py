@@ -2,9 +2,10 @@ import pytest
 from sqlalchemy import func, select
 
 from app.extensiones import db
+from app.esquemas.solicitudes_registro import optional_representative_name_validator
 from app.fuentes_importacion import build_plan, clear_items, sha
 from app.importador_final import dry_run_summary_text, execute_plan
-from app.modelos import FinalImportRun, Product, ProductStatus, ProductiveUnit, User
+from app.modelos import FinalImportRun, Product, ProductStatus, ProductiveUnit, RegistrationRequest, User
 
 
 HEADERS = [
@@ -293,3 +294,34 @@ def test_general_product_photos_extracts_multiple_comma_separated_drive_urls():
         "logos_detected": 0, "photos_detected": 3, "assignable": 3, "ambiguous": 0,
     }
     assert plan["units"][0]["products"][0]["images"] == photo_ids
+
+
+def test_two_part_representative_is_valid_and_never_invents_maternal_surname(app):
+    optional_representative_name_validator("")
+    headers = [
+        "Nombre de la Unidad Productiva", "Razón social", "Correo electrónico", "Número de WhatsApp",
+        "Nombre completo del representante legal", "Departamento", "Dirección física", "Reseña comercial",
+    ]
+    values = [
+        "Unidad Dos Apellidos", "Unidad Dos Apellidos SRL", "dos-apellidos@example.com", "71234567",
+        "Bárbara Lima", "La Paz", "Calle 4", "Producción local",
+    ]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, values]}]}
+    corrected = document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+    assert plan["summary"]["unique_units"] == 1
+    assert "representante_no_divisible" not in plan["summary"]["errors_by_reason"]
+    assert plan["units"][0]["unit"]["first_names"] == "Bárbara"
+    assert plan["units"][0]["unit"]["paternal_name"] == "Lima"
+    assert plan["units"][0]["unit"]["maternal_name"] == ""
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        assert db.session.scalar(select(User)).apellido_materno == ""
+        assert db.session.scalar(select(ProductiveUnit)).apellido_materno_representante == ""
+        assert db.session.scalar(select(RegistrationRequest)).apellido_materno_representante == ""
