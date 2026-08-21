@@ -88,6 +88,13 @@ def dry_run_summary_text(summary):
         f"- draft: {total_products.get('draft', 0)}",
         f"- ambiguos: {total_products.get('ambiguous', 0)}",
     ))
+    corrected_sectors = (summary.get("sector_sources") or {}).get("corrected", {})
+    lines.extend((
+        "", "SECTORES CORREGIDOS",
+        f"- filas leídas: {corrected_sectors.get('rows_read', 0)}",
+        f"- asociados: {corrected_sectors.get('associated', 0)}",
+        f"- sin unidad relacionada: {corrected_sectors.get('without_unit', 0)}",
+    ))
     images = summary.get("image_sources") or {}
     general_images = images.get("general", {})
     corrected_images = images.get("corrected", {})
@@ -200,6 +207,10 @@ def import_unit(run, group, google):
             product = Product(productive_unit_id=unit.id, nombre=plan_product["name"], slug=slugify(plan_product["name"]),
                 descripcion=plan_product.get("description") or "", nombre_comercial=plan_product["name"],
                 descripcion_tecnica=plan_product.get("description") or None,
+                materia_prima=plan_product.get("material") or None,
+                dimensiones=plan_product.get("dimensions") or None,
+                colores_disponibles=plan_product.get("colors") or None,
+                certificaciones=plan_product.get("certifications") or None,
                 presentacion=plan_product.get("presentation") or None,
                 presentacion_empaque=plan_product.get("presentation") or None,
                 precio_referencia=plan_product.get("price"), precio=plan_product.get("price"),

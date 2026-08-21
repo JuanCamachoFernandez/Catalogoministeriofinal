@@ -42,6 +42,10 @@ ALIASES = {
     "sectors": ("sectores", "sector productivo", "rubros"),
     "logo": ("logo", "logotipo", "logo drive", "id logo"),
     "products": ("productos", "productos que elabora", "descripcion de productos", "descripción de productos"),
+    "product_photos": (
+        "fotografias de los productos", "fotografías de los productos",
+        "fotografias productos", "fotografías productos", "fotos productos",
+    ),
     "facebook": ("facebook",), "instagram": ("instagram",), "tiktok": ("tiktok",),
     "seprec": ("registro seprec", "seprec"), "pro_bolivia": ("registro pro bolivia", "pro bolivia"),
 }
@@ -62,7 +66,12 @@ UNIT_REF_NAMES = (
     "id de unidad", "id de la unidad", "id de up", "id de la up",
     "codigo_unidad", "codigo up", "código up", "codigo_up", "codigo de unidad",
     "codigo de la unidad", "codigo de up", "codigo de la up", "unidad productiva",
-    "nombre unidad", "nombre comercial", "unidad", "up",
+    "nombre unidad", "nombre comercial", "correo electronico unidad",
+    "correo electrónico unidad", "correo electronico", "correo electrónico", "unidad", "up",
+)
+UNIT_EMAIL_REF_NAMES = (
+    "correo_electronico_unidad", "correo electronico unidad", "correo electrónico unidad",
+    "correo_electronico", "correo electronico", "correo electrónico",
 )
 PRODUCT_REF_NAMES = (
     "id producto", "id_producto", "producto id", "producto_id", "codigo producto",
@@ -71,6 +80,10 @@ PRODUCT_REF_NAMES = (
     "producto",
 )
 PRODUCT_NAME_NAMES = ("nombre producto", "nombre del producto", "producto", "nombre comercial", "nombre")
+IMAGE_PRODUCT_NAME_NAMES = (
+    "nombre_comercial_producto", "nombre comercial producto", "nombre comercial del producto",
+    "nombre producto", "producto",
+)
 PRODUCT_DESCRIPTION_NAMES = (
     "descripcion producto", "descripción producto", "descripcion tecnica", "descripción técnica",
     "descripcion", "descripción",
@@ -85,8 +98,14 @@ PRODUCT_STOCK_NAMES = (
 )
 IMAGE_VALUE_NAMES = (
     "drive id", "id drive", "drive file id", "archivo drive", "id archivo",
-    "enlace drive", "url drive", "imagen", "foto", "url",
+    "enlace drive", "url drive", "url_imagen", "url imagen", "imagen url", "imagen", "foto", "url",
 )
+PRODUCT_MATERIAL_NAMES = ("materia_prima", "materia prima", "materiales", "ingredientes")
+PRODUCT_DIMENSION_NAMES = ("dimensiones", "dimension", "medidas")
+PRODUCT_COLOR_NAMES = ("colores_disponibles", "colores disponibles", "colores")
+PRODUCT_CERTIFICATION_NAMES = ("certificaciones", "certificacion", "certificación")
+PRODUCT_CATEGORY_NAMES = ("categoria_nombre", "categoria nombre", "categoría nombre", "categoria", "categoría")
+PRODUCT_DESIRED_STATUS_NAMES = ("estado_deseado", "estado deseado")
 
 
 def normalize(value):
@@ -134,6 +153,22 @@ def drive_id(value):
         return value
     match = re.search(r"(?:/d/|[?&]id=)([A-Za-z0-9_-]{20,})", value)
     return match.group(1) if match else None
+
+
+def drive_ids(value):
+    """Extract every Drive ID from a multi-link cell while preserving order."""
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    matches = re.findall(r"(?:/d/|[?&]id=)([A-Za-z0-9_-]{20,})", raw)
+    if matches:
+        return matches
+    result = []
+    for item in re.split(r"[,;\n]+", raw):
+        identifier = drive_id(item.strip())
+        if identifier:
+            result.append(identifier)
+    return result
 
 
 def clear_items(value):
@@ -288,6 +323,18 @@ def _reference_values(row, names):
     return values
 
 
+def _unit_reference_values(row):
+    values = _reference_values(row, UNIT_REF_NAMES)
+    email = _unit_email(row)
+    if email:
+        values.add(f"email:{email}")
+    return values
+
+
+def _unit_email(row):
+    return _any_field(row, UNIT_EMAIL_REF_NAMES).strip().casefold()
+
+
 def _product_name(row):
     filtered = {
         key: value for key, value in row.items()
@@ -312,7 +359,8 @@ def _price_value(value):
 def _product_complete(product):
     return bool(
         product.get("description") and product.get("price") is not None
-        and product.get("presentation") and product.get("stock") and product.get("images")
+        and product.get("material") and product.get("presentation")
+        and product.get("stock") and product.get("images")
     )
 
 
@@ -322,18 +370,33 @@ def _empty_corrected_audit():
                      "invalid": 0, "without_unit": 0},
         "images": {"rows_read": 0, "drive_ids_detected": 0, "assigned": 0,
                    "without_product": 0, "ambiguous": 0},
+        "sectors": {"rows_read": 0, "associated": 0, "without_unit": 0},
         "warnings": [],
     }
 
 
 def _image_product_matches(image_row, product_rows):
+    image_unit_refs = _unit_reference_values(image_row)
+    image_email = _unit_email(image_row)
+    image_name = normalize(_any_field(image_row, IMAGE_PRODUCT_NAME_NAMES))
+    if image_email and image_name:
+        return [
+            (number, product_row) for number, product_row in product_rows
+            if _unit_email(product_row) == image_email
+            and normalize(_product_name(product_row)) == image_name
+        ]
+    if image_unit_refs and image_name:
+        return [
+            (number, product_row) for number, product_row in product_rows
+            if _unit_reference_values(product_row) & image_unit_refs
+            and normalize(_product_name(product_row)) == image_name
+        ]
     image_product_refs = _reference_values(image_row, PRODUCT_REF_NAMES)
-    image_unit_refs = _reference_values(image_row, UNIT_REF_NAMES)
     matches = []
     for number, product_row in product_rows:
         if not (_reference_values(product_row, PRODUCT_REF_NAMES) & image_product_refs):
             continue
-        if image_unit_refs and not (_reference_values(product_row, UNIT_REF_NAMES) & image_unit_refs):
+        if image_unit_refs and not (_unit_reference_values(product_row) & image_unit_refs):
             continue
         matches.append((number, product_row))
     return matches
@@ -355,20 +418,21 @@ def _corrected_rows(document, sheet_id):
         return [], diagnostics
     unit_rows, unit_metadata = _worksheet_dicts(units_sheet)
     product_headers = UNIT_REF_NAMES + PRODUCT_REF_NAMES + PRODUCT_NAME_NAMES + PRODUCT_DESCRIPTION_NAMES \
-        + PRODUCT_PRICE_NAMES + PRODUCT_PRESENTATION_NAMES + PRODUCT_STOCK_NAMES
+        + PRODUCT_PRICE_NAMES + PRODUCT_PRESENTATION_NAMES + PRODUCT_STOCK_NAMES + PRODUCT_MATERIAL_NAMES \
+        + PRODUCT_DIMENSION_NAMES + PRODUCT_COLOR_NAMES + PRODUCT_CERTIFICATION_NAMES \
+        + PRODUCT_CATEGORY_NAMES + PRODUCT_DESIRED_STATUS_NAMES
     product_rows, product_metadata = _worksheet_dicts(products_sheet or {}, product_headers)
     sectors, sector_metadata = _worksheet_dicts(sector_sheet or {}, UNIT_REF_NAMES + ("sector", "nombre sector"))
     images, image_metadata = _worksheet_dicts(image_sheet or {}, UNIT_REF_NAMES + PRODUCT_REF_NAMES + IMAGE_VALUE_NAMES)
-    unit_ref_names = UNIT_REF_NAMES
     result = []
     for number, unit_row in unit_rows:
-        unit_refs = _reference_values(unit_row, unit_ref_names)
+        unit_refs = _unit_reference_values(unit_row)
         if field(unit_row, "business_name"):
             unit_refs.add(normalize(field(unit_row, "business_name")))
         related_products = [(row_number, row) for row_number, row in product_rows
-                            if _reference_values(row, unit_ref_names) & unit_refs]
+                            if _unit_reference_values(row) & unit_refs]
         related_sectors = [row for _row_number, row in sectors
-                           if _reference_values(row, unit_ref_names) & unit_refs]
+                           if _unit_reference_values(row) & unit_refs]
         enriched = dict(unit_row)
         sector_names = [_any_field(row, ("sector", "sector productivo", "nombre sector")) for row in related_sectors]
         if sector_names:
@@ -379,6 +443,12 @@ def _corrected_rows(document, sheet_id):
             enriched[f"Producto {product_number} precio"] = _any_field(product_row, PRODUCT_PRICE_NAMES)
             enriched[f"Producto {product_number} presentacion"] = _any_field(product_row, PRODUCT_PRESENTATION_NAMES)
             enriched[f"Producto {product_number} stock"] = _any_field(product_row, PRODUCT_STOCK_NAMES)
+            enriched[f"Producto {product_number} materia prima"] = _any_field(product_row, PRODUCT_MATERIAL_NAMES)
+            enriched[f"Producto {product_number} dimensiones"] = _any_field(product_row, PRODUCT_DIMENSION_NAMES)
+            enriched[f"Producto {product_number} colores"] = _any_field(product_row, PRODUCT_COLOR_NAMES)
+            enriched[f"Producto {product_number} certificaciones"] = _any_field(product_row, PRODUCT_CERTIFICATION_NAMES)
+            enriched[f"Producto {product_number} categoria"] = _any_field(product_row, PRODUCT_CATEGORY_NAMES)
+            enriched[f"Producto {product_number} estado deseado"] = _any_field(product_row, PRODUCT_DESIRED_STATUS_NAMES)
             related_images = [row for _row_number, row in images
                               if len(_image_product_matches(row, product_rows)) == 1
                               and _image_product_matches(row, product_rows)[0][0] == product_row_number]
@@ -412,23 +482,38 @@ def _corrected_audit(document):
     units_sheet = next((item for title, item in worksheets.items() if "unidad" in title), None)
     products_sheet = next((item for title, item in worksheets.items() if "producto" in title and "imagen" not in title), None)
     images_sheet = next((item for title, item in worksheets.items() if "imagen" in title or "foto" in title), None)
+    sectors_sheet = next((item for title, item in worksheets.items() if "sector" in title), None)
     if not units_sheet or not products_sheet:
         return audit
     unit_rows, _unit_metadata = _worksheet_dicts(units_sheet)
     product_headers = UNIT_REF_NAMES + PRODUCT_REF_NAMES + PRODUCT_NAME_NAMES + PRODUCT_DESCRIPTION_NAMES \
-        + PRODUCT_PRICE_NAMES + PRODUCT_PRESENTATION_NAMES + PRODUCT_STOCK_NAMES
+        + PRODUCT_PRICE_NAMES + PRODUCT_PRESENTATION_NAMES + PRODUCT_STOCK_NAMES + PRODUCT_MATERIAL_NAMES \
+        + PRODUCT_DIMENSION_NAMES + PRODUCT_COLOR_NAMES + PRODUCT_CERTIFICATION_NAMES \
+        + PRODUCT_CATEGORY_NAMES + PRODUCT_DESIRED_STATUS_NAMES
     product_rows, _product_metadata = _worksheet_dicts(products_sheet, product_headers)
     image_rows, _image_metadata = _worksheet_dicts(
         images_sheet or {}, UNIT_REF_NAMES + PRODUCT_REF_NAMES + IMAGE_VALUE_NAMES
     )
+    sector_rows, _sector_metadata = _worksheet_dicts(
+        sectors_sheet or {}, UNIT_REF_NAMES + ("sector_nombre", "sector nombre", "sector")
+    )
     unit_references = []
     for _number, unit_row in unit_rows:
-        references = _reference_values(unit_row, UNIT_REF_NAMES)
+        references = _unit_reference_values(unit_row)
         if field(unit_row, "business_name"):
             references.add(normalize(field(unit_row, "business_name")))
         unit_references.append(references)
     audit["products"]["rows_read"] = len(product_rows)
     audit["images"]["rows_read"] = len(image_rows)
+    audit["sectors"]["rows_read"] = len(sector_rows)
+    for number, sector_row in sector_rows:
+        matches = [unit for unit in unit_references if unit & _unit_reference_values(sector_row)]
+        if len(matches) == 1:
+            audit["sectors"]["associated"] += 1
+        else:
+            audit["sectors"]["without_unit"] += 1
+            audit["warnings"].append({"reason": "sector_sin_unidad_relacionada", "severity": "blocking",
+                                      "source": "CORRECTED", "row": number})
     assigned_image_rows = set()
     assigned_images = {}
     for image_number, image_row in image_rows:
@@ -449,7 +534,7 @@ def _corrected_audit(document):
                                       "source": "CORRECTED", "row": number})
             continue
         audit["products"]["detected"] += 1
-        references = _reference_values(product_row, UNIT_REF_NAMES)
+        references = _unit_reference_values(product_row)
         matches = [unit for unit in unit_references if unit & references]
         if len(matches) != 1:
             audit["products"]["without_unit"] += 1
@@ -464,6 +549,7 @@ def _corrected_audit(document):
         images = assigned_images.get(number, [])
         product = {
             "description": _any_field(product_row, PRODUCT_DESCRIPTION_NAMES), "price": price,
+            "material": _any_field(product_row, PRODUCT_MATERIAL_NAMES),
             "presentation": _any_field(product_row, PRODUCT_PRESENTATION_NAMES),
             "stock": _any_field(product_row, PRODUCT_STOCK_NAMES), "images": images,
         }
@@ -515,6 +601,12 @@ def row_products(source_row):
         presentation = next((normalized.get(k) for k in (f"producto {number} presentacion", f"presentacion producto {number}") if normalized.get(k)), "")
         stock = next((normalized.get(k) for k in (f"producto {number} stock", f"stock producto {number}",
                                                    f"producto {number} capacidad") if normalized.get(k)), "")
+        material = normalized.get(f"producto {number} materia prima", "")
+        dimensions = normalized.get(f"producto {number} dimensiones", "")
+        colors = normalized.get(f"producto {number} colores", "")
+        certifications = normalized.get(f"producto {number} certificaciones", "")
+        category = normalized.get(f"producto {number} categoria", "")
+        desired_status = normalized.get(f"producto {number} estado deseado", "")
         images = []
         image_values_seen = invalid_images = 0
         for image_number in range(1, MAX_IMAGES + 1):
@@ -526,23 +618,43 @@ def row_products(source_row):
                 else:
                     invalid_images += 1
         products.append({"name": name, "description": description, "price": price,
-                         "presentation": presentation, "stock": stock, "images": images,
+                         "presentation": presentation, "stock": stock, "material": material,
+                         "dimensions": dimensions, "colors": colors, "certifications": certifications,
+                         "category": category, "desired_status": desired_status, "images": images,
                          "invalid_price": invalid_price, "image_values_seen": image_values_seen,
                          "invalid_images": invalid_images,
                          "origin": {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}})
     raw = field(row, "products")
+    unclear = None
     if not products and raw:
         clear = clear_items(raw)
         if not clear:
             if "," in raw:
-                return [], raw
-            clear = [raw]
+                unclear = raw
+                clear = []
+            else:
+                clear = [raw]
         products = [{"name": name, "description": "", "price": None, "presentation": "", "stock": "",
-                     "images": [], "invalid_price": False,
+                     "material": "", "dimensions": "", "colors": "", "certifications": "",
+                     "category": "", "desired_status": "", "images": [], "invalid_price": False,
                      "image_values_seen": 0, "invalid_images": 0,
                      "origin": {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}}
                     for name in clear[:MAX_PRODUCTS]]
-    return products, None
+    general_photo_ids = drive_ids(field(row, "product_photos"))
+    photo_audit = {"detected": len(general_photo_ids), "assigned": 0, "ambiguous": 0}
+    if general_photo_ids:
+        if len(products) == 1:
+            proposed = general_photo_ids[:MAX_IMAGES]
+            products[0]["images"].extend(proposed)
+            photo_audit["assigned"] = len(proposed)
+            photo_audit["ambiguous"] = len(general_photo_ids) - len(proposed)
+        elif products and len(general_photo_ids) == MAX_IMAGES * len(products):
+            for index, product in enumerate(products):
+                product["images"].extend(general_photo_ids[index * MAX_IMAGES:(index + 1) * MAX_IMAGES])
+            photo_audit["assigned"] = len(general_photo_ids)
+        else:
+            photo_audit["ambiguous"] = len(general_photo_ids)
+    return products, unclear, photo_audit
 
 
 def _split_representative(row, first_names, paternal_name, maternal_name):
@@ -630,7 +742,7 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
     }
     image_summary["corrected"]["logos_detected"] = 0
     for source_row in source_rows:
-        (unit, representative_error), (products, unclear) = unit_payload(source_row), row_products(source_row)
+        (unit, representative_error), (products, unclear, photo_audit) = unit_payload(source_row), row_products(source_row)
         if unclear:
             issue = {"source": source_row["source"], "row": source_row["row_number"],
                      "worksheet": source_row["worksheet"], "reason": "producto_general_ambiguo"}
@@ -647,10 +759,17 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                 warnings.append({"reason": "logo_drive_invalido", "severity": "blocking",
                                  "source": "GENERAL", "row": source_row["row_number"]})
             general_products["detected"] += len(products)
+            image_summary["general"]["photos_detected"] += photo_audit["detected"]
+            image_summary["general"]["ambiguous"] += photo_audit["ambiguous"]
+            if photo_audit["ambiguous"]:
+                warnings.append({"reason": "fotografias_generales_ambiguas", "severity": "blocking",
+                                 "source": "GENERAL", "row": source_row["row_number"]})
             for product in products:
                 status = "valid" if _product_complete(product) else "draft"
                 general_products[status] += 1
-                image_summary["general"]["photos_detected"] += len(product.get("images", []))
+                image_summary["general"]["photos_detected"] += max(
+                    0, product.get("image_values_seen", 0) - product.get("invalid_images", 0)
+                )
                 image_summary["general"]["ambiguous"] += product.get("invalid_images", 0)
                 if product.get("invalid_price"):
                     warnings.append({"reason": "precio_producto_invalido", "severity": "informative",
@@ -781,6 +900,7 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                "sources": source_summary,
                "product_sources": {"general": general_products, "corrected": corrected_audit["products"],
                                    "total": total_products},
+               "sector_sources": {"corrected": corrected_audit["sectors"]},
                "image_sources": {"general": image_summary["general"], "corrected": image_summary["corrected"],
                                  "total": total_images}}
     plan = {"schema_version": 1, "sources": {"general": {"sheet_id": general_id, "hash": sha(general_document)},

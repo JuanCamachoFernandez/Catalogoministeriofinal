@@ -47,6 +47,14 @@ unidad muestran únicamente fuente y número de fila.
 Las métricas de imágenes se calculan usando los Drive IDs y referencias presentes en
 las hojas. El dry-run no descarga archivos ni realiza operaciones en Cloudinary.
 
+En la plantilla corregida real se aceptan `SectoresUnidad` e `ImagenesProducto`.
+`Unidades`, `SectoresUnidad` y `Productos` se relacionan por correo normalizado
+(`correo_electronico` / `correo_electronico_unidad`). Una imagen se relaciona por la
+clave compuesta de correo de unidad y nombre normalizado del producto, evitando
+colisiones entre unidades que ofrecen productos con el mismo nombre. En el formulario
+general, la columna `Fotografías de los Productos` admite varios enlaces Drive
+separados por coma y conserva su orden.
+
 ## Comandos
 
 Desde el directorio `backend`, con las variables de producción ya inyectadas:

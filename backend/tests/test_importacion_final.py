@@ -154,13 +154,13 @@ def test_relational_product_audit_reads_aliases_and_keeps_incomplete_products_as
     unit = ["UP-01", *valid_row()[:11]]
     product_headers = [
         "ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO", "DESCRIPCION",
-        "PRECIO_REFERENCIA", "PRESENTACION", "CAPACIDAD_PRODUCCION_STOCK",
+        "PRECIO_REFERENCIA", "PRESENTACION", "CAPACIDAD_PRODUCCION_STOCK", "MATERIA_PRIMA",
     ]
     products = [
-        ["UP-01", "P-01", "Producto completo", "Descripción", "25,50", "Caja", "100"],
-        ["UP-01", "P-02", "Producto borrador", "", "", "", ""],
-        ["UP-99", "P-03", "Producto huérfano", "Descripción", "10", "Unidad", "20"],
-        ["UP-01", "P-04", "", "Descripción sin nombre", "10", "Unidad", "20"],
+        ["UP-01", "P-01", "Producto completo", "Descripción", "25,50", "Caja", "100", "Miel"],
+        ["UP-01", "P-02", "Producto borrador", "", "", "", "", ""],
+        ["UP-99", "P-03", "Producto huérfano", "Descripción", "10", "Unidad", "20", "Miel"],
+        ["UP-01", "P-04", "", "Descripción sin nombre", "10", "Unidad", "20", "Miel"],
     ]
     corrected = {"title": "corregidos", "worksheets": [
         {"title": "Unidades", "values": [unit_headers, unit]},
@@ -229,3 +229,67 @@ def test_execute_plan_preserves_structured_product_fields_in_draft(app):
         assert str(product.precio_referencia) == "25.50"
         assert product.presentacion_empaque == "Caja"
         assert product.capacidad_produccion_stock == "100"
+
+
+def test_real_corrected_email_relations_and_composite_product_image_key():
+    unit_headers = ["correo_electronico", *HEADERS[:3], *HEADERS[4:11]]
+    first = [" unidad1@example.com ", *valid_row()[:3], *valid_row()[4:11]]
+    second_source = valid_row(name="Unidad Dos")
+    second_source[1:5] = ["Unidad Dos SRL", "7654321", "unidad2@example.com", "71234567"]
+    second = ["UNIDAD2@EXAMPLE.COM", *second_source[:3], *second_source[4:11]]
+    product_headers = [
+        "correo_electronico_unidad", "categoria_nombre", "nombre_comercial", "descripcion_tecnica",
+        "materia_prima", "dimensiones", "colores_disponibles", "certificaciones",
+        "presentacion_empaque", "precio_referencia", "capacidad_produccion_stock", "estado_deseado",
+    ]
+    product_rows = [
+        ["UNIDAD1@EXAMPLE.COM", "Alimentos", "Producto Compartido", "Descripción uno", "Miel", "", "", "", "Frasco", "20", "50", "AVAILABLE"],
+        [" unidad2@example.com ", "Alimentos", "Producto Compartido", "Descripción dos", "Miel", "", "", "", "Frasco", "30", "60", "AVAILABLE"],
+    ]
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [unit_headers, first, second]},
+        {"title": "SectoresUnidad", "values": [
+            ["correo_electronico", "sector_nombre", "detalle_otro"],
+            ["unidad1@example.com", "Alimentos", ""], ["unidad2@example.com", "Alimentos", ""],
+        ]},
+        {"title": "Productos", "values": [product_headers, *product_rows]},
+        {"title": "ImagenesProducto", "values": [
+            ["correo_electronico_unidad", "nombre_comercial_producto", "orden", "url_imagen", "texto_alternativo", "es_portada"],
+            ["unidad1@example.com", "Producto Compartido", "1", "https://drive.google.com/open?id=abcdefghijklmnopqrstuv", "", "TRUE"],
+            ["UNIDAD2@EXAMPLE.COM", "producto compartido", "1", "https://drive.google.com/open?id=zyxwvutsrqponmlkjihgfe", "", "TRUE"],
+        ]},
+    ]}
+    plan = build_plan(document([]), corrected, "general", "corrected")
+    assert plan["summary"]["product_sources"]["corrected"]["without_unit"] == 0
+    assert plan["summary"]["product_sources"]["corrected"]["detected"] == 2
+    assert plan["summary"]["image_sources"]["corrected"]["assigned"] == 2
+    assert plan["summary"]["image_sources"]["corrected"]["without_product"] == 0
+    assert plan["summary"]["sector_sources"]["corrected"] == {
+        "rows_read": 2, "associated": 2, "without_unit": 0,
+    }
+    images_by_email = {
+        group["unit"]["email"]: group["products"][0]["images"] for group in plan["units"]
+    }
+    assert images_by_email["unidad1@example.com"] == ["abcdefghijklmnopqrstuv"]
+    assert images_by_email["unidad2@example.com"] == ["zyxwvutsrqponmlkjihgfe"]
+
+
+def test_general_product_photos_extracts_multiple_comma_separated_drive_urls():
+    headers = [
+        "Nombre de la Unidad Productiva", "Razón social", "Correo electrónico", "Número de WhatsApp",
+        "Nombre completo del representante legal", "Departamento", "Dirección física", "Reseña comercial",
+        "Productos que elabora",
+        "5.2. Fotografías de los Productos ( 3 fotos por producto): enlaces de Google Drive",
+    ]
+    photo_ids = ["abcdefghijklmnopqrstuv", "bcdefghijklmnopqrstuvw", "cdefghijklmnopqrstuvwx"]
+    values = [
+        "Unidad Fotos", "Unidad Fotos SRL", "fotos@example.com", "71234567", "Ana Pérez Mamani",
+        "La Paz", "Calle 3", "Producción local", "Miel",
+        ",\n".join(f"https://drive.google.com/open?id={identifier}" for identifier in photo_ids),
+    ]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, values]}]}
+    plan = build_plan(general, document([]), "general", "corrected")
+    assert plan["summary"]["image_sources"]["general"] == {
+        "logos_detected": 0, "photos_detected": 3, "assignable": 3, "ambiguous": 0,
+    }
+    assert plan["units"][0]["products"][0]["images"] == photo_ids
