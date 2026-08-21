@@ -7,6 +7,7 @@ import pytest
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.datastructures import FileStorage
 
 from app.extensiones import db
 from app.modelos import (
@@ -24,6 +25,7 @@ from app.modelos import (
     UserStatus,
     bolivia_today,
 )
+from app.servicios.archivos import _optimize_image
 
 
 def _png_bytes(color="green"):
@@ -35,6 +37,13 @@ def _png_bytes(color="green"):
 
 def _invalid_file():
     return BytesIO(b"not-an-image")
+
+
+def test_optimized_image_filename_always_fits_database_column():
+    upload = FileStorage(stream=_png_bytes(), filename=f"{'a' * 400}.png")
+    optimized = _optimize_image(upload, "product")
+    assert optimized["filename"].endswith(".webp")
+    assert len(optimized["filename"]) <= 255
 
 
 def _admin_headers(client):

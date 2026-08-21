@@ -36,7 +36,7 @@ class Product(TimestampMixin, db.Model):
     descripcion = db.Column(db.Text, nullable=False)
     materiales_o_ingredientes = db.Column(db.Text)
     lugar_origen = db.Column(db.String(150))
-    presentacion = db.Column(db.String(150))
+    presentacion = db.Column(db.String(255))
     informacion_adicional = db.Column(db.Text)
     nombre_comercial = db.Column(db.String(200))
     descripcion_tecnica = db.Column(db.Text)

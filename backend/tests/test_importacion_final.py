@@ -1,10 +1,15 @@
+from io import BytesIO
+
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import DataError
 
 from app.extensiones import db
 from app.esquemas.solicitudes_registro import optional_representative_name_validator
 from app.fuentes_importacion import build_plan, clear_items, plan_sha256, sha
-from app.importador_final import dry_run_summary_text, execute_plan
+from app.importador_final import (
+    dry_run_summary_text, execute_plan, preflight_plan, safe_database_error,
+)
 from app.modelos import (
     FinalImportRun, FinalImportSourceRow, Product, ProductStatus, ProductiveUnit,
     RegistrationRequest, User,
@@ -486,6 +491,112 @@ def test_pending_unit_does_not_prevent_other_units_from_importing(app):
         assert result["summary"]["units_created"] == 1
         assert result["summary"]["pending_records_preserved"] == 1
         assert db.session.scalar(select(func.count()).select_from(ProductiveUnit)) == 1
+
+
+def test_preflight_reports_table_column_and_row_without_source_values(app):
+    general, corrected = document([]), document([valid_row()])
+    plan = build_plan(general, corrected, "general", "corrected")
+    product = plan["units"][0]["products"][0]
+    product["dimensions"] = "x" * 256
+    product["presentation"] = "p" * 200
+    plan["plan_hash"] = plan_sha256(plan)
+    issues = preflight_plan(plan)
+    assert any(
+        issue["table"] == "productos" and issue["column"] == "dimensiones"
+        and issue["reason"] == "value_too_long" and issue["actual_length"] == 256
+        for issue in issues
+    )
+    # The legitimate 200-character presentation now fits both compatibility columns.
+    assert not any(issue["column"] in {"presentacion", "presentacion_empaque"} for issue in issues)
+    serialized = str(issues)
+    assert "unidad@gmail.com" not in serialized and "Unidad Uno" not in serialized
+
+
+def test_preflight_blocks_before_download_or_database_write(app):
+    general, corrected = document([]), document([valid_row()])
+    plan = build_plan(general, corrected, "general", "corrected")
+    plan["units"][0]["products"][0]["stock"] = "9" * 256
+    plan["plan_hash"] = plan_sha256(plan)
+
+    class FakeGoogle:
+        downloads = 0
+
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            self.downloads += 1
+
+    google = FakeGoogle()
+    with app.app_context(), pytest.raises(Exception, match="productos.capacidad_produccion_stock"):
+        execute_plan(plan, google)
+    with app.app_context():
+        assert google.downloads == 0
+        assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
+
+
+def test_data_error_diagnostic_is_sanitized(app, caplog):
+    class Diagnostic:
+        table_name = "productos"
+        column_name = "presentacion"
+
+    class OriginalError(Exception):
+        sqlstate = "22001"
+        diag = Diagnostic()
+
+    error = DataError("INSERT with private data", {"email": "private@example.com"}, OriginalError())
+    error._final_import_context = {
+        "model": "Product", "table": "productos", "source": "GENERAL",
+        "worksheet": "Respuestas", "row": 15,
+    }
+    with app.app_context():
+        message = safe_database_error(error)
+    assert "tabla=productos" in message
+    assert "columna=presentacion" in message
+    assert "sqlstate=22001" in message
+    assert "value too long for varchar" in message
+    assert "private@example.com" not in message and "private@example.com" not in caplog.text
+
+
+def test_data_error_rolls_back_and_compensates_uploaded_images(app, monkeypatch):
+    general, corrected = document([]), document([valid_row()])
+    plan = build_plan(general, corrected, "general", "corrected")
+    plan["units"][0]["products"][0]["images"] = ["abcdefghijklmnopqrstuv"]
+    plan["plan_hash"] = plan_sha256(plan)
+    deleted = []
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            return "safe.png", BytesIO(b"image bytes")
+
+    monkeypatch.setattr("app.importador_final.upload_to_cloudinary", lambda *_args, **_kwargs: {
+        "filename": "safe.webp", "url": "https://res.cloudinary.com/example/image/upload/safe.webp",
+        "public_id": "catalogo/productos/safe",
+    })
+    monkeypatch.setattr("app.importador_final.delete_cloudinary_upload", deleted.append)
+
+    class Diagnostic:
+        table_name = "productos"
+        column_name = "presentacion"
+
+    class OriginalError(Exception):
+        sqlstate = "22001"
+        diag = Diagnostic()
+
+    def fail_after_upload(*_args, **_kwargs):
+        raise DataError("private statement", {"private": "value"}, OriginalError())
+
+    monkeypatch.setattr("app.importador_final.trace_entities", fail_after_upload)
+    with app.app_context(), pytest.raises(Exception, match="cloudinary_compensation=1/1 failed=0"):
+        execute_plan(plan, FakeGoogle())
+    with app.app_context():
+        assert deleted == ["catalogo/productos/safe"]
+        assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
+        assert db.session.scalar(select(func.count()).select_from(ProductiveUnit)) == 0
+        assert db.session.scalar(select(func.count()).select_from(Product)) == 0
 
 
 def test_accepted_ambiguities_do_not_block_and_original_row_is_preserved(app):

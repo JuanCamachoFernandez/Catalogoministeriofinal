@@ -114,7 +114,8 @@ def _optimize_image(file, image_variant):
     optimized.save(output, format="WEBP", quality=WEBP_QUALITY, method=6)
     output.seek(0)
 
-    filename_base = secure_filename(file.filename.rsplit(".", 1)[0]) or "imagen"
+    # ProductImage.filename is VARCHAR(255); reserve five characters for ".webp".
+    filename_base = (secure_filename(file.filename.rsplit(".", 1)[0]) or "imagen")[:250]
     return {
         "filename": f"{filename_base}.webp",
         "stream": output,
@@ -225,9 +226,9 @@ def upload_to_cloudinary(file, folder, image_variant=None):
 
 def delete_cloudinary_upload(public_id):
     if not public_id:
-        return
+        return None
 
-    _cloudinary_uploader().destroy(
+    return _cloudinary_uploader().destroy(
         public_id,
         resource_type="image",
         invalidate=True,
