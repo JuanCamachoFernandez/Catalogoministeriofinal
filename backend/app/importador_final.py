@@ -31,6 +31,34 @@ def write_json(path, payload):
     temporary.replace(target)
 
 
+def dry_run_summary_text(summary):
+    """Render only aggregate counters; never echo source values or identifiers."""
+    lines = ["ERRORS BY REASON"]
+    reasons = summary.get("errors_by_reason") or {}
+    if reasons:
+        lines.extend(f"- {reason}: {count}" for reason, count in sorted(reasons.items()))
+    else:
+        lines.append("- none: 0")
+    for label, key in (("GENERAL", "general"), ("CORREGIDOS", "corrected")):
+        source = (summary.get("sources") or {}).get(key, {})
+        lines.extend((
+            "", f"{label}:",
+            f"- filas leídas: {source.get('rows_read', 0)}",
+            f"- válidas: {source.get('valid', 0)}",
+            f"- inválidas: {source.get('invalid', 0)}",
+        ))
+    lines.extend((
+        "", "TOTAL:",
+        f"- respuestas leídas: {summary.get('responses_read', 0)}",
+        f"- unidades únicas válidas: {summary.get('unique_units', 0)}",
+        f"- unidades inválidas: {summary.get('invalid_units', 0)}",
+        f"- productos detectados: {summary.get('products_detected', 0)}",
+        f"- errores: {summary.get('errors', 0)}",
+        f"- advertencias: {summary.get('warnings', 0)}",
+    ))
+    return "\n".join(lines)
+
+
 def unique_username(email):
     base = slugify(email.split("@")[0])[:60] or "responsable"
     candidate, suffix = base, 0
@@ -179,7 +207,7 @@ def register_import_command(app):
                 raise click.ClickException("--sheet-general y --sheet-corregidos son obligatorios en dry-run")
             plan = build_plan(google.spreadsheet(sheet_general), google.spreadsheet(sheet_corregidos), sheet_general, sheet_corregidos)
             write_json(report_path, plan)
-            click.echo(json.dumps(plan["summary"], ensure_ascii=False, indent=2))
+            click.echo(dry_run_summary_text(plan["summary"]))
             click.echo(f"Plan guardado en {report_path}. No se escribió PostgreSQL ni Cloudinary.")
         else:
             if not plan_path: raise click.ClickException("--plan es obligatorio con --commit")
