@@ -17,6 +17,26 @@ usan `ID/Codigo unidad` y `ID/Codigo producto` (también se admite el nombre com
 clave). Las imágenes deben contener un Drive ID o enlace Drive. El dry-run reporta
 filas inválidas y conflictos; no los completa ni los importa.
 
+El lector busca la fila de encabezados entre las primeras 20 filas y normaliza
+mayúsculas, tildes, guiones, signos de pregunta, saltos de línea y guiones bajos.
+Las columnas vacías intermedias no desplazan las siguientes columnas. El esquema
+canónico aceptado es:
+
+- Formulario general: `Nombre comercial`/`Nombre de la unidad productiva`, `Razon
+  social`, `NIT` (opcional), `Correo electronico`, `Telefono/WhatsApp`, representante
+  en tres columnas o `Nombre completo del representante`, `Departamento`, `Direccion
+  fisica`, `Resena comercial`, sectores, logo y productos (estos tres últimos no
+  invalidan por sí solos a la unidad).
+- `Unidades`: los mismos campos de unidad; puede incluir `ID/Codigo unidad`.
+- `Sectores`: `ID/Codigo unidad` o `Nombre comercial`, y `Sector`/`Nombre sector`.
+- `Productos`: `ID/Codigo unidad` o `Nombre comercial`, `ID/Codigo producto`,
+  `Nombre producto` y `Descripcion` (la descripción puede faltar: queda `DRAFT`).
+- `Imagenes`: `ID/Codigo producto` o `Nombre producto`, y `Drive ID`/`URL`.
+
+La pestaña `Unidades` se procesa independientemente de `Productos`, `Sectores` e
+`Imagenes`: la ausencia o incompletitud de un producto nunca convierte a su unidad
+en inválida. El NIT vacío también es válido.
+
 ## Comandos
 
 Desde el directorio `backend`, con las variables de producción ya inyectadas:
