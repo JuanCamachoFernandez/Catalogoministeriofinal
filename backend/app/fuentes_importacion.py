@@ -116,6 +116,12 @@ def normalize(value):
 
 NORMALIZED_ALIASES = {key: tuple(normalize(v) for v in values) for key, values in ALIASES.items()}
 UNIT_ONLY_FIELDS = set(ALIASES) - {"products", "product_photos"}
+CANONICAL_PARTIAL_ALIASES = {
+    "business_name": tuple(normalize(value) for value in (
+        "nombre comercial", "nombre de la unidad productiva",
+        "nombre del emprendimiento", "nombre de la empresa",
+    )),
+}
 
 
 def sha(value):
@@ -142,7 +148,24 @@ def _field_header(row, name):
         normalized_header = normalize(header)
         if name in UNIT_ONLY_FIELDS and "producto" in normalized_header:
             continue
-        score = max((_header_score(normalized_header, alias) for alias in NORMALIZED_ALIASES[name]), default=0)
+        exact_scores = [1000 + len(alias) for alias in NORMALIZED_ALIASES[name] if normalized_header == alias]
+        if exact_scores:
+            score = max(exact_scores)
+        elif name in CANONICAL_PARTIAL_ALIASES:
+            score = max((
+                len(alias) for alias in CANONICAL_PARTIAL_ALIASES[name]
+                if f" {alias} " in f" {normalized_header} "
+            ), default=0)
+        elif name in {"facebook", "instagram", "tiktok"}:
+            other_networks = {"facebook", "instagram", "tiktok"} - {name}
+            if any(network in normalized_header for network in other_networks):
+                score = 0
+            else:
+                score = max((_header_score(normalized_header, alias)
+                             for alias in NORMALIZED_ALIASES[name]), default=0)
+        else:
+            score = max((_header_score(normalized_header, alias)
+                         for alias in NORMALIZED_ALIASES[name]), default=0)
         if score:
             candidates.append((score, str(header)))
     return max(candidates, default=(0, ""))[1]
@@ -862,6 +885,7 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
     groups, indexes = [], {"nit": {}, "email": {}, "email_phone": {}, "name": {}}
     conflicts, invalid, ambiguous, merged = [], [], [], 0
     warnings = list(corrected_audit["warnings"])
+    field_header_mapping = {"nombre_comercial": Counter(), "tiktok_url": Counter()}
     general_products = {"detected": 0, "valid": 0, "draft": 0, "ambiguous": 0, "discarded": 0}
     image_summary = {
         "general": {"logos_detected": 0, "photos_detected": 0, "assignable": 0, "ambiguous": 0},
@@ -870,6 +894,10 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
     image_summary["corrected"]["logos_detected"] = 0
     for source_row in source_rows:
         (unit, representative_error), (products, unclear, photo_audit) = unit_payload(source_row), row_products(source_row)
+        if source_row["source"] == "GENERAL":
+            for destination in field_header_mapping:
+                source_header = unit.get("_field_headers", {}).get(destination, "")
+                field_header_mapping[destination][source_header or "<NO ENCONTRADO>"] += 1
         for optional_field in unit.get("_optional_invalid", []):
             warnings.append({
                 "reason": f"{optional_field}_invalido_omitido", "severity": "informative",
@@ -1052,6 +1080,10 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                "errors_by_reason": {}, "error_rows": {"general": {}, "corrected": {}},
                "pending_rows": error_rows,
                "pending_by_reason": dict(sorted(pending_by_reason.items())),
+               "field_header_mapping": {
+                   destination: dict(sorted(headers.items()))
+                   for destination, headers in field_header_mapping.items()
+               },
                "unit_classification": {"importable_complete": complete_units,
                                        "importable_incomplete": incomplete_units,
                                        "structural_pending": len(invalid) + len(conflicts)},

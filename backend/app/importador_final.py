@@ -76,6 +76,12 @@ def dry_run_summary_text(summary):
         lines.extend(f"- {reason}: {count}" for reason, count in sorted(pending_reasons.items()))
     else:
         lines.append("- none: 0")
+    lines.extend(("", "FIELD HEADER MAPPING"))
+    for destination, headers in sorted((summary.get("field_header_mapping") or {}).items()):
+        for header, count in sorted(headers.items()):
+            safe_header = re.sub(r"\s+", " ", header).strip()
+            lines.append(f"- campo destino={destination} encabezado fuente="
+                         f"{json.dumps(safe_header, ensure_ascii=False)} filas={count}")
     lines.extend(("", "PENDING ROWS BY SOURCE"))
     for label, key in (("GENERAL", "general"), ("CORREGIDOS", "corrected")):
         lines.append(f"{label}:")

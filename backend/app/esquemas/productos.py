@@ -35,7 +35,7 @@ def _integer_text(value):
 class ProductCreateSchema(Schema):
     exhibitor_id = fields.UUID(load_default=None, allow_none=True)
     category_id = fields.UUID(required=True)
-    nombre = fields.String(required=True, validate=validate.Length(min=1, max=200))
+    nombre = fields.String(required=True, validate=validate.Length(min=1, max=255))
     descripcion = fields.String(required=True, validate=validate.Length(min=1))
     precio = fields.Decimal(load_default=None, allow_none=True, places=2, as_string=True)
     estado = fields.Enum(ProductStatus, by_value=True, load_default=ProductStatus.AVAILABLE)
@@ -57,7 +57,7 @@ class ProductCreateSchema(Schema):
 
 class ProductUpdateSchema(Schema):
     category_id = fields.UUID()
-    nombre = fields.String(validate=validate.Length(min=1, max=200))
+    nombre = fields.String(validate=validate.Length(min=1, max=255))
     descripcion = fields.String(validate=validate.Length(min=1))
     precio = fields.Decimal(allow_none=True, places=2, as_string=True)
     estado = fields.Enum(ProductStatus, by_value=True)
@@ -91,7 +91,7 @@ class WhatsAppSchema(Schema):
 
 
 class ProductiveProductCreateSchema(Schema):
-    nombre_comercial = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=200), _letters_numbers_spaces))
+    nombre_comercial = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces))
     descripcion_tecnica = fields.String(required=True, validate=validate.Length(min=1, max=5000))
     materia_prima = fields.String(required=True, validate=validate.And(validate.Length(min=1, max=2000), _letters_numbers_spaces))
     dimensiones = fields.String(allow_none=True, validate=validate.Length(max=255))
@@ -103,7 +103,7 @@ class ProductiveProductCreateSchema(Schema):
 
 
 class ProductiveProductUpdateSchema(Schema):
-    nombre_comercial = fields.String(validate=validate.And(validate.Length(min=1, max=200), _letters_numbers_spaces))
+    nombre_comercial = fields.String(validate=validate.And(validate.Length(min=1, max=255), _letters_numbers_spaces))
     descripcion_tecnica = fields.String(validate=validate.Length(min=1, max=5000))
     materia_prima = fields.String(validate=validate.And(validate.Length(min=1, max=2000), _letters_numbers_spaces))
     dimensiones = fields.String(allow_none=True, validate=validate.Length(max=255))

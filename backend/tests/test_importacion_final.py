@@ -612,7 +612,7 @@ def test_unit_header_matcher_never_uses_product_question_as_business_name():
     assert plan["pending_units"][0]["reasons"] == [{"reason": "unidad_no_identificable"}]
 
 
-def test_corrected_product_preflight_reports_real_product_sheet_row_and_header():
+def test_corrected_long_product_name_keeps_real_origin_and_fits_expanded_columns():
     long_name = "P" * 205
     corrected = {"title": "corregidos", "worksheets": [
         {"title": "Unidades", "values": [["ID_UP", *HEADERS[:11]], ["UP-01", *valid_row()[:11]]]},
@@ -621,10 +621,12 @@ def test_corrected_product_preflight_reports_real_product_sheet_row_and_header()
         ]},
     ]}
     plan = build_plan(document([]), corrected, "general", "corrected")
-    issues = [issue for issue in preflight_plan(plan) if issue["table"] == "productos"]
-    assert {issue["column"] for issue in issues} == {"nombre", "nombre_comercial"}
-    assert all(issue["worksheet"] == "Productos" and issue["row"] == 2 for issue in issues)
-    assert all(issue["source_header"] == "NOMBRE_PRODUCTO" for issue in issues)
+    product = plan["units"][0]["products"][0]
+    assert product["origin"]["worksheet"] == "Productos"
+    assert product["origin"]["row_number"] == 2
+    assert product["origin"]["field_headers"]["nombre"] == "NOMBRE_PRODUCTO"
+    assert not any(issue["table"] == "productos" for issue in preflight_plan(plan))
+    assert len(bounded_slug(product["name"])) <= 220
 
 
 def test_oversized_optional_tiktok_is_omitted_but_preserved_in_trace():
@@ -647,6 +649,45 @@ def test_bounded_slug_is_deterministic_limited_and_collision_resistant():
     assert first == bounded_slug(first_name)
     assert len(first) <= 220
     assert first != bounded_slug(second_name)
+
+
+def test_logotipo_de_unidad_productiva_never_maps_to_business_name():
+    headers = [
+        "5.Activos Digitales y Contenido Multimedia 5.1. Logotipo de la Unidad Productiva",
+        "Correo", "Telefono", "Nombres representante", "Apellido paterno", "Departamento",
+    ]
+    values = ["logo-drive-value", "unidad@example.com", "71234567", "Ana", "Perez", "La Paz"]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, values]}]}
+    plan = build_plan(general, document([]), "general", "corrected")
+    assert plan["summary"]["unit_classification"]["structural_pending"] == 1
+    assert plan["pending_units"][0]["reasons"] == [{"reason": "unidad_no_identificable"}]
+    mapping = plan["summary"]["field_header_mapping"]["nombre_comercial"]
+    assert mapping == {"<NO ENCONTRADO>": 1}
+
+
+def test_canonical_business_name_question_is_selected_explicitly():
+    headers = [
+        "1.1 Nombre comercial de la Unidad Productiva",
+        "5.1 Logotipo de la Unidad Productiva",
+        *HEADERS[1:11],
+    ]
+    values = ["Unidad Canonica", "logo-drive-value", *valid_row()[1:11]]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, values]}]}
+    plan = build_plan(general, document([]), "general", "corrected")
+    assert plan["units"][0]["unit"]["business_name"] == "Unidad Canonica"
+    mapping = plan["summary"]["field_header_mapping"]["nombre_comercial"]
+    assert mapping == {"1.1 Nombre comercial de la Unidad Productiva": 1}
+
+
+def test_combined_social_network_header_is_not_used_as_tiktok():
+    headers = HEADERS[:11] + ["Facebook, Instagram y TikTok", "Enlace de TikTok"]
+    values = valid_row()[:11] + ["texto combinado", "https://www.tiktok.com/@cuenta"]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, values]}]}
+    plan = build_plan(general, document([]), "general", "corrected")
+    assert plan["units"][0]["unit"]["tiktok"] == "https://www.tiktok.com/@cuenta"
+    mapping = plan["summary"]["field_header_mapping"]["tiktok_url"]
+    assert mapping == {"Enlace de TikTok": 1}
+    assert "tiktok_url_invalido_omitido" not in plan["summary"]["warnings_by_reason"]
 
 
 def test_accepted_ambiguities_do_not_block_and_original_row_is_preserved(app):

@@ -31,14 +31,14 @@ class Product(TimestampMixin, db.Model):
     category_id = db.Column(
         "categoria_id", db.Uuid, db.ForeignKey("categorias.id"), nullable=True, index=True
     )
-    nombre = db.Column(db.String(200), nullable=False)
+    nombre = db.Column(db.String(255), nullable=False)
     slug = db.Column("identificador_url", db.String(220), nullable=False)
     descripcion = db.Column(db.Text, nullable=False)
     materiales_o_ingredientes = db.Column(db.Text)
     lugar_origen = db.Column(db.String(150))
     presentacion = db.Column(db.String(255))
     informacion_adicional = db.Column(db.Text)
-    nombre_comercial = db.Column(db.String(200))
+    nombre_comercial = db.Column(db.String(255))
     descripcion_tecnica = db.Column(db.Text)
     materia_prima = db.Column(db.Text)
     dimensiones = db.Column(db.String(255))
