@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from urllib.request import Request as UrlRequest, urlopen
+from urllib.parse import urlsplit, unquote, parse_qs
 
 import cloudinary
 import cloudinary.api
@@ -242,6 +243,54 @@ def crear_dump(ruta):
     if not POSTGRES_URI:
         raise RuntimeError("Falta POSTGRES_URI")
 
+    uri = normalizar_postgres_uri(POSTGRES_URI)
+
+    parsed = urlsplit(uri)
+
+    if parsed.scheme not in ("postgresql", "postgres"):
+        raise RuntimeError(
+            "POSTGRES_URI no tiene un formato PostgreSQL valido"
+        )
+
+    if not parsed.hostname:
+        raise RuntimeError(
+            "POSTGRES_URI no contiene HOST"
+        )
+
+    if not parsed.username:
+        raise RuntimeError(
+            "POSTGRES_URI no contiene USERNAME"
+        )
+
+    database = parsed.path.lstrip("/")
+
+    if not database:
+        raise RuntimeError(
+            "POSTGRES_URI no contiene DATABASE"
+        )
+
+    pg_env = os.environ.copy()
+
+    pg_env["PGHOST"] = parsed.hostname
+    pg_env["PGPORT"] = str(parsed.port or 5432)
+    pg_env["PGUSER"] = unquote(parsed.username)
+    pg_env["PGDATABASE"] = unquote(database)
+
+    if parsed.password:
+        pg_env["PGPASSWORD"] = unquote(
+            parsed.password
+        )
+
+    query = parse_qs(parsed.query)
+
+    if query.get("sslmode"):
+        pg_env["PGSSLMODE"] = query["sslmode"][0]
+
+    log(
+        "DB",
+        "Conexion PostgreSQL preparada mediante variables PG*"
+    )
+
     command = [
         "pg_dump",
         "--format=custom",
@@ -250,20 +299,35 @@ def crear_dump(ruta):
         "--file",
         ruta,
     ]
-    pg_env = os.environ.copy()
-    # PGDATABASE evita exponer la URI en argv y en CalledProcessError.
-    pg_env["PGDATABASE"] = POSTGRES_URI
-    subprocess.run(command, check=True, env=pg_env)
-
-    if not os.path.exists(ruta) or os.path.getsize(ruta) == 0:
-        raise RuntimeError("El dump PostgreSQL se creo vacio")
 
     subprocess.run(
-        ["pg_restore", "--list", ruta],
+        command,
+        check=True,
+        env=pg_env,
+    )
+
+    if (
+        not os.path.exists(ruta)
+        or os.path.getsize(ruta) == 0
+    ):
+        raise RuntimeError(
+            "El dump PostgreSQL se creo vacio"
+        )
+
+    subprocess.run(
+        [
+            "pg_restore",
+            "--list",
+            ruta,
+        ],
         check=True,
         stdout=subprocess.DEVNULL,
     )
-    log("DB", "Backup PostgreSQL OK")
+
+    log(
+        "DB",
+        "Backup PostgreSQL OK"
+    )
 
 
 def subir_archivo(
