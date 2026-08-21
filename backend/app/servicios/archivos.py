@@ -20,6 +20,16 @@ IMAGE_VARIANTS = {
     "profile_photo": {"max_size": None},
     "unit_logo": {"max_size": (1000, 1000)},
 }
+
+
+class MediaStageError(ValueError):
+    """Image failure tagged with a safe, source-independent processing stage."""
+
+    def __init__(self, stage, message, *, origin_type=None, technical_reason=None):
+        super().__init__(message)
+        self.stage = stage
+        self.origin_type = origin_type or "unknown"
+        self.technical_reason = technical_reason or message
 FOLDER_IMAGE_VARIANTS = {
     "ferias": "fair_cover",
     "logos": "unit_logo",
@@ -85,33 +95,38 @@ def _optimize_image(file, image_variant):
     if not file or not file.filename:
         return None
     if "." not in file.filename:
-        raise ValueError("Formato de imagen no permitido")
+        raise MediaStageError("image_validate", "Formato de imagen no permitido")
 
     extension = file.filename.rsplit(".", 1)[-1].lower()
     if extension not in ALLOWED_EXTENSIONS:
-        raise ValueError("Formato de imagen no permitido")
+        raise MediaStageError("image_validate", "Formato de imagen no permitido")
     if _file_size(file.stream) > MAX_IMAGE_BYTES:
-        raise ValueError("La imagen no puede superar los 10 MB")
+        raise MediaStageError("image_validate", "La imagen supera el tamano maximo permitido")
 
     try:
         file.stream.seek(0)
         image = Image.open(file.stream)
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError("El archivo no es una imagen valida") from exc
+        raise MediaStageError("image_open", "El archivo no es una imagen valida",
+                              origin_type=type(exc).__name__, technical_reason=str(exc)) from exc
 
     try:
         optimized = ImageOps.exif_transpose(image)
     except OSError as exc:
-        raise ValueError("El archivo no es una imagen valida") from exc
+        raise MediaStageError("image_orientation", "No fue posible aplicar la orientacion EXIF",
+                              origin_type=type(exc).__name__, technical_reason=str(exc)) from exc
 
     max_size = IMAGE_VARIANTS[image_variant]["max_size"]
     if max_size:
         optimized.thumbnail(max_size, Image.Resampling.LANCZOS)
-    optimized = _normalize_for_webp(optimized)
-
-    output = BytesIO()
-    optimized.save(output, format="WEBP", quality=WEBP_QUALITY, method=6)
+    try:
+        optimized = _normalize_for_webp(optimized)
+        output = BytesIO()
+        optimized.save(output, format="WEBP", quality=WEBP_QUALITY, method=6)
+    except Exception as exc:
+        raise MediaStageError("image_convert", "No fue posible convertir la imagen a WEBP",
+                              origin_type=type(exc).__name__, technical_reason=str(exc)) from exc
     output.seek(0)
 
     # ProductImage.filename is VARCHAR(255); reserve five characters for ".webp".
@@ -120,6 +135,32 @@ def _optimize_image(file, image_variant):
         "filename": f"{filename_base}.webp",
         "stream": output,
     }
+
+
+def prepare_image(file, folder, image_variant=None):
+    """Run the exact production validation and WEBP normalization without uploading."""
+    variant = _resolve_image_variant(folder, image_variant)
+    return _optimize_image(file, variant)
+
+
+def upload_prepared_to_cloudinary(prepared, folder):
+    """Upload an already normalized image, avoiding a second Pillow pass."""
+    identifier = uuid.uuid4().hex
+    uploader = _cloudinary_uploader()
+    if uploader is None:
+        raise MediaStageError("cloudinary_upload", "Cloudinary no esta configurado")
+    try:
+        result = uploader.upload(
+            prepared["stream"], folder=cloudinary_folder(folder), public_id=identifier,
+            resource_type="image", overwrite=False, format="webp",
+        )
+        return {
+            "url": result["secure_url"], "public_id": result["public_id"],
+            "filename": prepared["filename"],
+        }
+    except Exception as exc:
+        raise MediaStageError("cloudinary_upload", "No fue posible subir la imagen",
+                              origin_type=type(exc).__name__, technical_reason=str(exc)) from exc
 
 
 def cloudinary_folder(folder):
@@ -189,8 +230,6 @@ def upload_to_cloudinary(file, folder, image_variant=None):
         return None
 
     filename = optimized["filename"]
-    identifier = uuid.uuid4().hex
-
     uploader = _cloudinary_uploader()
     if uploader is None:
         local_url = save_upload(
@@ -205,23 +244,7 @@ def upload_to_cloudinary(file, folder, image_variant=None):
             "filename": filename,
         }
 
-    try:
-        result = uploader.upload(
-            optimized["stream"],
-            folder=cloudinary_folder(folder),
-            public_id=identifier,
-            resource_type="image",
-            overwrite=False,
-            format="webp",
-        )
-    except Exception as exc:
-        raise ValueError("No fue posible subir la imagen") from exc
-
-    return {
-        "url": result["secure_url"],
-        "public_id": result["public_id"],
-        "filename": filename,
-    }
+    return upload_prepared_to_cloudinary(optimized, folder)
 
 
 def delete_cloudinary_upload(public_id):

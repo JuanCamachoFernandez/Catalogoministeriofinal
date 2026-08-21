@@ -22,7 +22,8 @@ from .modelos import (
     ProductStatus, ProductiveSector, ProductiveUnit, ProductiveUnitStatus,
     RegistrationRequest, RegistrationStatus, Role, SectorStatus, UnitSector, User, UserStatus,
 )
-from .servicios import delete_cloudinary_upload, upload_to_cloudinary
+from .servicios import delete_cloudinary_upload
+from .servicios.archivos import MediaStageError, prepare_image, upload_prepared_to_cloudinary
 from .utilidades import bounded_slug, slugify
 
 TOKEN_DEFAULT = "/secrets/google-import-token.json"
@@ -42,6 +43,64 @@ SQLSTATE_REASONS = {
     "23503": "foreign key violation",
     "23505": "unique constraint violation",
 }
+
+PRIVATE_VALUE_RE = re.compile(
+    r"https?://\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?i:token|password|secret|api[_ -]?key)\s*[=:]\s*\S+"
+)
+
+
+class RuntimeImportError(ValueError):
+    def __init__(self, stage, context, asset_type, asset_index, origin_type, technical_reason):
+        super().__init__(technical_reason)
+        self.stage = stage
+        self.context = context
+        self.asset_type = asset_type
+        self.asset_index = asset_index
+        self.origin_type = origin_type
+
+
+def _sanitize_technical_message(value):
+    clean = PRIVATE_VALUE_RE.sub("[REDACTED]", str(value or "operation failed"))
+    clean = re.sub(r"[\r\n\t]+", " ", clean).strip()
+    return clean[:300] or "operation failed"
+
+
+def runtime_error_payload(exc):
+    context = getattr(exc, "context", None) or getattr(exc, "_final_import_context", {})
+    return {
+        "stage": getattr(exc, "stage", None) or getattr(exc, "_final_import_stage", "unknown"),
+        "exception_type": type(exc).__name__,
+        "source": context.get("source", "UNKNOWN"),
+        "worksheet": context.get("worksheet", "UNKNOWN"),
+        "row": context.get("row"),
+        "asset_type": getattr(exc, "asset_type", None) or context.get("asset_type", "none"),
+        "asset_index": getattr(exc, "asset_index", None) or context.get("asset_index", 0),
+        "origin_exception": getattr(exc, "origin_type", None) or type(exc).__name__,
+        "technical_reason": _sanitize_technical_message(exc),
+    }
+
+
+def runtime_error_text(exc):
+    item = runtime_error_payload(exc)
+    return "\n".join((
+        "RUNTIME IMPORT ERROR",
+        f"- etapa={item['stage']}", f"- tipo={item['exception_type']}",
+        f"- fuente={item['source']}", f"- hoja={item['worksheet']}",
+        f"- fila={item['row']}", f"- tipo_asset={item['asset_type']}",
+        f"- indice_asset={item['asset_index']}",
+        f"- excepcion_origen={item['origin_exception']}",
+        f"- motivo_tecnico={item['technical_reason']}",
+    ))
+
+
+def _log_runtime_exception(exc, level="error"):
+    """Log a traceback whose rendered exception contains no source value or private URL."""
+    payload = runtime_error_payload(exc)
+    safe_exc = ValueError(payload["technical_reason"])
+    logger = current_app.logger
+    log = logger.exception if level == "error" else logger.warning
+    log("final_import_runtime_error=%s", json.dumps(payload, sort_keys=True),
+        exc_info=(ValueError, safe_exc, exc.__traceback__))
 
 
 def write_json(path, payload):
@@ -406,6 +465,7 @@ def _flush_with_context(model, context):
         db.session.flush()
     except Exception as exc:
         exc._final_import_context = {**context, "model": model.__name__, "table": model.__tablename__}
+        exc._final_import_stage = "database_flush"
         raise
 
 
@@ -454,6 +514,131 @@ def compensate_cloudinary(uploaded):
     return {"attempted": len(uploaded), "deleted": deleted, "failed": failed}
 
 
+def _asset_context(origin, asset_type, asset_index):
+    context = _source_context(origin)
+    context.update({"asset_type": asset_type, "asset_index": asset_index})
+    return context
+
+
+def _prepare_asset(google, drive_file_id, folder, variant, context):
+    try:
+        filename, stream = google.download(drive_file_id)
+    except Exception as exc:
+        raise RuntimeImportError(
+            "drive_download", context, context["asset_type"], context["asset_index"],
+            type(exc).__name__, _sanitize_technical_message(exc),
+        ) from None
+    try:
+        return prepare_image(FileStorage(stream=stream, filename=filename), folder, variant)
+    except MediaStageError as exc:
+        raise RuntimeImportError(
+            exc.stage, context, context["asset_type"], context["asset_index"],
+            exc.origin_type, _sanitize_technical_message(exc.technical_reason),
+        ) from None
+    except Exception as exc:
+        raise RuntimeImportError(
+            "image_convert", context, context["asset_type"], context["asset_index"],
+            type(exc).__name__, _sanitize_technical_message(exc),
+        ) from None
+
+
+def _upload_asset(prepared, folder, context):
+    try:
+        return upload_prepared_to_cloudinary(prepared, folder)
+    except MediaStageError as exc:
+        raise RuntimeImportError(
+            exc.stage, context, context["asset_type"], context["asset_index"],
+            exc.origin_type, _sanitize_technical_message(exc.technical_reason),
+        ) from None
+    except Exception as exc:
+        raise RuntimeImportError(
+            "cloudinary_upload", context, context["asset_type"], context["asset_index"],
+            type(exc).__name__, _sanitize_technical_message(exc),
+        ) from None
+
+
+def _plan_assets(plan, include_all=False):
+    if include_all and plan.get("media_assets") is not None:
+        for item in plan["media_assets"]:
+            yield {
+                "drive_file_id": item["drive_file_id"],
+                "folder": "logos" if item["asset_type"] == "logo" else "productos",
+                "variant": "unit_logo" if item["asset_type"] == "logo" else "product",
+                "context": _asset_context(item, item["asset_type"], item["asset_index"]),
+            }
+        return
+    for group in plan.get("units", []):
+        logo_id = group.get("unit", {}).get("logo_drive_id")
+        if logo_id:
+            yield {
+                "drive_file_id": logo_id, "folder": "logos", "variant": "unit_logo",
+                "context": _asset_context(group["rows"][0], "logo", 1),
+            }
+        for product in group.get("products", []):
+            origins = product.get("image_origins") or []
+            for index, drive_file_id in enumerate(product.get("images", [])[:3], 1):
+                origin = origins[index - 1] if index <= len(origins) else product["origin"]
+                yield {
+                    "drive_file_id": drive_file_id, "folder": "productos", "variant": "product",
+                    "context": _asset_context(origin, "product_image", index),
+                }
+
+
+def validate_plan_media(plan, google):
+    summary = {"logos_reviewed": 0, "product_images_reviewed": 0, "valid": 0,
+               "invalid": 0, "errors": []}
+    for asset in _plan_assets(plan, include_all=True):
+        if asset["context"]["asset_type"] == "logo":
+            summary["logos_reviewed"] += 1
+        else:
+            summary["product_images_reviewed"] += 1
+        try:
+            _prepare_asset(google, asset["drive_file_id"], asset["folder"],
+                           asset["variant"], asset["context"])
+            summary["valid"] += 1
+        except RuntimeImportError as exc:
+            summary["invalid"] += 1
+            summary["errors"].append(runtime_error_payload(exc))
+            _log_runtime_exception(exc, level="warning")
+    return summary
+
+
+def media_validation_text(summary):
+    lines = [
+        "MEDIA VALIDATION",
+        f"- logos revisados: {summary['logos_reviewed']}",
+        f"- imagenes producto revisadas: {summary['product_images_reviewed']}",
+        f"- validas: {summary['valid']}", f"- invalidas: {summary['invalid']}",
+        "", "MEDIA ERRORS",
+    ]
+    if not summary["errors"]:
+        lines.append("- none")
+    for item in summary["errors"]:
+        lines.append(
+            f"- fuente={item['source']} hoja={item['worksheet']} fila={item['row']} "
+            f"tipo_asset={item['asset_type']} indice_asset={item['asset_index']} "
+            f"etapa={item['stage']} excepcion_origen={item['origin_exception']} "
+            f"motivo={item['technical_reason']}"
+        )
+    return "\n".join(lines)
+
+
+def _mark_media_pending(row_models, context, exc):
+    key = (context["source"], context["worksheet"], context["row"])
+    source_row = row_models.get(key)
+    if source_row is None:
+        return
+    item = runtime_error_payload(exc)
+    warning = {
+        "reason": "media_error", "severity": "informative", "stage": item["stage"],
+        "asset_type": item["asset_type"], "asset_index": item["asset_index"],
+        "origin_exception": item["origin_exception"],
+    }
+    source_row.warnings = [*(source_row.warnings or []), warning]
+    source_row.pending_reasons = [*(source_row.pending_reasons or []), "media_error"]
+    source_row.is_pending = True
+
+
 def persist_trace_rows(run, plan):
     row_models = {}
     trace_rows = plan.get("trace_rows")
@@ -492,6 +677,7 @@ def final_summary_text(summary):
         f"- imágenes de productos cargadas: {summary['product_images_uploaded']}",
         f"- registros ambiguos preservados: {summary['ambiguous_records_preserved']}",
         f"- registros pendientes preservados: {summary['pending_records_preserved']}",
+        f"- medios pendientes/error: {summary.get('media_errors', 0)}",
         f"- errores: {summary['errors']}",
         f"- correos enviados: {summary['emails_sent']}",
     ))
@@ -510,10 +696,13 @@ def trace_entities(group, unit, product_entities, row_models):
         db.session.add(FinalImportEntityTrace(source_row_id=source_row.id, entity_type="PRODUCT",
                                              entity_id=product.id, entity_key=normalize(product.nombre)))
         _flush_with_context(FinalImportEntityTrace, _source_context(origin))
-        for image, drive_file_id in images:
-            db.session.add(FinalImportEntityTrace(source_row_id=source_row.id, entity_type="PRODUCT_IMAGE",
+        for image, drive_file_id, image_origin in images:
+            image_source_row = row_models.get((
+                image_origin["source"], image_origin["worksheet"], image_origin["row_number"]
+            ), source_row)
+            db.session.add(FinalImportEntityTrace(source_row_id=image_source_row.id, entity_type="PRODUCT_IMAGE",
                 entity_id=image.id, entity_key=str(image.id), drive_file_id=drive_file_id))
-            _flush_with_context(FinalImportEntityTrace, _source_context(origin))
+            _flush_with_context(FinalImportEntityTrace, _source_context(image_origin))
 
 
 def import_unit(group, google, row_models, uploaded, counters):
@@ -522,15 +711,21 @@ def import_unit(group, google, row_models, uploaded, counters):
     if not unit:
             logo = None
             if payload.get("logo_drive_id"):
-                filename, stream = google.download(payload["logo_drive_id"])
-                logo = upload_to_cloudinary(FileStorage(stream=stream, filename=filename), "logos", "unit_logo")
-                if logo and logo.get("public_id"): uploaded.append(logo["public_id"])
-                context = _source_context(group["rows"][0])
-                unit_headers = payload.get("_field_headers", {})
-                _raise_runtime_validation(
-                    _validate_model_values(RegistrationRequest, _unit_values(payload, logo), context, unit_headers)
-                    + _validate_model_values(ProductiveUnit, _unit_values(payload, logo), context, unit_headers)
-                )
+                context = _asset_context(group["rows"][0], "logo", 1)
+                try:
+                    prepared = _prepare_asset(google, payload["logo_drive_id"], "logos", "unit_logo", context)
+                    logo = _upload_asset(prepared, "logos", context)
+                    if logo and logo.get("public_id"):
+                        uploaded.append(logo["public_id"])
+                    unit_headers = payload.get("_field_headers", {})
+                    _raise_runtime_validation(
+                        _validate_model_values(RegistrationRequest, _unit_values(payload, logo), context, unit_headers)
+                        + _validate_model_values(ProductiveUnit, _unit_values(payload, logo), context, unit_headers)
+                    )
+                except RuntimeImportError as exc:
+                    _log_runtime_exception(exc, level="warning")
+                    _mark_media_pending(row_models, context, exc)
+                    counters["media_errors"] += 1
             user = User(username=unique_username(payload["email"]), email=payload["email"], role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
                 first_name=payload["first_names"], last_name=payload["paternal_name"], apellido_paterno=payload["paternal_name"],
                 apellido_materno=payload["maternal_name"], phone=_unit_values(payload)["telefono_whatsapp"] or None,
@@ -570,23 +765,33 @@ def import_unit(group, google, row_models, uploaded, counters):
             if not complete:
                 counters["products_draft"] += 1
             images = []
+            origins = plan_product.get("image_origins") or []
             for order, drive_file_id in enumerate(plan_product.get("images", [])[:3]):
-                filename, stream = google.download(drive_file_id)
-                result = upload_to_cloudinary(FileStorage(stream=stream, filename=filename), "productos", "product")
-                if result.get("public_id"): uploaded.append(result["public_id"])
+                asset_origin = origins[order] if order < len(origins) else plan_product["origin"]
+                context = _asset_context(asset_origin, "product_image", order + 1)
+                try:
+                    prepared = _prepare_asset(google, drive_file_id, "productos", "product", context)
+                    result = _upload_asset(prepared, "productos", context)
+                except RuntimeImportError as exc:
+                    _log_runtime_exception(exc, level="warning")
+                    _mark_media_pending(row_models, context, exc)
+                    counters["media_errors"] += 1
+                    continue
+                if result.get("public_id"):
+                    uploaded.append(result["public_id"])
                 image_values = {
                     "filename": result.get("filename"), "url": result.get("url"),
                     "public_id": result.get("public_id"), "alt_text": product.nombre,
                     "is_cover": order == 0, "display_order": order,
                 }
                 _raise_runtime_validation(_validate_model_values(
-                    ProductImage, image_values, _source_context(plan_product["origin"])
+                    ProductImage, image_values, context
                 ))
                 image = ProductImage(product_id=product.id, filename=result["filename"], url=result["url"],
                     public_id=result.get("public_id"), alt_text=product.nombre, is_cover=order == 0, display_order=order)
                 db.session.add(image)
-                _flush_with_context(ProductImage, _source_context(plan_product["origin"]))
-                images.append((image, drive_file_id))
+                _flush_with_context(ProductImage, context)
+                images.append((image, drive_file_id, asset_origin))
                 counters["product_images_uploaded"] += 1
             entities.append((product, plan_product, images)); known.add(key)
     trace_entities(group, unit, entities, row_models)
@@ -634,6 +839,7 @@ def execute_plan(plan, google, source_documents=None):
             "units_created": 0, "users_created": 0, "sectors_associated": 0,
             "products_created": 0, "products_draft": 0, "logos_uploaded": 0,
             "product_images_uploaded": 0,
+            "media_errors": 0,
             "ambiguous_records_preserved": sum(row.is_ambiguous for row in row_models.values()),
             "pending_records_preserved": sum(row.is_pending for row in row_models.values()),
             "units_importable_complete": plan.get("summary", {}).get("unit_classification", {}).get("importable_complete", 0),
@@ -660,8 +866,8 @@ def execute_plan(plan, google, source_documents=None):
         if isinstance(exc, DBAPIError):
             detail = safe_database_error(exc)
         else:
-            detail = f"tipo={type(exc).__name__} motivo=operation failed"
-            current_app.logger.error("final_import_error type=%s", type(exc).__name__)
+            detail = runtime_error_text(exc)
+            _log_runtime_exception(exc)
         raise click.ClickException(
             f"La importacion fue revertida: {detail}; "
             f"cloudinary_compensation={cleanup['deleted']}/{cleanup['attempted']} failed={cleanup['failed']}"
@@ -677,25 +883,38 @@ def register_import_command(app):
     @click.option("--sheet-corregidos")
     @click.option("--dry-run", is_flag=True)
     @click.option("--commit", "do_commit", is_flag=True)
+    @click.option("--validate-media", is_flag=True)
     @click.option("--plan", "plan_path", type=click.Path(dir_okay=False))
     @click.option("--expect-plan-sha256")
     @click.option("--confirm")
     @click.option("--report", "report_path", type=click.Path(dir_okay=False))
     @click.option("--token", "token_path", default=lambda: os.getenv("GOOGLE_IMPORT_TOKEN_PATH", TOKEN_DEFAULT), show_default=True)
     @with_appcontext
-    def importar_datos_finales(sheet_general, sheet_corregidos, dry_run, do_commit, plan_path,
+    def importar_datos_finales(sheet_general, sheet_corregidos, dry_run, do_commit, validate_media,
+                               plan_path,
                                expect_plan_sha256, confirm, report_path, token_path):
-        if dry_run == do_commit: raise click.ClickException("Seleccione exactamente uno: --dry-run o --commit")
-        if dry_run:
+        if sum(bool(mode) for mode in (dry_run, do_commit, validate_media)) != 1:
+            raise click.ClickException(
+                "Seleccione exactamente uno: --dry-run, --validate-media o --commit"
+            )
+        if dry_run or validate_media:
             google = GoogleSource(token_path)
             if not sheet_general or not sheet_corregidos:
-                raise click.ClickException("--sheet-general y --sheet-corregidos son obligatorios en dry-run")
+                raise click.ClickException(
+                    "--sheet-general y --sheet-corregidos son obligatorios"
+                )
             plan = build_plan(google.spreadsheet(sheet_general), google.spreadsheet(sheet_corregidos), sheet_general, sheet_corregidos)
-            if report_path:
-                write_json(report_path, plan)
-            click.echo(dry_run_summary_text(plan["summary"]))
-            click.echo(preflight_summary_text(preflight_plan(plan)))
-            click.echo(f"PLAN_SHA256: {plan['plan_hash']}")
+            if validate_media:
+                validation = validate_plan_media(plan, google)
+                if report_path:
+                    write_json(report_path, validation)
+                click.echo(media_validation_text(validation))
+            else:
+                if report_path:
+                    write_json(report_path, plan)
+                click.echo(dry_run_summary_text(plan["summary"]))
+                click.echo(preflight_summary_text(preflight_plan(plan)))
+                click.echo(f"PLAN_SHA256: {plan['plan_hash']}")
         else:
             if confirm != "IMPORT-FINAL":
                 raise click.ClickException("--confirm IMPORT-FINAL es obligatorio con --commit")

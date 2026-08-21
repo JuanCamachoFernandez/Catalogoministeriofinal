@@ -406,6 +406,7 @@ def _empty_corrected_audit():
         "images": {"rows_read": 0, "drive_ids_detected": 0, "assigned": 0,
                    "without_product": 0, "ambiguous": 0},
         "sectors": {"rows_read": 0, "associated": 0, "without_unit": 0},
+        "media_assets": [],
         "warnings": [],
     }
 
@@ -473,6 +474,7 @@ def _corrected_rows(document, sheet_id):
         if sector_names:
             enriched["Sectores"] = "; ".join(name for name in sector_names if name)
         product_origins = {}
+        product_image_origins = {}
         for product_number, (product_row_number, product_row) in enumerate(related_products[:MAX_PRODUCTS], 1):
             enriched[f"Producto {product_number}"] = _product_name(product_row)
             enriched[f"Producto {product_number} descripcion"] = _any_field(product_row, PRODUCT_DESCRIPTION_NAMES)
@@ -508,17 +510,25 @@ def _corrected_rows(document, sheet_id):
                     "certificaciones": _any_field_match(product_row, PRODUCT_CERTIFICATION_NAMES)[0],
                 },
             }
-            related_images = [row for _row_number, row in images
+            related_images = [(image_row_number, row) for image_row_number, row in images
                               if len(_image_product_matches(row, product_rows)) == 1
                               and _image_product_matches(row, product_rows)[0][0] == product_row_number]
-            for image_number, image_row in enumerate(related_images[:MAX_IMAGES], 1):
+            image_origins = []
+            for image_number, (image_row_number, image_row) in enumerate(related_images[:MAX_IMAGES], 1):
                 enriched[f"Producto {product_number} imagen {image_number}"] = _any_field(
                     image_row, IMAGE_VALUE_NAMES
                 )
+                image_origins.append({
+                    "source": "CORRECTED", "sheet_id": sheet_id,
+                    "worksheet": image_sheet["title"], "row_number": image_row_number,
+                    "row_hash": sha(image_row),
+                })
+            product_image_origins[product_number] = image_origins
         result.append({"source": "CORRECTED", "sheet_id": sheet_id, "worksheet": units_sheet["title"],
                        "row_number": number, "row_hash": sha(enriched), "data": enriched,
                        "header_found": unit_metadata["header_found"],
-                       "product_origins": product_origins})
+                       "product_origins": product_origins,
+                       "product_image_origins": product_image_origins})
     diagnostics = [
         {"worksheet": units_sheet["title"], **unit_metadata},
         {"worksheet": (sector_sheet or {}).get("title", "Sectores"), **sector_metadata,
@@ -632,6 +642,11 @@ def _corrected_audit(document):
                                           "worksheet": images_sheet["title"], "row": number})
             continue
         audit["images"]["drive_ids_detected"] += 1
+        audit["media_assets"].append({
+            "drive_file_id": image_id, "source": "CORRECTED",
+            "worksheet": images_sheet["title"], "row_number": number,
+            "asset_type": "product_image", "asset_index": 1,
+        })
         matches = [(product_number, row) for product_number, row in _image_product_matches(image_row, product_rows)
                    if _product_name(row)]
         if not matches:
@@ -695,12 +710,15 @@ def row_products(source_row):
             "slug": normalized_headers.get(name_key, ""),
         }
         origin = source_row.get("product_origins", {}).get(number, default_origin)
+        image_origins = source_row.get("product_image_origins", {}).get(number, [])
+        if not image_origins:
+            image_origins = [default_origin for _image in images]
         products.append({"name": name, "description": description, "price": price,
                          "presentation": presentation, "stock": stock, "material": material,
                          "dimensions": dimensions, "colors": colors, "certifications": certifications,
                          "category": category, "desired_status": desired_status, "images": images,
                          "invalid_price": invalid_price, "image_values_seen": image_values_seen,
-                         "invalid_images": invalid_images,
+                         "invalid_images": invalid_images, "image_origins": image_origins,
                          "origin": origin})
     raw = field(row, "products")
     unclear = None
@@ -718,20 +736,24 @@ def row_products(source_row):
         products = [{"name": name, "description": "", "price": None, "presentation": "", "stock": "",
                      "material": "", "dimensions": "", "colors": "", "certifications": "",
                      "category": "", "desired_status": "", "images": [], "invalid_price": False,
-                     "image_values_seen": 0, "invalid_images": 0,
+                     "image_values_seen": 0, "invalid_images": 0, "image_origins": [],
                      "origin": raw_origin}
                     for name in clear[:MAX_PRODUCTS]]
+    media_origin = {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}
     general_photo_ids = drive_ids(field(row, "product_photos"))
     photo_audit = {"detected": len(general_photo_ids), "assigned": 0, "ambiguous": 0}
     if general_photo_ids:
         if len(products) == 1:
             proposed = general_photo_ids[:MAX_IMAGES]
             products[0]["images"].extend(proposed)
+            products[0]["image_origins"].extend([media_origin] * len(proposed))
             photo_audit["assigned"] = len(proposed)
             photo_audit["ambiguous"] = len(general_photo_ids) - len(proposed)
         elif products and len(general_photo_ids) == MAX_IMAGES * len(products):
             for index, product in enumerate(products):
                 product["images"].extend(general_photo_ids[index * MAX_IMAGES:(index + 1) * MAX_IMAGES])
+                assigned = general_photo_ids[index * MAX_IMAGES:(index + 1) * MAX_IMAGES]
+                product["image_origins"].extend([media_origin] * len(assigned))
             photo_audit["assigned"] = len(general_photo_ids)
         else:
             photo_audit["ambiguous"] = len(general_photo_ids)
@@ -891,9 +913,24 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
         "general": {"logos_detected": 0, "photos_detected": 0, "assignable": 0, "ambiguous": 0},
         "corrected": corrected_audit["images"],
     }
+    media_assets = list(corrected_audit["media_assets"])
     image_summary["corrected"]["logos_detected"] = 0
     for source_row in source_rows:
         (unit, representative_error), (products, unclear, photo_audit) = unit_payload(source_row), row_products(source_row)
+        if unit.get("logo_drive_id"):
+            media_assets.append({
+                "drive_file_id": unit["logo_drive_id"], "source": source_row["source"],
+                "worksheet": source_row["worksheet"], "row_number": source_row["row_number"],
+                "asset_type": "logo", "asset_index": 1,
+            })
+        if source_row["source"] == "GENERAL":
+            for asset_index, image_id in enumerate(
+                    drive_ids(field(source_row["data"], "product_photos")), 1):
+                media_assets.append({
+                    "drive_file_id": image_id, "source": "GENERAL",
+                    "worksheet": source_row["worksheet"], "row_number": source_row["row_number"],
+                    "asset_type": "product_image", "asset_index": asset_index,
+                })
         if source_row["source"] == "GENERAL":
             for destination in field_header_mapping:
                 source_header = unit.get("_field_headers", {}).get(destination, "")
@@ -1125,6 +1162,7 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
             "corrected": {"sheet_id": corrected_id, "hash": sha(corrected_document)}}, "units": valid,
             "conflicts": conflicts, "invalid_units": invalid, "pending_units": invalid,
             "ambiguous_products": ambiguous,
+            "media_assets": media_assets,
             "warnings": warnings, "trace_rows": trace_rows,
             "source_diagnostics": {"general": general_diagnostics, "corrected": corrected_diagnostics},
             "summary": summary}

@@ -1,6 +1,7 @@
 from io import BytesIO
 
 import pytest
+from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.exc import DataError
 
@@ -8,13 +9,15 @@ from app.extensiones import db
 from app.esquemas.solicitudes_registro import optional_representative_name_validator
 from app.fuentes_importacion import build_plan, clear_items, plan_sha256, sha
 from app.importador_final import (
-    dry_run_summary_text, execute_plan, preflight_plan, safe_database_error,
+    dry_run_summary_text, execute_plan, media_validation_text, preflight_plan,
+    safe_database_error, validate_plan_media,
 )
 from app.modelos import (
-    FinalImportRun, FinalImportSourceRow, Product, ProductStatus, ProductiveUnit,
+    FinalImportRun, FinalImportSourceRow, Product, ProductImage, ProductStatus, ProductiveUnit,
     RegistrationRequest, User,
 )
 from app.utilidades import bounded_slug
+from app.servicios.archivos import MediaStageError
 
 
 HEADERS = [
@@ -31,6 +34,12 @@ def document(rows):
 def valid_row(name="Unidad Uno", description="Descripción corregida"):
     return [name, "Unidad Uno SRL", "1234567", "unidad@gmail.com", "76543210", "Ana",
             "Pérez", "Mamani", "La Paz", "Calle 1", "Producción local", "Producto A", description]
+
+
+def valid_image_bytes():
+    output = BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(output, format="PNG")
+    return output.getvalue()
 
 
 def test_conservative_parser_never_splits_commas():
@@ -573,7 +582,10 @@ def test_data_error_rolls_back_and_compensates_uploaded_images(app, monkeypatch)
         def download(self, _file_id):
             return "safe.png", BytesIO(b"image bytes")
 
-    monkeypatch.setattr("app.importador_final.upload_to_cloudinary", lambda *_args, **_kwargs: {
+    monkeypatch.setattr("app.importador_final.prepare_image", lambda *_args, **_kwargs: {
+        "filename": "safe.webp", "stream": BytesIO(b"webp bytes"),
+    })
+    monkeypatch.setattr("app.importador_final.upload_prepared_to_cloudinary", lambda *_args, **_kwargs: {
         "filename": "safe.webp", "url": "https://res.cloudinary.com/example/image/upload/safe.webp",
         "public_id": "catalogo/productos/safe",
     })
@@ -736,3 +748,141 @@ def test_import_never_sends_temporary_credentials(app, monkeypatch):
         result = execute_plan(plan, FakeGoogle())
         assert result["summary"]["emails_sent"] == 0
         assert calls == []
+
+
+def plan_with_one_product_image():
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [["ID_UP", *HEADERS[:11]], ["UP-01", *valid_row()[:11]]]},
+        {"title": "Productos", "values": [
+            ["ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO"], ["UP-01", "P-01", "Producto A"],
+        ]},
+        {"title": "Imagenes", "values": [
+            ["ID_PRODUCTO", "DRIVE_ID"], ["P-01", "abcdefghijklmnopqrstuv"],
+        ]},
+    ]}
+    general = document([])
+    return build_plan(general, corrected, "general", "corrected"), general, corrected
+
+
+def test_corrupt_image_is_pending_and_does_not_abort_batch(app):
+    plan, general, corrected = plan_with_one_product_image()
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            return "corrupt.png", BytesIO(b"not an image")
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["media_errors"] == 1
+        assert db.session.scalar(select(func.count()).select_from(ProductImage)) == 0
+        image_row = db.session.scalar(select(FinalImportSourceRow).where(
+            FinalImportSourceRow.worksheet == "Imagenes"
+        ))
+        assert image_row.is_pending is True
+        assert image_row.warnings[0]["stage"] == "image_open"
+
+
+def test_drive_download_failure_does_not_abort_batch(app):
+    plan, general, corrected = plan_with_one_product_image()
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            raise ValueError("operation failed")
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["media_errors"] == 1
+        assert db.session.scalar(select(func.count()).select_from(Product)) == 1
+        assert db.session.scalar(select(func.count()).select_from(ProductImage)) == 0
+
+
+def test_webp_conversion_failure_does_not_abort_batch(app, monkeypatch):
+    plan, general, corrected = plan_with_one_product_image()
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            return "valid.png", BytesIO(valid_image_bytes())
+
+    monkeypatch.setattr("app.importador_final.prepare_image", lambda *_args, **_kwargs: (
+        _ for _ in ()
+    ).throw(MediaStageError("image_convert", "No fue posible convertir la imagen a WEBP",
+                            origin_type="OSError")))
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["media_errors"] == 1
+        assert db.session.scalar(select(func.count()).select_from(ProductImage)) == 0
+
+
+def test_individual_cloudinary_failure_creates_no_false_image_url(app, monkeypatch):
+    plan, general, corrected = plan_with_one_product_image()
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            return "valid.png", BytesIO(valid_image_bytes())
+
+    monkeypatch.setattr("app.importador_final.upload_prepared_to_cloudinary", lambda *_args, **_kwargs: (
+        _ for _ in ()
+    ).throw(MediaStageError("cloudinary_upload", "operation failed", origin_type="ValueError")))
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["media_errors"] == 1
+        assert db.session.scalar(select(func.count()).select_from(ProductImage)) == 0
+
+
+def test_read_only_media_validation_uses_production_normalization_without_upload(app, monkeypatch):
+    plan, _general, _corrected = plan_with_one_product_image()
+    uploads = []
+
+    class FakeGoogle:
+        def download(self, _file_id):
+            return "valid.png", BytesIO(valid_image_bytes())
+
+    monkeypatch.setattr("app.importador_final.upload_prepared_to_cloudinary", uploads.append)
+    with app.app_context():
+        summary = validate_plan_media(plan, FakeGoogle())
+        output = media_validation_text(summary)
+        assert summary == {
+            "logos_reviewed": 0, "product_images_reviewed": 1, "valid": 1,
+            "invalid": 0, "errors": [],
+        }
+        assert "MEDIA VALIDATION" in output and "invalidas: 0" in output
+        assert uploads == []
+        assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
+
+
+def test_media_validation_includes_ambiguous_general_photos(app):
+    headers = HEADERS[:11] + ["Productos", "Fotografias de los productos"]
+    photo_ids = ["abcdefghijklmnopqrstuv", "bcdefghijklmnopqrstuvw"]
+    row = valid_row()[:11] + [
+        "Producto uno, Producto dos",
+        ",".join(f"https://drive.google.com/open?id={item}" for item in photo_ids),
+    ]
+    plan = build_plan(
+        {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, row]}]},
+        document([]), "general", "corrected",
+    )
+
+    class FakeGoogle:
+        def download(self, _file_id):
+            return "valid.png", BytesIO(valid_image_bytes())
+
+    with app.app_context():
+        summary = validate_plan_media(plan, FakeGoogle())
+        assert summary["product_images_reviewed"] == 2
+        assert summary["valid"] == 2
