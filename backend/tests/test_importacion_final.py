@@ -14,6 +14,7 @@ from app.modelos import (
     FinalImportRun, FinalImportSourceRow, Product, ProductStatus, ProductiveUnit,
     RegistrationRequest, User,
 )
+from app.utilidades import bounded_slug
 
 
 HEADERS = [
@@ -597,6 +598,55 @@ def test_data_error_rolls_back_and_compensates_uploaded_images(app, monkeypatch)
         assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
         assert db.session.scalar(select(func.count()).select_from(ProductiveUnit)) == 0
         assert db.session.scalar(select(func.count()).select_from(Product)) == 0
+
+
+def test_unit_header_matcher_never_uses_product_question_as_business_name():
+    headers = [
+        "Describa el nombre comercial del producto y sus principales caracteristicas",
+        "Correo", "Telefono", "Nombres representante", "Apellido paterno", "Departamento",
+    ]
+    values = ["Texto descriptivo largo", "unidad@example.com", "71234567", "Ana", "Perez", "La Paz"]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, values]}]}
+    plan = build_plan(general, document([]), "general", "corrected")
+    assert plan["summary"]["unit_classification"]["structural_pending"] == 1
+    assert plan["pending_units"][0]["reasons"] == [{"reason": "unidad_no_identificable"}]
+
+
+def test_corrected_product_preflight_reports_real_product_sheet_row_and_header():
+    long_name = "P" * 205
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [["ID_UP", *HEADERS[:11]], ["UP-01", *valid_row()[:11]]]},
+        {"title": "Productos", "values": [
+            ["ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO"], ["UP-01", "P-01", long_name],
+        ]},
+    ]}
+    plan = build_plan(document([]), corrected, "general", "corrected")
+    issues = [issue for issue in preflight_plan(plan) if issue["table"] == "productos"]
+    assert {issue["column"] for issue in issues} == {"nombre", "nombre_comercial"}
+    assert all(issue["worksheet"] == "Productos" and issue["row"] == 2 for issue in issues)
+    assert all(issue["source_header"] == "NOMBRE_PRODUCTO" for issue in issues)
+
+
+def test_oversized_optional_tiktok_is_omitted_but_preserved_in_trace():
+    headers = HEADERS[:11] + ["TikTok"]
+    oversized = "https://www.tiktok.com/@cuenta/" + "x" * 530
+    general = {"title": "general", "worksheets": [{
+        "title": "Respuestas", "values": [headers, valid_row()[:11] + [oversized]],
+    }]}
+    plan = build_plan(general, document([]), "general", "corrected")
+    assert plan["units"][0]["unit"]["tiktok"] == ""
+    assert plan["summary"]["warnings_by_reason"]["tiktok_url_invalido_omitido"] == 1
+    assert plan["trace_rows"][0]["data"]["TikTok"] == oversized
+    assert not any(issue["column"] == "tiktok_url" for issue in preflight_plan(plan))
+
+
+def test_bounded_slug_is_deterministic_limited_and_collision_resistant():
+    first_name = "Producto " + "muy largo " * 40 + "A"
+    second_name = "Producto " + "muy largo " * 40 + "B"
+    first = bounded_slug(first_name)
+    assert first == bounded_slug(first_name)
+    assert len(first) <= 220
+    assert first != bounded_slug(second_name)
 
 
 def test_accepted_ambiguities_do_not_block_and_original_row_is_preserved(app):

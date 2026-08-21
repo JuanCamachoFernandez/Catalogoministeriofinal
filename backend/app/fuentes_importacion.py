@@ -115,6 +115,7 @@ def normalize(value):
 
 
 NORMALIZED_ALIASES = {key: tuple(normalize(v) for v in values) for key, values in ALIASES.items()}
+UNIT_ONLY_FIELDS = set(ALIASES) - {"products", "product_photos"}
 
 
 def sha(value):
@@ -139,7 +140,7 @@ def _field_header(row, name):
     candidates = []
     for header in row:
         normalized_header = normalize(header)
-        if name == "business_name" and "producto" in normalized_header:
+        if name in UNIT_ONLY_FIELDS and "producto" in normalized_header:
             continue
         score = max((_header_score(normalized_header, alias) for alias in NORMALIZED_ALIASES[name]), default=0)
         if score:
@@ -308,15 +309,21 @@ def rows(document, source, sheet_id):
 
 
 def _any_field(row, names):
+    _header, value = _any_field_match(row, names)
+    return value
+
+
+def _any_field_match(row, names):
     for name in names:
         candidates = []
         for key, value in row.items():
             score = _header_score(normalize(key), normalize(name))
             if score and str(value or "").strip():
-                candidates.append((score, str(value).strip()))
+                candidates.append((score, str(key), str(value).strip()))
         if candidates:
-            return max(candidates)[1]
-    return ""
+            _score, header, value = max(candidates)
+            return header, value
+    return "", ""
 
 
 def _reference_values(row, names):
@@ -442,6 +449,7 @@ def _corrected_rows(document, sheet_id):
         sector_names = [_any_field(row, ("sector", "sector productivo", "nombre sector")) for row in related_sectors]
         if sector_names:
             enriched["Sectores"] = "; ".join(name for name in sector_names if name)
+        product_origins = {}
         for product_number, (product_row_number, product_row) in enumerate(related_products[:MAX_PRODUCTS], 1):
             enriched[f"Producto {product_number}"] = _product_name(product_row)
             enriched[f"Producto {product_number} descripcion"] = _any_field(product_row, PRODUCT_DESCRIPTION_NAMES)
@@ -454,6 +462,29 @@ def _corrected_rows(document, sheet_id):
             enriched[f"Producto {product_number} certificaciones"] = _any_field(product_row, PRODUCT_CERTIFICATION_NAMES)
             enriched[f"Producto {product_number} categoria"] = _any_field(product_row, PRODUCT_CATEGORY_NAMES)
             enriched[f"Producto {product_number} estado deseado"] = _any_field(product_row, PRODUCT_DESIRED_STATUS_NAMES)
+            product_name_row = {
+                key: value for key, value in product_row.items()
+                if "id" not in normalize(key).split() and "codigo" not in normalize(key).split()
+            }
+            name_header, _name_value = _any_field_match(product_name_row, PRODUCT_NAME_NAMES)
+            product_origins[product_number] = {
+                "source": "CORRECTED", "sheet_id": sheet_id, "worksheet": products_sheet["title"],
+                "row_number": product_row_number, "row_hash": sha(product_row),
+                "field_headers": {
+                    "nombre": name_header, "nombre_comercial": name_header,
+                    "descripcion": _any_field_match(product_row, PRODUCT_DESCRIPTION_NAMES)[0],
+                    "descripcion_tecnica": _any_field_match(product_row, PRODUCT_DESCRIPTION_NAMES)[0],
+                    "presentacion": _any_field_match(product_row, PRODUCT_PRESENTATION_NAMES)[0],
+                    "presentacion_empaque": _any_field_match(product_row, PRODUCT_PRESENTATION_NAMES)[0],
+                    "precio_referencia": _any_field_match(product_row, PRODUCT_PRICE_NAMES)[0],
+                    "precio": _any_field_match(product_row, PRODUCT_PRICE_NAMES)[0],
+                    "capacidad_produccion_stock": _any_field_match(product_row, PRODUCT_STOCK_NAMES)[0],
+                    "materia_prima": _any_field_match(product_row, PRODUCT_MATERIAL_NAMES)[0],
+                    "dimensiones": _any_field_match(product_row, PRODUCT_DIMENSION_NAMES)[0],
+                    "colores_disponibles": _any_field_match(product_row, PRODUCT_COLOR_NAMES)[0],
+                    "certificaciones": _any_field_match(product_row, PRODUCT_CERTIFICATION_NAMES)[0],
+                },
+            }
             related_images = [row for _row_number, row in images
                               if len(_image_product_matches(row, product_rows)) == 1
                               and _image_product_matches(row, product_rows)[0][0] == product_row_number]
@@ -463,7 +494,8 @@ def _corrected_rows(document, sheet_id):
                 )
         result.append({"source": "CORRECTED", "sheet_id": sheet_id, "worksheet": units_sheet["title"],
                        "row_number": number, "row_hash": sha(enriched), "data": enriched,
-                       "header_found": unit_metadata["header_found"]})
+                       "header_found": unit_metadata["header_found"],
+                       "product_origins": product_origins})
     diagnostics = [
         {"worksheet": units_sheet["title"], **unit_metadata},
         {"worksheet": (sector_sheet or {}).get("title", "Sectores"), **sector_metadata,
@@ -602,11 +634,15 @@ def _corrected_audit(document):
 def row_products(source_row):
     row = source_row["data"]
     normalized = {normalize(k): str(v or "").strip() for k, v in row.items()}
+    normalized_headers = {normalize(k): str(k) for k in row}
     products = []
     for number in range(1, MAX_PRODUCTS + 1):
         name = next((normalized.get(k) for k in (f"producto {number}", f"producto {number} nombre", f"nombre producto {number}") if normalized.get(k)), "")
         if not name:
             continue
+        name_key = next((key for key in (
+            f"producto {number}", f"producto {number} nombre", f"nombre producto {number}"
+        ) if normalized.get(key)), "")
         description = next((normalized.get(k) for k in (f"producto {number} descripcion", f"descripcion producto {number}") if normalized.get(k)), "")
         price_raw = next((normalized.get(k) for k in (f"producto {number} precio", f"precio producto {number}") if normalized.get(k)), "")
         price, invalid_price = _price_value(price_raw)
@@ -629,13 +665,20 @@ def row_products(source_row):
                     images.append(drive_id(value))
                 else:
                     invalid_images += 1
+        default_origin = {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}
+        default_origin["field_headers"] = {
+            "nombre": normalized_headers.get(name_key, ""),
+            "nombre_comercial": normalized_headers.get(name_key, ""),
+            "slug": normalized_headers.get(name_key, ""),
+        }
+        origin = source_row.get("product_origins", {}).get(number, default_origin)
         products.append({"name": name, "description": description, "price": price,
                          "presentation": presentation, "stock": stock, "material": material,
                          "dimensions": dimensions, "colors": colors, "certifications": certifications,
                          "category": category, "desired_status": desired_status, "images": images,
                          "invalid_price": invalid_price, "image_values_seen": image_values_seen,
                          "invalid_images": invalid_images,
-                         "origin": {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}})
+                         "origin": origin})
     raw = field(row, "products")
     unclear = None
     if not products and raw:
@@ -646,11 +689,14 @@ def row_products(source_row):
                 clear = []
             else:
                 clear = [raw]
+        raw_header = _field_header(row, "products")
+        raw_origin = {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}
+        raw_origin["field_headers"] = {"nombre": raw_header, "nombre_comercial": raw_header, "slug": raw_header}
         products = [{"name": name, "description": "", "price": None, "presentation": "", "stock": "",
                      "material": "", "dimensions": "", "colors": "", "certifications": "",
                      "category": "", "desired_status": "", "images": [], "invalid_price": False,
                      "image_values_seen": 0, "invalid_images": 0,
-                     "origin": {k: source_row[k] for k in ("source", "sheet_id", "worksheet", "row_number", "row_hash")}}
+                     "origin": raw_origin}
                     for name in clear[:MAX_PRODUCTS]]
     general_photo_ids = drive_ids(field(row, "product_photos"))
     photo_audit = {"detected": len(general_photo_ids), "assigned": 0, "ambiguous": 0}
@@ -692,6 +738,14 @@ def _canonical_phone(value):
     return digits
 
 
+def _optional_text(value, max_length, *, pattern=None):
+    value = str(value or "").strip()
+    if not value:
+        return "", False
+    invalid = len(value) > max_length or (pattern is not None and not re.fullmatch(pattern, value, re.I))
+    return ("" if invalid else value), invalid
+
+
 def unit_payload(source_row):
     row = source_row["data"]
     logo_value = field(row, "logo")
@@ -699,6 +753,14 @@ def unit_payload(source_row):
         row, field(row, "first_names"), field(row, "paternal_name"), field(row, "maternal_name")
     )
     department_raw = field(row, "department")
+    facebook, invalid_facebook = _optional_text(field(row, "facebook"), 500)
+    instagram, invalid_instagram = _optional_text(field(row, "instagram"), 500)
+    tiktok, invalid_tiktok = _optional_text(
+        field(row, "tiktok"), 500,
+        pattern=r"https://(?:www\.)?tiktok\.com/@[^/?#\s]+[^\s]*",
+    )
+    seprec, invalid_seprec = _optional_text(field(row, "seprec"), 100)
+    pro_bolivia, invalid_pro_bolivia = _optional_text(field(row, "pro_bolivia"), 100)
     payload = {
         "business_name": field(row, "business_name"), "legal_name": field(row, "legal_name"),
         "nit": re.sub(r"\D", "", field(row, "nit")), "email": field(row, "email").lower(),
@@ -706,10 +768,29 @@ def unit_payload(source_row):
         "paternal_name": paternal_name, "maternal_name": maternal_name,
         "department": DEPARTMENTS.get(normalize(department_raw), department_raw),
         "address": field(row, "address"), "review": field(row, "review"),
-        "facebook": field(row, "facebook"), "instagram": field(row, "instagram"), "tiktok": field(row, "tiktok"),
-        "seprec": field(row, "seprec"), "pro_bolivia": field(row, "pro_bolivia"),
+        "facebook": facebook, "instagram": instagram, "tiktok": tiktok,
+        "seprec": seprec, "pro_bolivia": pro_bolivia,
         "sectors": sector_items(field(row, "sectors")), "logo_drive_id": drive_id(logo_value),
         "logo_supplied": bool(logo_value),
+        "_optional_invalid": [name for name, invalid in (
+            ("facebook_url", invalid_facebook), ("instagram_url", invalid_instagram),
+            ("tiktok_url", invalid_tiktok), ("registro_seprec", invalid_seprec),
+            ("registro_pro_bolivia", invalid_pro_bolivia),
+        ) if invalid],
+        "_field_headers": {
+            "nombre_comercial": _field_header(row, "business_name"),
+            "razon_social": _field_header(row, "legal_name"),
+            "nit": _field_header(row, "nit"), "correo_electronico": _field_header(row, "email"),
+            "telefono_whatsapp": _field_header(row, "phone"),
+            "nombres_representante": _field_header(row, "first_names") or _field_header(row, "representative_name"),
+            "apellido_paterno_representante": _field_header(row, "paternal_name") or _field_header(row, "representative_name"),
+            "apellido_materno_representante": _field_header(row, "maternal_name") or _field_header(row, "representative_name"),
+            "departamento": _field_header(row, "department"), "direccion_fisica": _field_header(row, "address"),
+            "resena_comercial": _field_header(row, "review"), "facebook_url": _field_header(row, "facebook"),
+            "instagram_url": _field_header(row, "instagram"), "tiktok_url": _field_header(row, "tiktok"),
+            "registro_seprec": _field_header(row, "seprec"),
+            "registro_pro_bolivia": _field_header(row, "pro_bolivia"),
+        },
     }
     return payload, representative_error
 
@@ -789,6 +870,12 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
     image_summary["corrected"]["logos_detected"] = 0
     for source_row in source_rows:
         (unit, representative_error), (products, unclear, photo_audit) = unit_payload(source_row), row_products(source_row)
+        for optional_field in unit.get("_optional_invalid", []):
+            warnings.append({
+                "reason": f"{optional_field}_invalido_omitido", "severity": "informative",
+                "source": source_row["source"], "worksheet": source_row["worksheet"],
+                "row": source_row["row_number"],
+            })
         if unclear:
             issue = {"source": source_row["source"], "row": source_row["row_number"],
                      "worksheet": source_row["worksheet"], "reason": "producto_general_ambiguo"}

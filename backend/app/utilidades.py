@@ -1,8 +1,19 @@
+import hashlib
 import re, unicodedata
 
 def slugify(value):
     value=unicodedata.normalize("NFKD",value).encode("ascii","ignore").decode().lower()
     return re.sub(r"[^a-z0-9]+","-",value).strip("-")
+
+
+def bounded_slug(value, max_length=220):
+    """Build a deterministic bounded slug while keeping collision entropy."""
+    base = slugify(value)
+    if len(base) <= max_length:
+        return base
+    suffix = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:10]
+    prefix = base[:max_length - len(suffix) - 1].rstrip("-")
+    return f"{prefix}-{suffix}"
 def normalize_whatsapp(value):
     digits=re.sub(r"\D","",value or "")
     if len(digits)==8: digits="591"+digits

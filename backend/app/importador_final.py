@@ -23,7 +23,7 @@ from .modelos import (
     RegistrationRequest, RegistrationStatus, Role, SectorStatus, UnitSector, User, UserStatus,
 )
 from .servicios import delete_cloudinary_upload, upload_to_cloudinary
-from .utilidades import slugify
+from .utilidades import bounded_slug, slugify
 
 TOKEN_DEFAULT = "/secrets/google-import-token.json"
 LOCK_KEY = 7420192601
@@ -227,7 +227,7 @@ def _unit_values(payload, logo=None):
 def _product_values(plan_product):
     complete = _product_complete(plan_product)
     return {
-        "nombre": plan_product["name"], "slug": slugify(plan_product["name"]),
+        "nombre": plan_product["name"], "slug": bounded_slug(plan_product["name"]),
         "descripcion": plan_product.get("description") or "",
         "nombre_comercial": plan_product["name"],
         "descripcion_tecnica": plan_product.get("description") or None,
@@ -248,39 +248,41 @@ def _preflight_issue(context, model, column, reason, **details):
             "column": column.name, "reason": reason, **details}
 
 
-def _validate_model_values(model, values, context):
+def _validate_model_values(model, values, context, field_headers=None):
     issues = []
+    field_headers = field_headers or {}
     for attribute in sa_inspect(model).column_attrs:
         key, column = attribute.key, attribute.columns[0]
         if key not in values:
             continue
         value = values[key]
+        issue_context = {**context, "source_header": field_headers.get(key, "")}
         if value is None:
             if not column.nullable and column.default is None and column.server_default is None:
-                issues.append(_preflight_issue(context, model, column, "null_not_allowed"))
+                issues.append(_preflight_issue(issue_context, model, column, "null_not_allowed"))
             continue
         column_type = column.type
         if isinstance(column_type, Enum):
             allowed = set(column_type.enums or [])
             candidate = value.name if hasattr(value, "name") else str(value)
             if candidate not in allowed:
-                issues.append(_preflight_issue(context, model, column, "invalid_enum"))
+                issues.append(_preflight_issue(issue_context, model, column, "invalid_enum"))
         elif isinstance(column_type, String):
             if not isinstance(value, str):
-                issues.append(_preflight_issue(context, model, column, "invalid_string_type"))
+                issues.append(_preflight_issue(issue_context, model, column, "invalid_string_type"))
                 continue
             if "\x00" in value:
-                issues.append(_preflight_issue(context, model, column, "nul_character_not_supported"))
+                issues.append(_preflight_issue(issue_context, model, column, "nul_character_not_supported"))
             if column_type.length is not None and len(value) > column_type.length:
                 issues.append(_preflight_issue(
-                    context, model, column, "value_too_long",
+                    issue_context, model, column, "value_too_long",
                     actual_length=len(value), max_length=column_type.length,
                 ))
         elif isinstance(column_type, Numeric):
             try:
                 number = Decimal(str(value))
             except (InvalidOperation, ValueError):
-                issues.append(_preflight_issue(context, model, column, "invalid_numeric"))
+                issues.append(_preflight_issue(issue_context, model, column, "invalid_numeric"))
                 continue
             integer_digits = max(1, len(str(abs(int(number)))))
             decimal_digits = max(0, -number.as_tuple().exponent)
@@ -288,11 +290,11 @@ def _validate_model_values(model, values, context):
                     and (integer_digits > column_type.precision - column_type.scale
                          or decimal_digits > column_type.scale)):
                 issues.append(_preflight_issue(
-                    context, model, column, "numeric_out_of_range",
+                    issue_context, model, column, "numeric_out_of_range",
                     precision=column_type.precision, scale=column_type.scale,
                 ))
         elif isinstance(column_type, Integer) and (isinstance(value, bool) or not isinstance(value, int)):
-            issues.append(_preflight_issue(context, model, column, "invalid_integer"))
+            issues.append(_preflight_issue(issue_context, model, column, "invalid_integer"))
     return issues
 
 
@@ -330,8 +332,17 @@ def preflight_plan(plan):
     for group in plan.get("units", []):
         context = _source_context(group["rows"][0])
         common = _unit_values(group["unit"])
-        issues.extend(_validate_model_values(RegistrationRequest, common, context))
-        issues.extend(_validate_model_values(ProductiveUnit, common, context))
+        unit_headers = group["unit"].get("_field_headers", {})
+        issues.extend(_validate_model_values(RegistrationRequest, common, context, unit_headers))
+        issues.extend(_validate_model_values(ProductiveUnit, common, context, unit_headers))
+        user_headers = {
+            "email": unit_headers.get("correo_electronico", ""),
+            "first_name": unit_headers.get("nombres_representante", ""),
+            "last_name": unit_headers.get("apellido_paterno_representante", ""),
+            "apellido_paterno": unit_headers.get("apellido_paterno_representante", ""),
+            "apellido_materno": unit_headers.get("apellido_materno_representante", ""),
+            "phone": unit_headers.get("telefono_whatsapp", ""),
+        }
         issues.extend(_validate_model_values(User, {
             "username": (slugify(group["unit"]["email"].split("@")[0])[:60] or "responsable"),
             "email": group["unit"]["email"], "first_name": group["unit"]["first_names"],
@@ -341,11 +352,13 @@ def preflight_plan(plan):
             "phone": common["telefono_whatsapp"] or None,
             "role": Role.PRODUCTIVE_UNIT_RESPONSIBLE, "status": UserStatus.ACTIVE,
             "must_change_password": True,
-        }, context))
+        }, context, user_headers))
         for product in group.get("products", []):
             product_context = _source_context(product["origin"])
             product_values = _product_values(product)
-            issues.extend(_validate_model_values(Product, product_values, product_context))
+            issues.extend(_validate_model_values(
+                Product, product_values, product_context, product["origin"].get("field_headers", {})
+            ))
             issues.extend(_validate_model_values(FinalImportEntityTrace, {
                 "entity_type": "PRODUCT", "entity_key": normalize(product["name"]),
             }, product_context))
@@ -366,9 +379,10 @@ def preflight_summary_text(issues):
         details = ""
         if "actual_length" in issue:
             details = f" length={issue['actual_length']} max={issue['max_length']}"
-        lines.append(
-            f"- {location}: {issue['table']}.{issue['column']} {issue['reason']}{details}"
-        )
+        header = re.sub(r"\s+", " ", issue.get("source_header") or "").strip()
+        header_detail = f" header={json.dumps(header, ensure_ascii=False)}" if header else ""
+        lines.append(f"- {location}: {issue['table']}.{issue['column']} "
+                     f"{issue['reason']}{details}{header_detail}")
     lines.append(f"- errors: {len(issues)}")
     return "\n".join(lines)
 
@@ -506,9 +520,10 @@ def import_unit(group, google, row_models, uploaded, counters):
                 logo = upload_to_cloudinary(FileStorage(stream=stream, filename=filename), "logos", "unit_logo")
                 if logo and logo.get("public_id"): uploaded.append(logo["public_id"])
                 context = _source_context(group["rows"][0])
+                unit_headers = payload.get("_field_headers", {})
                 _raise_runtime_validation(
-                    _validate_model_values(RegistrationRequest, _unit_values(payload, logo), context)
-                    + _validate_model_values(ProductiveUnit, _unit_values(payload, logo), context)
+                    _validate_model_values(RegistrationRequest, _unit_values(payload, logo), context, unit_headers)
+                    + _validate_model_values(ProductiveUnit, _unit_values(payload, logo), context, unit_headers)
                 )
             user = User(username=unique_username(payload["email"]), email=payload["email"], role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
                 first_name=payload["first_names"], last_name=payload["paternal_name"], apellido_paterno=payload["paternal_name"],
