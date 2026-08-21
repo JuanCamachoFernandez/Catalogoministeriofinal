@@ -250,10 +250,10 @@ def crear_dump(ruta):
         "--file",
         ruta,
     ]
-    environment = os.environ.copy()
+    pg_env = os.environ.copy()
     # PGDATABASE evita exponer la URI en argv y en CalledProcessError.
-    environment["PGDATABASE"] = normalizar_postgres_uri(POSTGRES_URI)
-    subprocess.run(command, check=True, env=environment)
+    pg_env["PGDATABASE"] = POSTGRES_URI
+    subprocess.run(command, check=True, env=pg_env)
 
     if not os.path.exists(ruta) or os.path.getsize(ruta) == 0:
         raise RuntimeError("El dump PostgreSQL se creo vacio")
@@ -262,7 +262,6 @@ def crear_dump(ruta):
         ["pg_restore", "--list", ruta],
         check=True,
         stdout=subprocess.DEVNULL,
-        env=environment,
     )
     log("DB", "Backup PostgreSQL OK")
 

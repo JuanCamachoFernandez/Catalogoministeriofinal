@@ -276,3 +276,27 @@ def test_dry_run_does_not_dump_or_write(monkeypatch):
     )
 
     backup.ejecutar_backup(dry_run=True)
+
+
+def test_pg_dump_receives_postgres_uri_only_through_environment(tmp_path, monkeypatch):
+    postgres_uri = "postgresql://user:secret@database.internal:5432/catalogo"
+    dump_path = tmp_path / "catalogo.dump"
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[0] == "pg_dump":
+            dump_path.write_bytes(b"valid-dump")
+
+    monkeypatch.setattr(backup, "POSTGRES_URI", postgres_uri)
+    monkeypatch.setattr(backup.subprocess, "run", fake_run)
+
+    backup.crear_dump(str(dump_path))
+
+    dump_command, dump_options = calls[0]
+    restore_command, restore_options = calls[1]
+    assert postgres_uri not in dump_command
+    assert dump_options["env"] is not backup.os.environ
+    assert dump_options["env"]["PGDATABASE"] == postgres_uri
+    assert restore_command == ["pg_restore", "--list", str(dump_path)]
+    assert "env" not in restore_options
