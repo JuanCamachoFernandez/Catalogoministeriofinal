@@ -30,7 +30,7 @@ export const camposProducto: Array<{
     hint: "Ingrese el nombre con el que ofrece este producto.",
     placeholder: "Ej.: Miel Andina 454gr",
     required: true,
-    maxLength: 200,
+    maxLength: 255,
   },
   {
     key: "materia_prima",
