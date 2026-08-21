@@ -3,9 +3,12 @@ from sqlalchemy import func, select
 
 from app.extensiones import db
 from app.esquemas.solicitudes_registro import optional_representative_name_validator
-from app.fuentes_importacion import build_plan, clear_items, sha
+from app.fuentes_importacion import build_plan, clear_items, plan_sha256, sha
 from app.importador_final import dry_run_summary_text, execute_plan
-from app.modelos import FinalImportRun, Product, ProductStatus, ProductiveUnit, RegistrationRequest, User
+from app.modelos import (
+    FinalImportRun, FinalImportSourceRow, Product, ProductStatus, ProductiveUnit,
+    RegistrationRequest, User,
+)
 
 
 HEADERS = [
@@ -133,8 +136,9 @@ def test_invalid_reasons_are_aggregated_without_personal_data_in_cli_output():
     row = valid_row()
     row[3], row[4], row[5], row[6], row[7] = "correo-malo", "123", "Solo", "", ""
     plan = build_plan(document([row]), document([]), "general", "corrected")
-    reasons = plan["summary"]["errors_by_reason"]
-    assert reasons == {"correo_invalido": 1, "representante_no_divisible": 1, "telefono_invalido": 1}
+    reasons = plan["summary"]["pending_by_reason"]
+    assert reasons == {"correo_responsable_invalido": 1, "representante_no_divisible": 1}
+    assert plan["summary"]["errors"] == 0
     output = dry_run_summary_text(plan["summary"])
     assert "ERRORS BY REASON" in output
     assert "GENERAL:" in output and "CORREGIDOS:" in output
@@ -147,7 +151,8 @@ def test_unrecognized_header_has_a_specific_reason():
         ["Columna A", "Columna B"], ["valor", "otro valor"],
     ]}]}
     plan = build_plan(unknown, document([]), "general", "corrected")
-    assert plan["summary"]["errors_by_reason"] == {"encabezado_no_encontrado": 1}
+    assert plan["summary"]["pending_by_reason"] == {"encabezado_no_encontrado": 1}
+    assert plan["summary"]["errors"] == 0
 
 
 def test_relational_product_audit_reads_aliases_and_keeps_incomplete_products_as_draft():
@@ -179,7 +184,7 @@ def test_relational_product_audit_reads_aliases_and_keeps_incomplete_products_as
         "invalid": 1, "without_unit": 1,
     }
     assert plan["summary"]["product_sources"]["total"] == {
-        "detected": 3, "importable": 2, "draft": 1, "ambiguous": 0,
+        "detected": 3, "importable": 2, "draft": 1, "ambiguous": 0, "pending": 2,
     }
     imported = {product["name"]: product for product in plan["units"][0]["products"]}
     assert imported["Producto completo"]["price"] == "25.50"
@@ -194,13 +199,12 @@ def test_dry_run_lists_only_source_rows_for_unit_errors():
     row = valid_row()
     row[3], row[4] = "correo-malo", "123"
     plan = build_plan(document([row]), document([]), "general", "corrected")
-    assert plan["summary"]["error_rows"] == {
-        "general": {"correo_invalido": [2], "telefono_invalido": [2]},
+    assert plan["summary"]["pending_rows"] == {
+        "general": {"correo_responsable_invalido": [2]},
         "corrected": {},
     }
     output = dry_run_summary_text(plan["summary"])
-    assert "correo_invalido -> filas [2]" in output
-    assert "telefono_invalido -> filas [2]" in output
+    assert "correo_responsable_invalido -> filas [2]" in output
     assert row[0] not in output and row[3] not in output and row[4] not in output
     assert "WARNINGS BY REASON" in output
     assert "PRODUCTOS CORREGIDOS" in output
@@ -325,3 +329,208 @@ def test_two_part_representative_is_valid_and_never_invents_maternal_surname(app
         assert db.session.scalar(select(User)).apellido_materno == ""
         assert db.session.scalar(select(ProductiveUnit)).apellido_materno_representante == ""
         assert db.session.scalar(select(RegistrationRequest)).apellido_materno_representante == ""
+
+
+def test_plan_hash_is_deterministic_and_changes_with_source_data():
+    first = build_plan(document([valid_row()]), document([]), "general", "corrected")
+    second = build_plan(document([valid_row()]), document([]), "general", "corrected")
+    changed_row = valid_row(description="Contenido diferente")
+    changed = build_plan(document([changed_row]), document([]), "general", "corrected")
+    assert first["plan_hash"] == second["plan_hash"] == plan_sha256(first)
+    assert changed["plan_hash"] != first["plan_hash"]
+
+
+def test_dry_run_prints_safe_classification_and_plan_hash(app, monkeypatch):
+    general, corrected = document([valid_row()]), document([])
+
+    class FakeGoogle:
+        def __init__(self, _token):
+            pass
+
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    monkeypatch.setattr("app.importador_final.GoogleSource", FakeGoogle)
+    result = app.test_cli_runner().invoke(args=[
+        "importar-datos-finales", "--sheet-general", "general",
+        "--sheet-corregidos", "corrected", "--dry-run",
+    ])
+    expected = build_plan(general, corrected, "general", "corrected")["plan_hash"]
+    assert result.exit_code == 0
+    assert "UNIDADES" in result.output
+    assert "PENDING BY REASON" in result.output
+    assert result.output.strip().endswith(f"PLAN_SHA256: {expected}")
+    assert "unidad@gmail.com" not in result.output
+
+
+def test_plan_trace_preserves_original_corrected_product_and_image_rows():
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [["ID_UP", *HEADERS[:11]], ["UP-01", *valid_row()[:11]]]},
+        {"title": "Productos", "values": [
+            ["ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO", "DESCRIPCION", "PRECIO_REFERENCIA"],
+            ["UP-01", "P-01", "Producto original", "Texto original", "19.90"],
+        ]},
+        {"title": "Imagenes", "values": [
+            ["ID_PRODUCTO", "DRIVE_ID"], ["P-01", "abcdefghijklmnopqrstuv"],
+        ]},
+    ]}
+    plan = build_plan(document([]), corrected, "general", "corrected")
+    traced = {(row["worksheet"], row["row_number"]): row["data"] for row in plan["trace_rows"]}
+    assert traced[("Productos", 2)]["DESCRIPCION"] == "Texto original"
+    assert traced[("Productos", 2)]["PRECIO_REFERENCIA"] == "19.90"
+    assert traced[("Imagenes", 2)]["DRIVE_ID"] == "abcdefghijklmnopqrstuv"
+
+
+def test_commit_with_wrong_expected_hash_stops_before_database_writes(app, monkeypatch):
+    general, corrected = document([valid_row()]), document([])
+
+    class FakeGoogle:
+        def __init__(self, _token):
+            pass
+
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    monkeypatch.setattr("app.importador_final.GoogleSource", FakeGoogle)
+    with app.app_context():
+        result = app.test_cli_runner().invoke(args=[
+            "importar-datos-finales", "--sheet-general", "general",
+            "--sheet-corregidos", "corrected", "--commit",
+            "--expect-plan-sha256", "0" * 64, "--confirm", "IMPORT-FINAL",
+        ])
+        assert result.exit_code != 0
+        assert "PLAN_SHA256 no coincide" in result.output
+        assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
+        assert db.session.scalar(select(func.count()).select_from(ProductiveUnit)) == 0
+
+
+def test_structural_pending_is_preserved_without_blocking_commit(app):
+    invalid = valid_row()
+    invalid[3] = "correo-invalido"
+    general, corrected = document([invalid]), document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["units_structural_pending"] == 1
+        assert result["summary"]["pending_records_preserved"] == 1
+        assert db.session.scalar(select(func.count()).select_from(ProductiveUnit)) == 0
+        trace = db.session.scalar(select(FinalImportSourceRow))
+        assert trace.is_pending is True
+        assert trace.pending_reasons == ["correo_responsable_invalido"]
+
+
+def test_actual_plan_errors_still_block_commit_before_writes(app):
+    general, corrected = document([valid_row()]), document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+    plan["summary"]["errors"] = 1
+    plan["plan_hash"] = plan_sha256(plan)
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context(), pytest.raises(Exception, match="errores reales"):
+        execute_plan(plan, FakeGoogle())
+    with app.app_context():
+        assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
+
+
+def test_optional_unit_fields_import_as_empty_without_invented_values(app):
+    row = valid_row()
+    row[1], row[2], row[4], row[7], row[9], row[10] = "", "", "", "", "", ""
+    general, corrected = document([row]), document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+    assert plan["summary"]["unit_classification"] == {
+        "importable_complete": 0, "importable_incomplete": 1, "structural_pending": 0,
+    }
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        execute_plan(plan, FakeGoogle())
+        unit = db.session.scalar(select(ProductiveUnit))
+        user = db.session.scalar(select(User))
+        product = db.session.scalar(select(Product))
+        assert unit.razon_social == ""
+        assert unit.nit is None
+        assert unit.telefono_whatsapp == ""
+        assert unit.direccion_fisica == ""
+        assert unit.resena_comercial == ""
+        assert unit.apellido_materno_representante == ""
+        assert user.phone is None
+        assert product.estado == ProductStatus.DRAFT
+
+
+def test_pending_unit_does_not_prevent_other_units_from_importing(app):
+    importable = valid_row(name="Unidad Importable")
+    pending = valid_row(name="Unidad Pendiente")
+    pending[2], pending[3] = "7654321", ""
+    general, corrected = document([importable, pending]), document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+    assert plan["summary"]["unit_classification"]["structural_pending"] == 1
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["summary"]["units_created"] == 1
+        assert result["summary"]["pending_records_preserved"] == 1
+        assert db.session.scalar(select(func.count()).select_from(ProductiveUnit)) == 1
+
+
+def test_accepted_ambiguities_do_not_block_and_original_row_is_preserved(app):
+    headers = HEADERS[:11] + ["Productos", "Fotografias de los productos"]
+    source = valid_row()[:11] + [
+        "Producto uno, Producto dos",
+        "https://drive.google.com/open?id=abcdefghijklmnopqrstuv",
+    ]
+    general = {"title": "general", "worksheets": [{"title": "Respuestas", "values": [headers, source]}]}
+    corrected = document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+    assert plan["summary"]["warning_severity"]["blocking"] == 0
+    for warning in plan["warnings"]:
+        if warning["reason"] in {"producto_general_ambiguo", "fotografias_generales_ambiguas"}:
+            warning["severity"] = "blocking"  # Compatibility with plans generated by the prior release.
+    plan["plan_hash"] = plan_sha256(plan)
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        trace = db.session.scalar(select(FinalImportSourceRow).where(FinalImportSourceRow.is_ambiguous.is_(True)))
+        assert trace is not None
+        assert trace.source_data["Productos"] == "Producto uno, Producto dos"
+        assert trace.source_data["Fotografias de los productos"].endswith("abcdefghijklmnopqrstuv")
+        assert result["summary"]["ambiguous_records_preserved"] == 1
+
+
+def test_import_never_sends_temporary_credentials(app, monkeypatch):
+    general, corrected = document([]), document([valid_row()])
+    plan = build_plan(general, corrected, "general", "corrected")
+    calls = []
+    monkeypatch.setattr(
+        "app.servicios.servicio_correo.BrevoEmailService.send_temporary_credentials",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["summary"]["emails_sent"] == 0
+        assert calls == []

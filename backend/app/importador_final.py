@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,7 +11,9 @@ from sqlalchemy import select, text
 from werkzeug.datastructures import FileStorage
 
 from .extensiones import db
-from .fuentes_importacion import GoogleSource, MAX_PRODUCTS, _product_complete, build_plan, normalize, sha
+from .fuentes_importacion import (
+    GoogleSource, MAX_PRODUCTS, _product_complete, build_plan, normalize, plan_sha256, sha,
+)
 from .modelos import (
     FinalImportEntityTrace, FinalImportRun, FinalImportSourceRow, Product, ProductImage,
     ProductStatus, ProductiveSector, ProductiveUnit, ProductiveUnitStatus,
@@ -21,6 +24,11 @@ from .utilidades import slugify
 
 TOKEN_DEFAULT = "/secrets/google-import-token.json"
 LOCK_KEY = 7420192601
+ACCEPTED_NON_BLOCKING_WARNINGS = {
+    "producto_incompleto_draft",
+    "producto_general_ambiguo",
+    "fotografias_generales_ambiguas",
+}
 
 
 def write_json(path, payload):
@@ -33,7 +41,37 @@ def write_json(path, payload):
 
 def dry_run_summary_text(summary):
     """Render only aggregate counters; never echo source values or identifiers."""
-    lines = ["ERRORS BY REASON"]
+    units = summary.get("unit_classification") or {}
+    total_products = (summary.get("product_sources") or {}).get("total", {})
+    total_images = (summary.get("image_sources") or {}).get("total", {})
+    lines = [
+        "UNIDADES",
+        f"- importables completas: {units.get('importable_complete', 0)}",
+        f"- importables incompletas: {units.get('importable_incomplete', 0)}",
+        f"- pendientes estructurales: {units.get('structural_pending', 0)}",
+        "", "PRODUCTOS",
+        f"- importables: {total_products.get('importable', 0)}",
+        f"- DRAFT por datos faltantes: {total_products.get('draft', 0)}",
+        f"- pendientes por relacion no resoluble: {total_products.get('pending', 0)}",
+        "", "IMAGENES",
+        f"- asociadas: {total_images.get('assigned', 0)}",
+        f"- pendientes/ambiguas: {total_images.get('ambiguous', 0)}",
+        "", "PENDING BY REASON",
+    ]
+    pending_reasons = summary.get("pending_by_reason") or {}
+    if pending_reasons:
+        lines.extend(f"- {reason}: {count}" for reason, count in sorted(pending_reasons.items()))
+    else:
+        lines.append("- none: 0")
+    lines.extend(("", "PENDING ROWS BY SOURCE"))
+    for label, key in (("GENERAL", "general"), ("CORREGIDOS", "corrected")):
+        lines.append(f"{label}:")
+        source_pending = (summary.get("pending_rows") or {}).get(key, {})
+        if source_pending:
+            lines.extend(f"- {reason} -> filas {numbers}" for reason, numbers in sorted(source_pending.items()))
+        else:
+            lines.append("- none")
+    lines.extend(("", "ERRORS BY REASON"))
     reasons = summary.get("errors_by_reason") or {}
     if reasons:
         lines.extend(f"- {reason}: {count}" for reason, count in sorted(reasons.items()))
@@ -146,13 +184,53 @@ def existing_unit(payload):
     return None
 
 
-def trace_entities(run, group, unit, product_entities):
+def persist_trace_rows(run, plan):
     row_models = {}
-    for row in group["rows"]:
-        source_row = FinalImportSourceRow(run_id=run.id, source=row["source"], sheet_id=row["sheet_id"],
-            worksheet=row["worksheet"], row_number=row["row_number"], row_hash=row["row_hash"], productive_unit_id=unit.id)
-        db.session.add(source_row); db.session.flush()
+    trace_rows = plan.get("trace_rows")
+    if trace_rows is None:
+        trace_rows = []
+        seen = set()
+        for group in plan.get("units", []):
+            for row in group.get("rows", []):
+                key = (row["source"], row["worksheet"], row["row_number"])
+                if key not in seen:
+                    trace_rows.append({**row, "data": {}, "warnings": [], "ambiguous": False})
+                    seen.add(key)
+    for row in trace_rows:
+        source_row = FinalImportSourceRow(
+            run_id=run.id, source=row["source"], sheet_id=row["sheet_id"],
+            worksheet=row["worksheet"], row_number=row["row_number"], row_hash=row["row_hash"],
+            source_data=row.get("data") or {}, warnings=row.get("warnings") or [],
+            is_ambiguous=bool(row.get("ambiguous")),
+            pending_reasons=row.get("pending_reasons") or [], is_pending=bool(row.get("pending")),
+        )
+        db.session.add(source_row)
+        db.session.flush()
         row_models[(row["source"], row["worksheet"], row["row_number"])] = source_row
+    return row_models
+
+
+def final_summary_text(summary):
+    return "\n".join((
+        "IMPORTACIÓN FINAL",
+        f"- unidades creadas: {summary['units_created']}",
+        f"- usuarios responsables creados: {summary['users_created']}",
+        f"- sectores asociados: {summary['sectors_associated']}",
+        f"- productos creados: {summary['products_created']}",
+        f"- productos DRAFT: {summary['products_draft']}",
+        f"- logos cargados: {summary['logos_uploaded']}",
+        f"- imágenes de productos cargadas: {summary['product_images_uploaded']}",
+        f"- registros ambiguos preservados: {summary['ambiguous_records_preserved']}",
+        f"- registros pendientes preservados: {summary['pending_records_preserved']}",
+        f"- errores: {summary['errors']}",
+        f"- correos enviados: {summary['emails_sent']}",
+    ))
+
+
+def trace_entities(group, unit, product_entities, row_models):
+    for row in group["rows"]:
+        source_row = row_models[(row["source"], row["worksheet"], row["row_number"])]
+        source_row.productive_unit_id = unit.id
         db.session.add(FinalImportEntityTrace(source_row_id=source_row.id, entity_type="PRODUCTIVE_UNIT",
                                              entity_id=unit.id, entity_key=str(unit.id)))
     for product, plan_product, images in product_entities:
@@ -165,11 +243,12 @@ def trace_entities(run, group, unit, product_entities):
                 entity_id=image.id, entity_key=str(image.id), drive_file_id=drive_file_id))
 
 
-def import_unit(run, group, google):
-    payload, uploaded = group["unit"], []
-    try:
-        unit = existing_unit(payload)
-        if not unit:
+def import_unit(group, google, row_models, uploaded, counters):
+    payload = group["unit"]
+    safe_phone = payload["phone"] if re.fullmatch(r"[67][0-9]{7}", payload.get("phone", "")) else ""
+    safe_nit = payload.get("nit") if 5 <= len(payload.get("nit", "")) <= 12 else None
+    unit = existing_unit(payload)
+    if not unit:
             logo = None
             if payload.get("logo_drive_id"):
                 filename, stream = google.download(payload["logo_drive_id"])
@@ -177,15 +256,16 @@ def import_unit(run, group, google):
                 if logo and logo.get("public_id"): uploaded.append(logo["public_id"])
             user = User(username=unique_username(payload["email"]), email=payload["email"], role=Role.PRODUCTIVE_UNIT_RESPONSIBLE,
                 first_name=payload["first_names"], last_name=payload["paternal_name"], apellido_paterno=payload["paternal_name"],
-                apellido_materno=payload["maternal_name"], phone=payload["phone"][:15], status=UserStatus.ACTIVE,
+                apellido_materno=payload["maternal_name"], phone=safe_phone or None, status=UserStatus.ACTIVE,
                 must_change_password=True)
             user.set_password(secrets.token_urlsafe(32))
             db.session.add(user)
-            common = dict(nombre_comercial=payload["business_name"], razon_social=payload["legal_name"], nit=payload.get("nit") or None,
+            counters["users_created"] += 1
+            common = dict(nombre_comercial=payload["business_name"], razon_social=payload["legal_name"], nit=safe_nit,
                 registro_seprec=payload.get("seprec") or None, registro_pro_bolivia=payload.get("pro_bolivia") or None,
                 nombres_representante=payload["first_names"], apellido_paterno_representante=payload["paternal_name"],
                 apellido_materno_representante=payload["maternal_name"], departamento=payload["department"],
-                direccion_fisica=payload["address"], telefono_whatsapp=payload["phone"], correo_electronico=payload["email"],
+                direccion_fisica=payload["address"], telefono_whatsapp=safe_phone, correo_electronico=payload["email"],
                 facebook_url=payload.get("facebook") or None, instagram_url=payload.get("instagram") or None,
                 tiktok_url=payload.get("tiktok") or None, resena_comercial=payload["review"],
                 logo_url=logo["url"] if logo else None, logo_public_id=logo["public_id"] if logo else None)
@@ -194,13 +274,17 @@ def import_unit(run, group, google):
             unit = ProductiveUnit(**common, user_id=user.id, registration_request_id=request_item.id,
                                   estado=ProductiveUnitStatus.ACTIVE, fecha_aprobacion=datetime.now(timezone.utc))
             db.session.add(unit); db.session.flush()
+            counters["units_created"] += 1
+            if logo:
+                counters["logos_uploaded"] += 1
             for sector_name in payload.get("sectors", []):
                 sector = db.session.scalar(select(ProductiveSector).where(ProductiveSector.nombre.ilike(sector_name)))
                 if sector:
                     db.session.add(UnitSector(productive_unit_id=unit.id, productive_sector_id=sector.id, estado=SectorStatus.ACTIVE))
-        known = {normalize(name) for name in db.session.scalars(select(Product.nombre).where(Product.productive_unit_id == unit.id)).all()}
-        entities = []
-        for plan_product in group["products"]:
+                    counters["sectors_associated"] += 1
+    known = {normalize(name) for name in db.session.scalars(select(Product.nombre).where(Product.productive_unit_id == unit.id)).all()}
+    entities = []
+    for plan_product in group["products"]:
             key = normalize(plan_product["name"])
             if key in known or len(known) >= MAX_PRODUCTS: continue
             complete = _product_complete(plan_product)
@@ -217,6 +301,9 @@ def import_unit(run, group, google):
                 capacidad_produccion_stock=plan_product.get("stock") or None,
                 estado=ProductStatus.AVAILABLE if complete else ProductStatus.DRAFT)
             db.session.add(product); db.session.flush()
+            counters["products_created"] += 1
+            if not complete:
+                counters["products_draft"] += 1
             images = []
             for order, drive_file_id in enumerate(plan_product.get("images", [])[:3]):
                 filename, stream = google.download(drive_file_id)
@@ -225,23 +312,28 @@ def import_unit(run, group, google):
                 image = ProductImage(product_id=product.id, filename=result["filename"], url=result["url"],
                     public_id=result.get("public_id"), alt_text=product.nombre, is_cover=order == 0, display_order=order)
                 db.session.add(image); db.session.flush(); images.append((image, drive_file_id))
+                counters["product_images_uploaded"] += 1
             entities.append((product, plan_product, images)); known.add(key)
-        trace_entities(run, group, unit, entities)
-        db.session.commit()
-        return {"unit": payload["business_name"], "status": "IMPORTED", "products": len(entities)}
-    except Exception as exc:
-        db.session.rollback()
-        for public_id in reversed(uploaded):
-            try: delete_cloudinary_upload(public_id)
-            except Exception: pass
-        return {"unit": payload.get("business_name"), "status": "ERROR", "error": f"{type(exc).__name__}: {exc}"[:500]}
+    trace_entities(group, unit, entities, row_models)
 
 
-def execute_plan(plan, google):
-    if sha({k: v for k, v in plan.items() if k != "plan_hash"}) != plan.get("plan_hash"):
+def execute_plan(plan, google, source_documents=None):
+    if plan_sha256(plan) != plan.get("plan_hash"):
         raise click.ClickException("El archivo de plan fue alterado o está incompleto")
-    general = google.spreadsheet(plan["sources"]["general"]["sheet_id"])
-    corrected = google.spreadsheet(plan["sources"]["corrected"]["sheet_id"])
+    if plan.get("summary", {}).get("errors", 0):
+        raise click.ClickException("El plan contiene errores reales; no se escribio ningun dato")
+    blocking_warnings = [
+        warning for warning in plan.get("warnings", [])
+        if warning.get("severity") == "blocking"
+        and warning.get("reason") not in ACCEPTED_NON_BLOCKING_WARNINGS
+    ]
+    if blocking_warnings:
+        raise click.ClickException("El plan contiene advertencias bloqueantes; no se escribio ningun dato")
+    if source_documents is None:
+        general = google.spreadsheet(plan["sources"]["general"]["sheet_id"])
+        corrected = google.spreadsheet(plan["sources"]["corrected"]["sheet_id"])
+    else:
+        general, corrected = source_documents
     if sha(general) != plan["sources"]["general"]["hash"] or sha(corrected) != plan["sources"]["corrected"]["hash"]:
         raise click.ClickException("Una hoja cambió después del dry-run; genere un plan nuevo")
     if db.session.scalar(select(FinalImportRun.id).where(FinalImportRun.plan_hash == plan["plan_hash"])):
@@ -249,18 +341,40 @@ def execute_plan(plan, google):
     postgres = db.engine.dialect.name == "postgresql"
     if postgres and not db.session.scalar(select(db.func.pg_try_advisory_lock(LOCK_KEY))):
         raise click.ClickException("Ya existe otra importación final en ejecución")
+    uploaded = []
     try:
         run = FinalImportRun(plan_hash=plan["plan_hash"], general_sheet_id=plan["sources"]["general"]["sheet_id"],
             corrected_sheet_id=plan["sources"]["corrected"]["sheet_id"], general_sheet_hash=plan["sources"]["general"]["hash"],
             corrected_sheet_hash=plan["sources"]["corrected"]["hash"], status="RUNNING")
-        db.session.add(run); db.session.commit()
-        results = [import_unit(run, group, google) for group in plan["units"]]
-        run = db.session.get(FinalImportRun, run.id)
-        run.status = "COMPLETED_WITH_ERRORS" if any(x["status"] == "ERROR" for x in results) else "COMPLETED"
-        run.summary = {"units": len(results), "imported": sum(x["status"] == "IMPORTED" for x in results),
-                       "errors": sum(x["status"] == "ERROR" for x in results)}
+        db.session.add(run); db.session.flush()
+        row_models = persist_trace_rows(run, plan)
+        counters = {
+            "units_created": 0, "users_created": 0, "sectors_associated": 0,
+            "products_created": 0, "products_draft": 0, "logos_uploaded": 0,
+            "product_images_uploaded": 0,
+            "ambiguous_records_preserved": sum(row.is_ambiguous for row in row_models.values()),
+            "pending_records_preserved": sum(row.is_pending for row in row_models.values()),
+            "units_importable_complete": plan.get("summary", {}).get("unit_classification", {}).get("importable_complete", 0),
+            "units_importable_incomplete": plan.get("summary", {}).get("unit_classification", {}).get("importable_incomplete", 0),
+            "units_structural_pending": plan.get("summary", {}).get("unit_classification", {}).get("structural_pending", 0),
+            "errors": 0, "emails_sent": 0,
+        }
+        for group in plan["units"]:
+            import_unit(group, google, row_models, uploaded, counters)
+        run.status = "COMPLETED"
+        run.summary = counters
         run.finished_at = datetime.now(timezone.utc); db.session.commit()
-        return {"plan_hash": plan["plan_hash"], "status": run.status, "summary": run.summary, "units": results}
+        return {"plan_hash": plan["plan_hash"], "status": run.status, "summary": counters}
+    except Exception as exc:
+        db.session.rollback()
+        for public_id in reversed(uploaded):
+            try:
+                delete_cloudinary_upload(public_id)
+            except Exception:
+                pass
+        if isinstance(exc, click.ClickException):
+            raise
+        raise click.ClickException(f"La importacion fue revertida: {type(exc).__name__}") from exc
     finally:
         if postgres:
             db.session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY}); db.session.commit()
@@ -273,22 +387,43 @@ def register_import_command(app):
     @click.option("--dry-run", is_flag=True)
     @click.option("--commit", "do_commit", is_flag=True)
     @click.option("--plan", "plan_path", type=click.Path(dir_okay=False))
-    @click.option("--report", "report_path", required=True, type=click.Path(dir_okay=False))
+    @click.option("--expect-plan-sha256")
+    @click.option("--confirm")
+    @click.option("--report", "report_path", type=click.Path(dir_okay=False))
     @click.option("--token", "token_path", default=lambda: os.getenv("GOOGLE_IMPORT_TOKEN_PATH", TOKEN_DEFAULT), show_default=True)
     @with_appcontext
-    def importar_datos_finales(sheet_general, sheet_corregidos, dry_run, do_commit, plan_path, report_path, token_path):
+    def importar_datos_finales(sheet_general, sheet_corregidos, dry_run, do_commit, plan_path,
+                               expect_plan_sha256, confirm, report_path, token_path):
         if dry_run == do_commit: raise click.ClickException("Seleccione exactamente uno: --dry-run o --commit")
-        google = GoogleSource(token_path)
         if dry_run:
+            google = GoogleSource(token_path)
             if not sheet_general or not sheet_corregidos:
                 raise click.ClickException("--sheet-general y --sheet-corregidos son obligatorios en dry-run")
             plan = build_plan(google.spreadsheet(sheet_general), google.spreadsheet(sheet_corregidos), sheet_general, sheet_corregidos)
-            write_json(report_path, plan)
+            if report_path:
+                write_json(report_path, plan)
             click.echo(dry_run_summary_text(plan["summary"]))
-            click.echo(f"Plan guardado en {report_path}. No se escribió PostgreSQL ni Cloudinary.")
+            click.echo(f"PLAN_SHA256: {plan['plan_hash']}")
         else:
-            if not plan_path: raise click.ClickException("--plan es obligatorio con --commit")
-            result = execute_plan(json.loads(Path(plan_path).read_text(encoding="utf-8")), google)
-            write_json(report_path, result); click.echo(json.dumps(result["summary"], ensure_ascii=False, indent=2))
-            if result["status"] != "COMPLETED":
-                raise click.ClickException("La importación terminó con errores por unidad; revise el reporte")
+            if confirm != "IMPORT-FINAL":
+                raise click.ClickException("--confirm IMPORT-FINAL es obligatorio con --commit")
+            google = GoogleSource(token_path)
+            source_documents = None
+            if plan_path:
+                plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+            else:
+                if not sheet_general or not sheet_corregidos or not expect_plan_sha256:
+                    raise click.ClickException(
+                        "--sheet-general, --sheet-corregidos y --expect-plan-sha256 son obligatorios con --commit"
+                    )
+                general = google.spreadsheet(sheet_general)
+                corrected = google.spreadsheet(sheet_corregidos)
+                source_documents = (general, corrected)
+                plan = build_plan(general, corrected, sheet_general, sheet_corregidos)
+            actual_hash = plan_sha256(plan)
+            if expect_plan_sha256 and actual_hash != expect_plan_sha256:
+                raise click.ClickException("PLAN_SHA256 no coincide; no se escribio ningun dato")
+            result = execute_plan(plan, google, source_documents=source_documents)
+            if report_path:
+                write_json(report_path, result)
+            click.echo(final_summary_text(result["summary"]))

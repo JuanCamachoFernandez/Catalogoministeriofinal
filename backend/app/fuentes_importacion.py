@@ -50,9 +50,9 @@ ALIASES = {
     "seprec": ("registro seprec", "seprec"), "pro_bolivia": ("registro pro bolivia", "pro bolivia"),
 }
 
-REQUIRED_UNIT_FIELDS = (
-    "business_name", "legal_name", "email", "phone", "first_names", "paternal_name",
-    "department", "address", "review",
+UNIT_INFORMATIONAL_FIELDS = (
+    "legal_name", "nit", "phone", "address", "review", "maternal_name",
+    "facebook", "instagram", "tiktok", "seprec", "pro_bolivia", "logo_drive_id",
 )
 CORE_HEADER_FIELDS = ("business_name", "email", "phone", "representative_name", "first_names")
 DEPARTMENTS = {
@@ -120,6 +120,11 @@ NORMALIZED_ALIASES = {key: tuple(normalize(v) for v in values) for key, values i
 def sha(value):
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()
+
+
+def plan_sha256(plan):
+    """Return the canonical hash without trusting a hash embedded in the plan."""
+    return sha({key: value for key, value in plan.items() if key != "plan_hash"})
 
 
 def _header_score(header, alias):
@@ -512,8 +517,9 @@ def _corrected_audit(document):
             audit["sectors"]["associated"] += 1
         else:
             audit["sectors"]["without_unit"] += 1
-            audit["warnings"].append({"reason": "sector_sin_unidad_relacionada", "severity": "blocking",
-                                      "source": "CORRECTED", "row": number})
+            audit["warnings"].append({"reason": "sector_sin_unidad_relacionada", "severity": "informative",
+                                      "pending": True, "source": "CORRECTED",
+                                      "worksheet": sectors_sheet["title"], "row": number})
     assigned_image_rows = set()
     assigned_images = {}
     for image_number, image_row in image_rows:
@@ -530,8 +536,9 @@ def _corrected_audit(document):
         name = _product_name(product_row)
         if not name:
             audit["products"]["invalid"] += 1
-            audit["warnings"].append({"reason": "producto_sin_nombre", "severity": "blocking",
-                                      "source": "CORRECTED", "row": number})
+            audit["warnings"].append({"reason": "producto_sin_nombre", "severity": "informative",
+                                      "pending": True, "source": "CORRECTED",
+                                      "worksheet": products_sheet["title"], "row": number})
             continue
         audit["products"]["detected"] += 1
         references = _unit_reference_values(product_row)
@@ -539,13 +546,14 @@ def _corrected_audit(document):
         if len(matches) != 1:
             audit["products"]["without_unit"] += 1
             reason = "producto_unidad_ambigua" if len(matches) > 1 else "producto_sin_unidad_relacionada"
-            audit["warnings"].append({"reason": reason, "severity": "blocking",
-                                      "source": "CORRECTED", "row": number})
+            audit["warnings"].append({"reason": reason, "severity": "informative",
+                                      "pending": True, "source": "CORRECTED",
+                                      "worksheet": products_sheet["title"], "row": number})
             continue
         price, invalid_price = _price_value(_any_field(product_row, PRODUCT_PRICE_NAMES))
         if invalid_price:
             audit["warnings"].append({"reason": "precio_producto_invalido", "severity": "informative",
-                                      "source": "CORRECTED", "row": number})
+                                      "source": "CORRECTED", "worksheet": products_sheet["title"], "row": number})
         images = assigned_images.get(number, [])
         product = {
             "description": _any_field(product_row, PRODUCT_DESCRIPTION_NAMES), "price": price,
@@ -557,33 +565,37 @@ def _corrected_audit(document):
         audit["products"][status] += 1
         if status == "draft":
             audit["warnings"].append({"reason": "producto_incompleto_draft", "severity": "informative",
-                                      "source": "CORRECTED", "row": number})
+                                      "source": "CORRECTED", "worksheet": products_sheet["title"], "row": number})
     for number, image_row in image_rows:
         raw_image = _any_field(image_row, IMAGE_VALUE_NAMES)
         image_id = drive_id(raw_image)
         if not image_id:
             if raw_image:
                 audit["images"]["ambiguous"] += 1
-                audit["warnings"].append({"reason": "imagen_drive_invalida", "severity": "blocking",
-                                          "source": "CORRECTED", "row": number})
+                audit["warnings"].append({"reason": "imagen_drive_invalida", "severity": "informative",
+                                          "pending": True, "source": "CORRECTED",
+                                          "worksheet": images_sheet["title"], "row": number})
             continue
         audit["images"]["drive_ids_detected"] += 1
         matches = [(product_number, row) for product_number, row in _image_product_matches(image_row, product_rows)
                    if _product_name(row)]
         if not matches:
             audit["images"]["without_product"] += 1
-            audit["warnings"].append({"reason": "imagen_sin_producto", "severity": "blocking",
-                                      "source": "CORRECTED", "row": number})
+            audit["warnings"].append({"reason": "imagen_sin_producto", "severity": "informative",
+                                      "pending": True, "source": "CORRECTED",
+                                      "worksheet": images_sheet["title"], "row": number})
         elif len(matches) > 1:
             audit["images"]["ambiguous"] += 1
-            audit["warnings"].append({"reason": "imagen_producto_ambiguo", "severity": "blocking",
-                                      "source": "CORRECTED", "row": number})
+            audit["warnings"].append({"reason": "imagen_producto_ambiguo", "severity": "informative",
+                                      "pending": True, "source": "CORRECTED",
+                                      "worksheet": images_sheet["title"], "row": number})
         elif number in assigned_image_rows:
             audit["images"]["assigned"] += 1
         else:
             audit["images"]["ambiguous"] += 1
             audit["warnings"].append({"reason": "limite_imagenes_producto", "severity": "informative",
-                                      "source": "CORRECTED", "row": number})
+                                      "pending": True, "source": "CORRECTED",
+                                      "worksheet": images_sheet["title"], "row": number})
     return audit
 
 
@@ -702,31 +714,63 @@ def unit_payload(source_row):
     return payload, representative_error
 
 
-def _validation_reasons(group):
+def _pending_unit_reasons(group):
     unit = group["unit"]
     if any(not row.get("header_found", True) for row in group["rows"]):
         return [{"reason": "encabezado_no_encontrado"}]
     reasons = []
-    missing = [key for key in REQUIRED_UNIT_FIELDS if not unit.get(key)]
-    representative_missing = {"first_names", "paternal_name"}.intersection(missing)
-    if representative_missing:
+    if not unit.get("business_name"):
+        reasons.append({"reason": "unidad_no_identificable"})
+    if not unit.get("email"):
+        reasons.append({"reason": "correo_responsable_faltante"})
+    elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", unit["email"]):
+        reasons.append({"reason": "correo_responsable_invalido"})
+    if not unit.get("first_names") or not unit.get("paternal_name"):
         reasons.append({"reason": "representante_no_divisible"})
-        missing = [key for key in missing if key not in representative_missing]
-    if missing:
-        reasons.append({"reason": "campo_obligatorio_faltante", "fields": missing})
-    if unit.get("email") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", unit["email"]):
-        reasons.append({"reason": "correo_invalido"})
-    if unit.get("phone") and not re.fullmatch(r"[67][0-9]{7}", unit["phone"]):
-        reasons.append({"reason": "telefono_invalido"})
-    if unit.get("department") and normalize(unit["department"]) not in DEPARTMENTS:
+    if not unit.get("department"):
+        reasons.append({"reason": "departamento_faltante"})
+    elif normalize(unit["department"]) not in DEPARTMENTS:
         reasons.append({"reason": "departamento_invalido"})
+    return reasons
+
+
+def _unit_incomplete_reasons(unit):
+    reasons = [f"{field_name}_faltante" for field_name in UNIT_INFORMATIONAL_FIELDS if not unit.get(field_name)]
+    if unit.get("phone") and not re.fullmatch(r"[67][0-9]{7}", unit["phone"]):
+        reasons.append("telefono_invalido")
     if unit.get("nit") and not 5 <= len(unit["nit"]) <= 12:
-        reasons.append({"reason": "nit_invalido"})
+        reasons.append("nit_invalido")
     return reasons
 
 
 def _row_key(row):
     return row["source"], row["worksheet"], row["row_number"]
+
+
+def _trace_rows(document, source, sheet_id, diagnostics):
+    """Preserve every non-empty source row exactly as read for later review."""
+    worksheets = {item.get("title", ""): item for item in document.get("worksheets", [])}
+    result = []
+    for diagnostic in diagnostics:
+        worksheet_name = diagnostic.get("worksheet", "")
+        worksheet = worksheets.get(worksheet_name, {})
+        values = worksheet.get("values") or []
+        header_row = diagnostic.get("header_row")
+        if not header_row or header_row > len(values):
+            continue
+        headers = [str(value).strip() for value in values[header_row - 1]]
+        for row_number, values_row in enumerate(values[header_row:], header_row + 1):
+            row = {
+                header: values_row[index] if index < len(values_row) else ""
+                for index, header in enumerate(headers) if header
+            }
+            if not any(str(value).strip() for value in row.values()):
+                continue
+            result.append({
+                "source": source, "sheet_id": sheet_id, "worksheet": worksheet_name,
+                "row_number": row_number, "row_hash": sha(row), "data": row,
+            })
+    return result
 
 
 def build_plan(general_document, corrected_document, general_id, corrected_id):
@@ -749,8 +793,10 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
             issue = {"source": source_row["source"], "row": source_row["row_number"],
                      "worksheet": source_row["worksheet"], "reason": "producto_general_ambiguo"}
             ambiguous.append(issue)
-            warnings.append({"reason": "producto_general_ambiguo", "severity": "blocking",
-                             "source": source_row["source"], "row": source_row["row_number"]})
+            warnings.append({"reason": "producto_general_ambiguo", "severity": "informative",
+                             "pending": True,
+                             "source": source_row["source"], "worksheet": source_row["worksheet"],
+                             "row": source_row["row_number"]})
             if source_row["source"] == "GENERAL":
                 general_products["ambiguous"] += 1
         if source_row["source"] == "GENERAL":
@@ -758,14 +804,17 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                 image_summary["general"]["logos_detected"] += 1
             elif unit.get("logo_supplied"):
                 image_summary["general"]["ambiguous"] += 1
-                warnings.append({"reason": "logo_drive_invalido", "severity": "blocking",
-                                 "source": "GENERAL", "row": source_row["row_number"]})
+                warnings.append({"reason": "logo_drive_invalido", "severity": "informative",
+                                 "pending": True, "source": "GENERAL",
+                                 "worksheet": source_row["worksheet"], "row": source_row["row_number"]})
             general_products["detected"] += len(products)
             image_summary["general"]["photos_detected"] += photo_audit["detected"]
             image_summary["general"]["ambiguous"] += photo_audit["ambiguous"]
             if photo_audit["ambiguous"]:
-                warnings.append({"reason": "fotografias_generales_ambiguas", "severity": "blocking",
-                                 "source": "GENERAL", "row": source_row["row_number"]})
+                warnings.append({"reason": "fotografias_generales_ambiguas", "severity": "informative",
+                                 "pending": True,
+                                 "source": "GENERAL", "worksheet": source_row["worksheet"],
+                                 "row": source_row["row_number"]})
             for product in products:
                 status = "valid" if _product_complete(product) else "draft"
                 general_products[status] += 1
@@ -775,18 +824,22 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                 image_summary["general"]["ambiguous"] += product.get("invalid_images", 0)
                 if product.get("invalid_price"):
                     warnings.append({"reason": "precio_producto_invalido", "severity": "informative",
-                                     "source": "GENERAL", "row": source_row["row_number"]})
+                                     "source": "GENERAL", "worksheet": source_row["worksheet"],
+                                     "row": source_row["row_number"]})
                 if product.get("invalid_images"):
-                    warnings.append({"reason": "imagen_drive_invalida", "severity": "blocking",
-                                     "source": "GENERAL", "row": source_row["row_number"]})
+                    warnings.append({"reason": "imagen_drive_invalida", "severity": "informative",
+                                     "pending": True, "source": "GENERAL",
+                                     "worksheet": source_row["worksheet"], "row": source_row["row_number"]})
                 if status == "draft":
                     warnings.append({"reason": "producto_incompleto_draft", "severity": "informative",
-                                     "source": "GENERAL", "row": source_row["row_number"]})
+                                     "source": "GENERAL", "worksheet": source_row["worksheet"],
+                                     "row": source_row["row_number"]})
         elif unit.get("logo_drive_id"):
             image_summary["corrected"]["logos_detected"] += 1
         elif unit.get("logo_supplied"):
-            warnings.append({"reason": "logo_drive_invalido", "severity": "blocking",
-                             "source": "CORRECTED", "row": source_row["row_number"]})
+            warnings.append({"reason": "logo_drive_invalido", "severity": "informative",
+                             "pending": True, "source": "CORRECTED",
+                             "worksheet": source_row["worksheet"], "row": source_row["row_number"]})
         keys = []
         if len(unit["nit"]) >= 5: keys.append(("nit", unit["nit"]))
         if unit["email"]:
@@ -835,26 +888,34 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
             key = normalize(product["name"])
             if key and key not in known and len(group["products"]) < MAX_PRODUCTS:
                 group["products"].append(product); known.add(key)
-    valid, errors_by_reason, valid_rows = [], Counter(), set()
+    valid, pending_by_reason, valid_rows = [], Counter(), set()
+    complete_units = incomplete_units = pending_products_from_units = 0
     error_rows = {"general": {}, "corrected": {}}
     for group in groups:
-        reasons = _validation_reasons(group)
+        reasons = _pending_unit_reasons(group)
         group.pop("representative_error", None)
         for row in group["rows"]:
             row.pop("header_found", None)
         if reasons:
+            pending_products_from_units += len(group["products"])
             invalid.append({"rows": group["rows"], "reasons": reasons})
-            errors_by_reason.update(reason["reason"] for reason in reasons)
+            pending_by_reason.update(reason["reason"] for reason in reasons)
             for reason in reasons:
                 for row in group["rows"]:
                     source_key = "general" if row["source"] == "GENERAL" else "corrected"
                     error_rows[source_key].setdefault(reason["reason"], []).append(row["row_number"])
         else:
+            incomplete_reasons = _unit_incomplete_reasons(group["unit"])
+            group["completeness"] = "INCOMPLETE" if incomplete_reasons else "COMPLETE"
+            group["incomplete_reasons"] = incomplete_reasons
+            if incomplete_reasons:
+                incomplete_units += 1
+            else:
+                complete_units += 1
             valid.append(group)
             valid_rows.update(_row_key(row) for row in group["rows"])
-    errors_by_reason["posible_duplicado"] += len(conflicts)
-    if not errors_by_reason["posible_duplicado"]:
-        del errors_by_reason["posible_duplicado"]
+    if conflicts:
+        pending_by_reason["unidad_no_identificable"] += len(conflicts)
     for conflict in conflicts:
         source_key = "general" if conflict.get("source") == "GENERAL" else "corrected"
         error_rows[source_key].setdefault("posible_duplicado", []).append(conflict["row"])
@@ -868,7 +929,7 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
     ):
         read = len(rows_for_source)
         valid_count = sum(_row_key(row) in valid_rows for row in rows_for_source)
-        source_summary[label] = {"rows_read": read, "valid": valid_count, "invalid": read - valid_count}
+        source_summary[label] = {"rows_read": read, "valid": valid_count, "invalid": 0}
     importable_products = [product for group in valid for product in group["products"]]
     general_importable = [product for product in importable_products if product["origin"]["source"] == "GENERAL"]
     general_products["discarded"] = max(0, general_products["detected"] - len(general_importable))
@@ -880,6 +941,8 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
         "importable": len(importable_products),
         "draft": sum(not _product_complete(product) for product in importable_products),
         "ambiguous": general_products["ambiguous"],
+        "pending": general_products["ambiguous"] + corrected_audit["products"]["invalid"]
+                   + corrected_audit["products"]["without_unit"] + pending_products_from_units,
     }
     total_images = {
         "logos": image_summary["general"]["logos_detected"] + image_summary["corrected"]["logos_detected"],
@@ -888,14 +951,23 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
         "ambiguous": image_summary["general"]["ambiguous"] + image_summary["corrected"]["ambiguous"]
                      + image_summary["corrected"]["without_product"],
     }
+    pending_by_reason.update(
+        warning["reason"] for warning in warnings if warning.get("pending")
+    )
     summary = {"responses_read": len(source_rows), "unique_units": len(valid), "merged_units": merged,
-               "possible_duplicates": len(conflicts), "invalid_units": len(invalid),
+               "possible_duplicates": len(conflicts), "invalid_units": 0,
+               "pending_units": len(invalid) + len(conflicts),
                "products_detected": total_products["detected"], "new_products": total_products["importable"],
                "ambiguous_products": len(ambiguous), "logos": total_images["logos"],
                "photos": total_images["photos"], "assigned_photos": total_images["assigned"],
                "ambiguous_photos": total_images["ambiguous"],
-               "errors": len(conflicts) + len(invalid), "warnings": len(warnings),
-               "errors_by_reason": dict(sorted(errors_by_reason.items())), "error_rows": error_rows,
+               "errors": 0, "warnings": len(warnings),
+               "errors_by_reason": {}, "error_rows": {"general": {}, "corrected": {}},
+               "pending_rows": error_rows,
+               "pending_by_reason": dict(sorted(pending_by_reason.items())),
+               "unit_classification": {"importable_complete": complete_units,
+                                       "importable_incomplete": incomplete_units,
+                                       "structural_pending": len(invalid) + len(conflicts)},
                "warnings_by_reason": dict(sorted(warning_reasons.items())),
                "warning_severity": {"blocking": warning_severity["blocking"],
                                     "informative": warning_severity["informative"]},
@@ -905,11 +977,37 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                "sector_sources": {"corrected": corrected_audit["sectors"]},
                "image_sources": {"general": image_summary["general"], "corrected": image_summary["corrected"],
                                  "total": total_images}}
-    plan = {"schema_version": 1, "sources": {"general": {"sheet_id": general_id, "hash": sha(general_document)},
+    trace_rows = (
+        _trace_rows(general_document, "GENERAL", general_id, general_diagnostics)
+        + _trace_rows(corrected_document, "CORRECTED", corrected_id, corrected_diagnostics)
+    )
+    warnings_by_row, pending_by_row = {}, {}
+    for warning in warnings:
+        key = (warning.get("source"), warning.get("worksheet"), warning.get("row"))
+        if key[1] is not None:
+            warnings_by_row.setdefault(key, []).append(warning["reason"])
+            if warning.get("pending"):
+                pending_by_row.setdefault(key, []).append(warning["reason"])
+    for pending_group in invalid:
+        for source_row in pending_group["rows"]:
+            pending_by_row.setdefault(_row_key(source_row), []).extend(
+                reason["reason"] for reason in pending_group["reasons"]
+            )
+    for conflict in conflicts:
+        key = (conflict["source"], conflict["worksheet"], conflict["row"])
+        pending_by_row.setdefault(key, []).append("unidad_no_identificable")
+    for row in trace_rows:
+        reasons = sorted(set(warnings_by_row.get(_row_key(row), [])))
+        row["warnings"] = reasons
+        row["ambiguous"] = bool({"producto_general_ambiguo", "fotografias_generales_ambiguas"} & set(reasons))
+        row["pending_reasons"] = sorted(set(pending_by_row.get(_row_key(row), [])))
+        row["pending"] = bool(row["pending_reasons"])
+    plan = {"schema_version": 3, "sources": {"general": {"sheet_id": general_id, "hash": sha(general_document)},
             "corrected": {"sheet_id": corrected_id, "hash": sha(corrected_document)}}, "units": valid,
-            "conflicts": conflicts, "invalid_units": invalid, "ambiguous_products": ambiguous,
-            "warnings": warnings,
+            "conflicts": conflicts, "invalid_units": invalid, "pending_units": invalid,
+            "ambiguous_products": ambiguous,
+            "warnings": warnings, "trace_rows": trace_rows,
             "source_diagnostics": {"general": general_diagnostics, "corrected": corrected_diagnostics},
             "summary": summary}
-    plan["plan_hash"] = sha(plan)
+    plan["plan_hash"] = plan_sha256(plan)
     return plan

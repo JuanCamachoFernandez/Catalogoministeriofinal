@@ -34,12 +34,18 @@ class FinalImportSourceRow(db.Model):
     worksheet = db.Column("hoja", db.String(255), nullable=False)
     row_number = db.Column("numero_fila", db.Integer, nullable=False)
     row_hash = db.Column("hash_fila", db.String(64), nullable=False)
+    source_data = db.Column("datos_originales", db.JSON, nullable=False, default=dict)
+    warnings = db.Column("advertencias", db.JSON, nullable=False, default=list)
+    is_ambiguous = db.Column("es_ambiguo", db.Boolean, nullable=False, default=False)
+    pending_reasons = db.Column("motivos_pendientes", db.JSON, nullable=False, default=list)
+    is_pending = db.Column("es_pendiente", db.Boolean, nullable=False, default=False)
     productive_unit_id = db.Column(
         "unidad_productiva_id", db.Uuid, db.ForeignKey("unidades_productivas.id")
     )
     created_at = db.Column("fecha_creacion", db.DateTime(timezone=True), default=now, nullable=False)
     __table_args__ = (
-        UniqueConstraint("fuente", "sheet_id", "hoja", "numero_fila", name="fila_fuente_importacion_unica"),
+        UniqueConstraint("ejecucion_id", "fuente", "sheet_id", "hoja", "numero_fila",
+                         name="fila_fuente_importacion_unica"),
     )
 
 
