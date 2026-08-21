@@ -886,3 +886,156 @@ def test_media_validation_includes_ambiguous_general_photos(app):
         summary = validate_plan_media(plan, FakeGoogle())
         assert summary["product_images_reviewed"] == 2
         assert summary["valid"] == 2
+
+
+def complete_plan_with_logo_and_product_image(*, skip_media):
+    logo_id = "logoidabcdefghijklmnop"
+    image_id = "imageidabcdefghijklmno"
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [
+            ["ID_UP", *HEADERS[:11], "Logo"],
+            ["UP-01", *valid_row()[:11], logo_id],
+        ]},
+        {"title": "Productos", "values": [[
+            "ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO", "DESCRIPCION",
+            "PRECIO_REFERENCIA", "PRESENTACION", "CAPACIDAD_PRODUCCION_STOCK",
+            "MATERIA_PRIMA",
+        ], ["UP-01", "P-01", "Producto completo", "Descripcion", "25", "Caja", "10", "Miel"]]},
+        {"title": "Imagenes", "values": [
+            ["ID_PRODUCTO", "DRIVE_ID"], ["P-01", image_id],
+        ]},
+    ]}
+    general = document([])
+    plan = build_plan(
+        general, corrected, "general", "corrected", skip_media=skip_media,
+    )
+    return plan, general, corrected, logo_id, image_id
+
+
+def test_skip_media_policy_changes_plan_hash():
+    regular, *_rest = complete_plan_with_logo_and_product_image(skip_media=False)
+    skipped, *_rest = complete_plan_with_logo_and_product_image(skip_media=True)
+    assert regular["plan_hash"] != skipped["plan_hash"]
+    assert regular["policy"] == {"skip_media": False}
+    assert skipped["policy"] == {"skip_media": True}
+    assert plan_sha256(skipped) == skipped["plan_hash"]
+
+
+def test_skip_media_import_never_downloads_validates_uploads_or_creates_images(
+        app, monkeypatch):
+    plan, general, corrected, logo_id, image_id = complete_plan_with_logo_and_product_image(
+        skip_media=True
+    )
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            raise AssertionError("Drive download must not run")
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Media processing must not run")
+
+    monkeypatch.setattr("app.importador_final.prepare_image", forbidden)
+    monkeypatch.setattr("app.importador_final.upload_prepared_to_cloudinary", forbidden)
+    monkeypatch.setattr("app.importador_final.delete_cloudinary_upload", forbidden)
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle(), skip_media=True)
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["logos_uploaded"] == 0
+        assert result["summary"]["product_images_uploaded"] == 0
+        assert result["summary"]["media_skipped_preserved"] == 2
+        assert result["summary"]["emails_sent"] == 0
+        assert db.session.scalar(select(func.count()).select_from(ProductImage)) == 0
+        assert db.session.scalar(select(Product)).estado == ProductStatus.DRAFT
+        unit = db.session.scalar(select(ProductiveUnit))
+        request_item = db.session.scalar(select(RegistrationRequest))
+        assert unit.logo_url is None and unit.logo_public_id is None
+        assert request_item.logo_url is None and request_item.logo_public_id is None
+        traced = {row.worksheet: row for row in db.session.scalars(select(FinalImportSourceRow))}
+        assert traced["Unidades"].source_data["Logo"] == logo_id
+        assert traced["Imagenes"].source_data["DRIVE_ID"] == image_id
+        assert traced["Unidades"].is_pending is True
+        assert traced["Imagenes"].is_pending is True
+        assert "media_skipped" in traced["Unidades"].pending_reasons
+        assert "media_skipped" in traced["Imagenes"].pending_reasons
+
+
+def test_skip_media_policy_mismatch_blocks_before_download_and_writes(app):
+    plan, _general, _corrected, _logo_id, _image_id = (
+        complete_plan_with_logo_and_product_image(skip_media=True)
+    )
+
+    class FakeGoogle:
+        def spreadsheet(self, _sheet_id):
+            raise AssertionError("Sheets must not be reread after a policy mismatch")
+
+        def download(self, _file_id):
+            raise AssertionError("Drive download must not run")
+
+    with app.app_context(), pytest.raises(Exception, match="politica --skip-media no coincide"):
+        execute_plan(plan, FakeGoogle(), skip_media=False)
+    with app.app_context():
+        assert db.session.scalar(select(func.count()).select_from(FinalImportRun)) == 0
+
+
+def test_skip_media_dry_run_prints_policy_omitted_count_and_distinct_hash(app, monkeypatch):
+    skipped, general, corrected, _logo_id, _image_id = complete_plan_with_logo_and_product_image(
+        skip_media=True
+    )
+
+    class FakeGoogle:
+        def __init__(self, _token):
+            pass
+
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            raise AssertionError("Dry-run skip-media must not download")
+
+    monkeypatch.setattr("app.importador_final.GoogleSource", FakeGoogle)
+    result = app.test_cli_runner().invoke(args=[
+        "importar-datos-finales", "--sheet-general", "general",
+        "--sheet-corregidos", "corrected", "--dry-run", "--skip-media",
+    ])
+    assert result.exit_code == 0
+    assert "modo: skip" in result.output
+    assert "medios omitidos/preservados: 2" in result.output
+    assert result.output.strip().endswith(f"PLAN_SHA256: {skipped['plan_hash']}")
+
+
+def test_skip_media_commit_cli_rebuilds_matching_plan_without_media_calls(app, monkeypatch):
+    plan, general, corrected, _logo_id, _image_id = complete_plan_with_logo_and_product_image(
+        skip_media=True
+    )
+
+    class FakeGoogle:
+        def __init__(self, _token):
+            pass
+
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+        def download(self, _file_id):
+            raise AssertionError("Commit skip-media must not download")
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Commit skip-media must not process Cloudinary or Pillow")
+
+    monkeypatch.setattr("app.importador_final.GoogleSource", FakeGoogle)
+    monkeypatch.setattr("app.importador_final.prepare_image", forbidden)
+    monkeypatch.setattr("app.importador_final.upload_prepared_to_cloudinary", forbidden)
+    monkeypatch.setattr("app.importador_final.delete_cloudinary_upload", forbidden)
+    result = app.test_cli_runner().invoke(args=[
+        "importar-datos-finales", "--sheet-general", "general",
+        "--sheet-corregidos", "corrected", "--commit", "--skip-media",
+        "--expect-plan-sha256", plan["plan_hash"], "--confirm", "IMPORT-FINAL",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "logos cargados: 0" in result.output
+    assert "imágenes de productos cargadas: 0" in result.output
+    assert "medios omitidos/preservados: 2" in result.output
+    assert "correos enviados: 0" in result.output

@@ -117,6 +117,10 @@ def dry_run_summary_text(summary):
     total_products = (summary.get("product_sources") or {}).get("total", {})
     total_images = (summary.get("image_sources") or {}).get("total", {})
     lines = [
+        "POLITICA DE MEDIOS",
+        f"- modo: {summary.get('media_policy', 'import')}",
+        f"- medios omitidos/preservados: {summary.get('media_skipped_preserved', 0)}",
+        "",
         "UNIDADES",
         f"- importables completas: {units.get('importable_complete', 0)}",
         f"- importables incompletas: {units.get('importable_incomplete', 0)}",
@@ -289,8 +293,8 @@ def _unit_values(payload, logo=None):
     }
 
 
-def _product_values(plan_product):
-    complete = _product_complete(plan_product)
+def _product_values(plan_product, *, skip_media=False):
+    complete = _product_complete(plan_product) and not skip_media
     return {
         "nombre": plan_product["name"], "slug": bounded_slug(plan_product["name"]),
         "descripcion": plan_product.get("description") or "",
@@ -420,7 +424,9 @@ def preflight_plan(plan):
         }, context, user_headers))
         for product in group.get("products", []):
             product_context = _source_context(product["origin"])
-            product_values = _product_values(product)
+            product_values = _product_values(
+                product, skip_media=bool(plan.get("policy", {}).get("skip_media"))
+            )
             issues.extend(_validate_model_values(
                 Product, product_values, product_context, product["origin"].get("field_headers", {})
             ))
@@ -639,6 +645,26 @@ def _mark_media_pending(row_models, context, exc):
     source_row.is_pending = True
 
 
+def _mark_skipped_media(row_models, plan):
+    skipped = 0
+    for asset in plan.get("media_assets", []):
+        key = (asset["source"], asset["worksheet"], asset["row_number"])
+        source_row = row_models.get(key)
+        if source_row is None:
+            continue
+        source_row.warnings = [*(source_row.warnings or []), {
+            "reason": "media_skipped", "severity": "informative",
+            "asset_type": asset["asset_type"], "asset_index": asset["asset_index"],
+        }]
+        reasons = list(source_row.pending_reasons or [])
+        if "media_skipped" not in reasons:
+            reasons.append("media_skipped")
+        source_row.pending_reasons = reasons
+        source_row.is_pending = True
+        skipped += 1
+    return skipped
+
+
 def persist_trace_rows(run, plan):
     row_models = {}
     trace_rows = plan.get("trace_rows")
@@ -677,6 +703,7 @@ def final_summary_text(summary):
         f"- imágenes de productos cargadas: {summary['product_images_uploaded']}",
         f"- registros ambiguos preservados: {summary['ambiguous_records_preserved']}",
         f"- registros pendientes preservados: {summary['pending_records_preserved']}",
+        f"- medios omitidos/preservados: {summary.get('media_skipped_preserved', 0)}",
         f"- medios pendientes/error: {summary.get('media_errors', 0)}",
         f"- errores: {summary['errors']}",
         f"- correos enviados: {summary['emails_sent']}",
@@ -705,12 +732,12 @@ def trace_entities(group, unit, product_entities, row_models):
             _flush_with_context(FinalImportEntityTrace, _source_context(image_origin))
 
 
-def import_unit(group, google, row_models, uploaded, counters):
+def import_unit(group, google, row_models, uploaded, counters, *, skip_media=False):
     payload = group["unit"]
     unit = existing_unit(payload)
     if not unit:
             logo = None
-            if payload.get("logo_drive_id"):
+            if payload.get("logo_drive_id") and not skip_media:
                 context = _asset_context(group["rows"][0], "logo", 1)
                 try:
                     prepared = _prepare_asset(google, payload["logo_drive_id"], "logos", "unit_logo", context)
@@ -757,8 +784,11 @@ def import_unit(group, google, row_models, uploaded, counters):
     for plan_product in group["products"]:
             key = normalize(plan_product["name"])
             if key in known or len(known) >= MAX_PRODUCTS: continue
-            complete = _product_complete(plan_product)
-            product = Product(productive_unit_id=unit.id, **_product_values(plan_product))
+            complete = _product_complete(plan_product) and not skip_media
+            product = Product(
+                productive_unit_id=unit.id,
+                **_product_values(plan_product, skip_media=skip_media),
+            )
             db.session.add(product)
             _flush_with_context(Product, _source_context(plan_product["origin"]))
             counters["products_created"] += 1
@@ -766,7 +796,8 @@ def import_unit(group, google, row_models, uploaded, counters):
                 counters["products_draft"] += 1
             images = []
             origins = plan_product.get("image_origins") or []
-            for order, drive_file_id in enumerate(plan_product.get("images", [])[:3]):
+            product_images = [] if skip_media else plan_product.get("images", [])[:3]
+            for order, drive_file_id in enumerate(product_images):
                 asset_origin = origins[order] if order < len(origins) else plan_product["origin"]
                 context = _asset_context(asset_origin, "product_image", order + 1)
                 try:
@@ -797,7 +828,13 @@ def import_unit(group, google, row_models, uploaded, counters):
     trace_entities(group, unit, entities, row_models)
 
 
-def execute_plan(plan, google, source_documents=None):
+def execute_plan(plan, google, source_documents=None, *, skip_media=None):
+    plan_skip_media = bool(plan.get("policy", {}).get("skip_media", False))
+    if skip_media is not None and bool(skip_media) != plan_skip_media:
+        raise click.ClickException(
+            "La politica --skip-media no coincide con la politica incluida en el plan"
+        )
+    skip_media = plan_skip_media
     if plan_sha256(plan) != plan.get("plan_hash"):
         raise click.ClickException("El archivo de plan fue alterado o está incompleto")
     if plan.get("summary", {}).get("errors", 0):
@@ -835,11 +872,13 @@ def execute_plan(plan, google, source_documents=None):
         db.session.add(run)
         _flush_with_context(FinalImportRun, {"source": "PLAN", "worksheet": "-", "row": None})
         row_models = persist_trace_rows(run, plan)
+        media_skipped = _mark_skipped_media(row_models, plan) if skip_media else 0
         counters = {
             "units_created": 0, "users_created": 0, "sectors_associated": 0,
             "products_created": 0, "products_draft": 0, "logos_uploaded": 0,
             "product_images_uploaded": 0,
             "media_errors": 0,
+            "media_skipped_preserved": media_skipped,
             "ambiguous_records_preserved": sum(row.is_ambiguous for row in row_models.values()),
             "pending_records_preserved": sum(row.is_pending for row in row_models.values()),
             "units_importable_complete": plan.get("summary", {}).get("unit_classification", {}).get("importable_complete", 0),
@@ -848,7 +887,9 @@ def execute_plan(plan, google, source_documents=None):
             "errors": 0, "emails_sent": 0,
         }
         for group in plan["units"]:
-            import_unit(group, google, row_models, uploaded, counters)
+            import_unit(
+                group, google, row_models, uploaded, counters, skip_media=skip_media
+            )
         run.status = "COMPLETED"
         run.summary = counters
         run.finished_at = datetime.now(timezone.utc)
@@ -884,6 +925,7 @@ def register_import_command(app):
     @click.option("--dry-run", is_flag=True)
     @click.option("--commit", "do_commit", is_flag=True)
     @click.option("--validate-media", is_flag=True)
+    @click.option("--skip-media", is_flag=True)
     @click.option("--plan", "plan_path", type=click.Path(dir_okay=False))
     @click.option("--expect-plan-sha256")
     @click.option("--confirm")
@@ -891,11 +933,15 @@ def register_import_command(app):
     @click.option("--token", "token_path", default=lambda: os.getenv("GOOGLE_IMPORT_TOKEN_PATH", TOKEN_DEFAULT), show_default=True)
     @with_appcontext
     def importar_datos_finales(sheet_general, sheet_corregidos, dry_run, do_commit, validate_media,
-                               plan_path,
+                               skip_media, plan_path,
                                expect_plan_sha256, confirm, report_path, token_path):
         if sum(bool(mode) for mode in (dry_run, do_commit, validate_media)) != 1:
             raise click.ClickException(
                 "Seleccione exactamente uno: --dry-run, --validate-media o --commit"
+            )
+        if validate_media and skip_media:
+            raise click.ClickException(
+                "--skip-media no puede combinarse con --validate-media"
             )
         if dry_run or validate_media:
             google = GoogleSource(token_path)
@@ -903,7 +949,10 @@ def register_import_command(app):
                 raise click.ClickException(
                     "--sheet-general y --sheet-corregidos son obligatorios"
                 )
-            plan = build_plan(google.spreadsheet(sheet_general), google.spreadsheet(sheet_corregidos), sheet_general, sheet_corregidos)
+            plan = build_plan(
+                google.spreadsheet(sheet_general), google.spreadsheet(sheet_corregidos),
+                sheet_general, sheet_corregidos, skip_media=skip_media,
+            )
             if validate_media:
                 validation = validate_plan_media(plan, google)
                 if report_path:
@@ -930,11 +979,16 @@ def register_import_command(app):
                 general = google.spreadsheet(sheet_general)
                 corrected = google.spreadsheet(sheet_corregidos)
                 source_documents = (general, corrected)
-                plan = build_plan(general, corrected, sheet_general, sheet_corregidos)
+                plan = build_plan(
+                    general, corrected, sheet_general, sheet_corregidos,
+                    skip_media=skip_media,
+                )
             actual_hash = plan_sha256(plan)
             if expect_plan_sha256 and actual_hash != expect_plan_sha256:
                 raise click.ClickException("PLAN_SHA256 no coincide; no se escribio ningun dato")
-            result = execute_plan(plan, google, source_documents=source_documents)
+            result = execute_plan(
+                plan, google, source_documents=source_documents, skip_media=skip_media
+            )
             if report_path:
                 write_json(report_path, result)
             click.echo(final_summary_text(result["summary"]))

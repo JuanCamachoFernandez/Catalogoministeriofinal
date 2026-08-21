@@ -899,7 +899,7 @@ def _trace_rows(document, source, sheet_id, diagnostics):
     return result
 
 
-def build_plan(general_document, corrected_document, general_id, corrected_id):
+def build_plan(general_document, corrected_document, general_id, corrected_id, *, skip_media=False):
     corrected_source_rows, corrected_diagnostics = _corrected_rows(corrected_document, corrected_id)
     corrected_audit = _corrected_audit(corrected_document)
     general_source_rows, general_diagnostics = _source_rows(general_document, "GENERAL", general_id)
@@ -1132,7 +1132,9 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
                                    "total": total_products},
                "sector_sources": {"corrected": corrected_audit["sectors"]},
                "image_sources": {"general": image_summary["general"], "corrected": image_summary["corrected"],
-                                 "total": total_images}}
+                                 "total": total_images},
+               "media_policy": "skip" if skip_media else "import",
+               "media_skipped_preserved": len(media_assets) if skip_media else 0}
     trace_rows = (
         _trace_rows(general_document, "GENERAL", general_id, general_diagnostics)
         + _trace_rows(corrected_document, "CORRECTED", corrected_id, corrected_diagnostics)
@@ -1158,7 +1160,8 @@ def build_plan(general_document, corrected_document, general_id, corrected_id):
         row["ambiguous"] = bool({"producto_general_ambiguo", "fotografias_generales_ambiguas"} & set(reasons))
         row["pending_reasons"] = sorted(set(pending_by_row.get(_row_key(row), [])))
         row["pending"] = bool(row["pending_reasons"])
-    plan = {"schema_version": 3, "sources": {"general": {"sheet_id": general_id, "hash": sha(general_document)},
+    plan = {"schema_version": 3, "policy": {"skip_media": bool(skip_media)},
+            "sources": {"general": {"sheet_id": general_id, "hash": sha(general_document)},
             "corrected": {"sheet_id": corrected_id, "hash": sha(corrected_document)}}, "units": valid,
             "conflicts": conflicts, "invalid_units": invalid, "pending_units": invalid,
             "ambiguous_products": ambiguous,
