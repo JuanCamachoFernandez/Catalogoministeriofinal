@@ -37,6 +37,16 @@ La pestaña `Unidades` se procesa independientemente de `Productos`, `Sectores` 
 `Imagenes`: la ausencia o incompletitud de un producto nunca convierte a su unidad
 en inválida. El NIT vacío también es válido.
 
+El resumen del dry-run separa productos del formulario y de la plantilla corregida.
+En `Productos`, `filas leídas` cuenta todas las filas no vacías; `detectados` requiere
+un nombre; `importables` requiere además una unidad relacionada y válida. La falta de
+descripción, precio, presentación, capacidad/stock o imágenes conserva el producto
+como `DRAFT`. Las advertencias se agrupan por motivo y severidad, y los errores de
+unidad muestran únicamente fuente y número de fila.
+
+Las métricas de imágenes se calculan usando los Drive IDs y referencias presentes en
+las hojas. El dry-run no descarga archivos ni realiza operaciones en Cloudinary.
+
 ## Comandos
 
 Desde el directorio `backend`, con las variables de producción ya inyectadas:

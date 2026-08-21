@@ -147,3 +147,85 @@ def test_unrecognized_header_has_a_specific_reason():
     ]}]}
     plan = build_plan(unknown, document([]), "general", "corrected")
     assert plan["summary"]["errors_by_reason"] == {"encabezado_no_encontrado": 1}
+
+
+def test_relational_product_audit_reads_aliases_and_keeps_incomplete_products_as_draft():
+    unit_headers = ["ID_UP", *HEADERS[:11]]
+    unit = ["UP-01", *valid_row()[:11]]
+    product_headers = [
+        "ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO", "DESCRIPCION",
+        "PRECIO_REFERENCIA", "PRESENTACION", "CAPACIDAD_PRODUCCION_STOCK",
+    ]
+    products = [
+        ["UP-01", "P-01", "Producto completo", "Descripción", "25,50", "Caja", "100"],
+        ["UP-01", "P-02", "Producto borrador", "", "", "", ""],
+        ["UP-99", "P-03", "Producto huérfano", "Descripción", "10", "Unidad", "20"],
+        ["UP-01", "P-04", "", "Descripción sin nombre", "10", "Unidad", "20"],
+    ]
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [unit_headers, unit]},
+        {"title": "Productos", "values": [["CATÁLOGO DE PRODUCTOS"], product_headers, *products]},
+        {"title": "Imagenes", "values": [
+            ["ID_PRODUCTO", "DRIVE_ID"],
+            ["P-01", "abcdefghijklmnopqrstuv"],
+            ["NO-EXISTE", "zyxwvutsrqponmlkjihgfe"],
+        ]},
+    ]}
+    plan = build_plan(document([]), corrected, "general", "corrected")
+    products_summary = plan["summary"]["product_sources"]["corrected"]
+    assert products_summary == {
+        "rows_read": 4, "detected": 3, "valid": 1, "draft": 1,
+        "invalid": 1, "without_unit": 1,
+    }
+    assert plan["summary"]["product_sources"]["total"] == {
+        "detected": 3, "importable": 2, "draft": 1, "ambiguous": 0,
+    }
+    imported = {product["name"]: product for product in plan["units"][0]["products"]}
+    assert imported["Producto completo"]["price"] == "25.50"
+    assert imported["Producto completo"]["presentation"] == "Caja"
+    assert imported["Producto completo"]["stock"] == "100"
+    assert imported["Producto borrador"]["images"] == []
+    assert plan["summary"]["image_sources"]["corrected"]["assigned"] == 1
+    assert plan["summary"]["image_sources"]["corrected"]["without_product"] == 1
+
+
+def test_dry_run_lists_only_source_rows_for_unit_errors():
+    row = valid_row()
+    row[3], row[4] = "correo-malo", "123"
+    plan = build_plan(document([row]), document([]), "general", "corrected")
+    assert plan["summary"]["error_rows"] == {
+        "general": {"correo_invalido": [2], "telefono_invalido": [2]},
+        "corrected": {},
+    }
+    output = dry_run_summary_text(plan["summary"])
+    assert "correo_invalido -> filas [2]" in output
+    assert "telefono_invalido -> filas [2]" in output
+    assert row[0] not in output and row[3] not in output and row[4] not in output
+    assert "WARNINGS BY REASON" in output
+    assert "PRODUCTOS CORREGIDOS" in output
+    assert "IMÁGENES CORREGIDOS" in output
+
+
+def test_execute_plan_preserves_structured_product_fields_in_draft(app):
+    corrected = {"title": "corregidos", "worksheets": [
+        {"title": "Unidades", "values": [["ID_UP", *HEADERS[:11]], ["UP-01", *valid_row()[:11]]]},
+        {"title": "Productos", "values": [[
+            "ID_UP", "ID_PRODUCTO", "NOMBRE_PRODUCTO", "DESCRIPCION",
+            "PRECIO_REFERENCIA", "PRESENTACION", "CAPACIDAD_PRODUCCION_STOCK",
+        ], ["UP-01", "P-01", "Producto A", "Descripción", "25.50", "Caja", "100"]]},
+    ]}
+    general = document([])
+    plan = build_plan(general, corrected, "general", "corrected")
+
+    class FakeGoogle:
+        def spreadsheet(self, sheet_id):
+            return general if sheet_id == "general" else corrected
+
+    with app.app_context():
+        result = execute_plan(plan, FakeGoogle())
+        assert result["status"] == "COMPLETED"
+        product = db.session.scalar(select(Product))
+        assert product.estado == ProductStatus.DRAFT
+        assert str(product.precio_referencia) == "25.50"
+        assert product.presentacion_empaque == "Caja"
+        assert product.capacidad_produccion_stock == "100"

@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from werkzeug.datastructures import FileStorage
 
 from .extensiones import db
-from .fuentes_importacion import GoogleSource, MAX_PRODUCTS, build_plan, normalize, sha
+from .fuentes_importacion import GoogleSource, MAX_PRODUCTS, _product_complete, build_plan, normalize, sha
 from .modelos import (
     FinalImportEntityTrace, FinalImportRun, FinalImportSourceRow, Product, ProductImage,
     ProductStatus, ProductiveSector, ProductiveUnit, ProductiveUnitStatus,
@@ -39,6 +39,14 @@ def dry_run_summary_text(summary):
         lines.extend(f"- {reason}: {count}" for reason, count in sorted(reasons.items()))
     else:
         lines.append("- none: 0")
+    lines.extend(("", "ERROR ROWS BY SOURCE"))
+    for label, key in (("GENERAL", "general"), ("CORREGIDOS", "corrected")):
+        lines.append(f"{label}:")
+        source_errors = (summary.get("error_rows") or {}).get(key, {})
+        if source_errors:
+            lines.extend(f"- {reason} -> filas {numbers}" for reason, numbers in sorted(source_errors.items()))
+        else:
+            lines.append("- none")
     for label, key in (("GENERAL", "general"), ("CORREGIDOS", "corrected")):
         source = (summary.get("sources") or {}).get(key, {})
         lines.extend((
@@ -47,6 +55,60 @@ def dry_run_summary_text(summary):
             f"- válidas: {source.get('valid', 0)}",
             f"- inválidas: {source.get('invalid', 0)}",
         ))
+    lines.extend(("", "WARNINGS BY REASON"))
+    warning_reasons = summary.get("warnings_by_reason") or {}
+    if warning_reasons:
+        lines.extend(f"- {reason}: {count}" for reason, count in sorted(warning_reasons.items()))
+    else:
+        lines.append("- none: 0")
+    severity = summary.get("warning_severity") or {}
+    lines.extend((f"- bloqueantes: {severity.get('blocking', 0)}",
+                  f"- informativas: {severity.get('informative', 0)}"))
+    products = summary.get("product_sources") or {}
+    general_products = products.get("general", {})
+    corrected_products = products.get("corrected", {})
+    total_products = products.get("total", {})
+    lines.extend((
+        "", "PRODUCTOS GENERAL",
+        f"- detectados: {general_products.get('detected', 0)}",
+        f"- válidos: {general_products.get('valid', 0)}",
+        f"- draft: {general_products.get('draft', 0)}",
+        f"- ambiguos: {general_products.get('ambiguous', 0)}",
+        f"- descartados: {general_products.get('discarded', 0)}",
+        "", "PRODUCTOS CORREGIDOS",
+        f"- filas leídas: {corrected_products.get('rows_read', 0)}",
+        f"- detectados: {corrected_products.get('detected', 0)}",
+        f"- válidos: {corrected_products.get('valid', 0)}",
+        f"- draft: {corrected_products.get('draft', 0)}",
+        f"- inválidos: {corrected_products.get('invalid', 0)}",
+        f"- sin unidad relacionada: {corrected_products.get('without_unit', 0)}",
+        "", "TOTAL PRODUCTOS",
+        f"- detectados: {total_products.get('detected', 0)}",
+        f"- importables: {total_products.get('importable', 0)}",
+        f"- draft: {total_products.get('draft', 0)}",
+        f"- ambiguos: {total_products.get('ambiguous', 0)}",
+    ))
+    images = summary.get("image_sources") or {}
+    general_images = images.get("general", {})
+    corrected_images = images.get("corrected", {})
+    total_images = images.get("total", {})
+    lines.extend((
+        "", "IMÁGENES GENERAL",
+        f"- logos detectados: {general_images.get('logos_detected', 0)}",
+        f"- fotos detectadas: {general_images.get('photos_detected', 0)}",
+        f"- fotos asignables: {general_images.get('assignable', 0)}",
+        f"- fotos ambiguas: {general_images.get('ambiguous', 0)}",
+        "", "IMÁGENES CORREGIDOS",
+        f"- filas leídas: {corrected_images.get('rows_read', 0)}",
+        f"- Drive IDs detectados: {corrected_images.get('drive_ids_detected', 0)}",
+        f"- imágenes asociadas a producto: {corrected_images.get('assigned', 0)}",
+        f"- imágenes sin producto: {corrected_images.get('without_product', 0)}",
+        "", "TOTAL IMÁGENES",
+        f"- logos: {total_images.get('logos', 0)}",
+        f"- fotografías: {total_images.get('photos', 0)}",
+        f"- fotografías asignadas: {total_images.get('assigned', 0)}",
+        f"- fotografías ambiguas: {total_images.get('ambiguous', 0)}",
+    ))
     lines.extend((
         "", "TOTAL:",
         f"- respuestas leídas: {summary.get('responses_read', 0)}",
@@ -134,10 +196,14 @@ def import_unit(run, group, google):
         for plan_product in group["products"]:
             key = normalize(plan_product["name"])
             if key in known or len(known) >= MAX_PRODUCTS: continue
-            complete = bool(plan_product.get("description") and plan_product.get("images"))
+            complete = _product_complete(plan_product)
             product = Product(productive_unit_id=unit.id, nombre=plan_product["name"], slug=slugify(plan_product["name"]),
                 descripcion=plan_product.get("description") or "", nombre_comercial=plan_product["name"],
                 descripcion_tecnica=plan_product.get("description") or None,
+                presentacion=plan_product.get("presentation") or None,
+                presentacion_empaque=plan_product.get("presentation") or None,
+                precio_referencia=plan_product.get("price"), precio=plan_product.get("price"),
+                capacidad_produccion_stock=plan_product.get("stock") or None,
                 estado=ProductStatus.AVAILABLE if complete else ProductStatus.DRAFT)
             db.session.add(product); db.session.flush()
             images = []
