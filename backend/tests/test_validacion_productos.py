@@ -23,7 +23,7 @@ VALID_PRODUCT = {
 def test_producto_productivo_acepta_datos_validos_y_texto_mixto():
     loaded = ProductiveProductCreateSchema().load(VALID_PRODUCT)
 
-    assert loaded["nombre_comercial"] == "Miel Andina 454gr"
+    assert loaded["nombre_comercial"] == "Miel Andina 500 g"
     assert loaded["capacidad_produccion_stock"] == "100"
     assert loaded["certificaciones"] == "SENASAG N.º 123/2026"
     assert loaded["presentacion_empaque"] == "Caja 12 unidades, pack/bolsa - promoción"

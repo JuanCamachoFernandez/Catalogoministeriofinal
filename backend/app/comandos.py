@@ -41,6 +41,11 @@ from .utilidades import slugify, valid_gmail
 
 
 def registrar_comandos(app):
+    from .comandos_produccion import register_production_commands
+    from .importador_final import register_import_command
+
+    register_production_commands(app)
+    register_import_command(app)
     @app.cli.command("sync-fairs")
     @with_appcontext
     def sync_fairs():

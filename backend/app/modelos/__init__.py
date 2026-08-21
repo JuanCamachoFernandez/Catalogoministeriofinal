@@ -23,6 +23,7 @@ from .producto import Category, Product
 from .imagen_producto import ProductImage
 from .sistema import CacheState
 from .usuario import AdminProfile, AdminUnit, PasswordRecovery, RevokedToken, User
+from .importacion import FinalImportEntityTrace, FinalImportRun, FinalImportSourceRow
 
 __all__ = [
     "AdminProfile",
@@ -54,6 +55,9 @@ __all__ = [
     "SectorStatus",
     "NotificationStatus",
     "FairParticipation",
+    "FinalImportEntityTrace",
+    "FinalImportRun",
+    "FinalImportSourceRow",
     "UnitSector",
     "User",
     "UserStatus",
